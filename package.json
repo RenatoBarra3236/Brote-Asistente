@@ -1,0 +1,9 @@
+{
+  "name": "asistente-prototipo",
+  "private": true,
+  "description": "Prototipo de un personaje animado que vive en el PC, conectado a OpenClaw.",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=24.16"
+  }
+}

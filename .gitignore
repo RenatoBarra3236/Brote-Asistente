@@ -1,0 +1,19 @@
+# Dependencias y builds
+node_modules/
+dist/
+target/
+
+# Secretos: la API key vive en la configuración de OpenClaw, nunca en el repo
+.env
+.env.*
+
+# Datos locales del prototipo
+*.db
+*.sqlite
+*.sqlite3
+
+# Sistema y editores
+.DS_Store
+.vscode/
+.idea/
+*.log

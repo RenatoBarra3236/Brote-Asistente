@@ -1,0 +1,14 @@
+{
+  "name": "@asistente/adapter",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Conexión al Gateway de OpenClaw para el personaje.",
+  "type": "module",
+  "scripts": {
+    "spike": "node src/spike.ts"
+  },
+  "dependencies": {
+    "@openclaw/gateway-client": "2026.9.7",
+    "@openclaw/gateway-protocol": "2026.9.7"
+  }
+}

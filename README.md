@@ -19,7 +19,12 @@ Para el prototipo, OpenClaw usa el Claude Code instalado en el equipo con la cue
 ```bash
 npm install -g openclaw@2026.9.7 --allow-scripts=openclaw
 openclaw onboard --install-daemon
+openclaw exec-policy preset cautious
 ```
+
+El último comando es importante: por defecto OpenClaw deja que el agente ejecute cualquier comando sin preguntar. Con `cautious`, pide permiso para todo lo que no esté en la lista permitida.
+
+El personaje se conecta al Gateway con una identidad de dispositivo propia, que se crea sola la primera vez en `~/.asistente-prototipo/dispositivo.json`, fuera del repositorio.
 
 En `~/.openclaw/openclaw.json`, el modelo principal es `anthropic/claude-sonnet-5-5` con `agentRuntime: { id: "claude-cli" }`, y el Gateway escucha solo en `127.0.0.1:18789`. Para comprobarlo:
 
@@ -43,7 +48,7 @@ Monorepo con pnpm. Cada pieza se crea en su paso del plan:
 
 - [x] Paso 1: preparar el entorno
 - [x] Paso 2: estudiar las referencias ([resumen](docs/referencias-tecnicas.md))
-- [ ] Paso 3: prueba del Gateway
+- [x] Paso 3: prueba del Gateway (`pnpm --dir packages/adapter spike "mensaje"`)
 - [ ] Paso 4: personaje base
 - [ ] Paso 5: personaje conectado al agente
 - [ ] Paso 6: motor de comandos y skill de gastos

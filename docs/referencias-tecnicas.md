@@ -76,11 +76,30 @@ Lo que muestran sus tipos:
 - Los eventos del agente tienen la forma `{ runId, seq, stream, ts, data }`. En el protocolo aparecen los flujos `lifecycle`, `assistant`, `thinking`, `tool` y `error`, que es justo lo que necesitamos para los estados.
 - Otros métodos y eventos documentados: `sessions.subscribe`, `chat.history`, `exec.approval.requested` y `exec.approval.resolved`.
 
-Pendiente de confirmar en el paso 3, con el script de prueba:
+### Confirmado en el paso 3 (script `packages/adapter/src/spike.ts`)
 
-- El método exacto para enviar un mensaje. La lista completa llega en `hello-ok.features.methods`.
-- Qué trae `data` en cada flujo, y si con el runtime de Claude CLI llegan los eventos de tools con detalle.
-- La autenticación local: usar el token compartido del Gateway (leído en tiempo de ejecución desde `~/.openclaw/openclaw.json`, nunca escrito en el repositorio) o el emparejamiento de dispositivo que recomienda la documentación.
+- **Autenticación:** con solo el token compartido, el Gateway concede únicamente `operator.read`; `chat.send` falla con `missing scope: operator.write`. Con una identidad de dispositivo Ed25519 (`src/identidad.ts`: id = SHA-256 de la clave pública cruda, firma Ed25519 en base64url) el Gateway local la aprueba solo y concede `operator.read`, `operator.write` y `operator.approvals`. La identidad y el token de dispositivo se guardan en `~/.asistente-prototipo/dispositivo.json` (permisos 600), fuera del repo.
+- **Enviar un mensaje:** `chat.send` con `{ sessionKey, message, idempotencyKey }`. Responde `{ runId, status: "started" }`. La sesión principal es `agent:asistente-multiplataforma:main`.
+- **Eventos `agent` de una ejecución, en orden:**
+
+| Flujo (`stream`) | `data` | Estado del personaje |
+| --- | --- | --- |
+| `lifecycle` | `phase: "start"` | Pensando |
+| `run_status` | `phase: "starting_model"` | Pensando |
+| `item` | `kind: "tool"`, `phase: "start"`/`"end"`, `name`, `title` legible (ej. "Read from ~/…") | Trabajando; el `title` sirve para la burbuja |
+| `tool` | `phase: "start"` con `name` y `args`; `phase: "result"` con `result` e `isError` | Trabajando |
+| `assistant` | `delta` (fragmento) y `text` (acumulado) | Pensando o hablando; el texto va a la burbuja |
+| `lifecycle` | `phase: "model"`, luego `phase: "end"` con `terminalReply.text` | Listo |
+
+- **Con el runtime de Claude CLI sí llegan los eventos de tools con detalle.** Las tools son las de Claude Code (por ejemplo `Read`).
+- También llegan eventos `chat` (el mismo flujo resumido por sesión, con `state`: `status`, `delta`, `final`) y `sessions.changed`.
+- **Aprobaciones:**
+  - La política inicial de OpenClaw es `full` sin preguntas: el agente ejecuta cualquier comando sin pedir permiso. Para el prototipo se usa `openclaw exec-policy preset cautious` (`allowlist · ask on miss · fallback deny`).
+  - Con el runtime de Claude CLI, OpenClaw intercepta las tools de Claude Code con un hook `PreToolUse`, así que las aprobaciones sí aplican. Si nadie responde, el comando se rechaza tras un tiempo de espera.
+  - Las solicitudes **no** llegan como `exec.approval.requested`, y `approval.list` exige `operator.admin`. Llegan como eventos `session.approval` solo si el cliente se suscribe con `sessions.messages.subscribe` y `{ key, agentId, subscriptionId, includeApprovals: true }`.
+  - `session.approval` con `phase: "pending"` trae `approval.id` y `approval.presentation` (por ejemplo `kind: "plugin"`, `title: "claude-cli native tool: Bash"` y el comando en `detail`). Después llega `phase: "terminal"`.
+  - Se responden con `approval.resolve` y `{ id, kind, decision }`, donde `kind` sale de `presentation.kind` y `decision` es `allow-once`, `allow-always` o `deny`.
+  - Ciclo completo observado: pensando → trabajando → pidiendo permiso → trabajando → pensando → listo.
 
 ## Licencias, en resumen
 

@@ -165,3 +165,62 @@ settings:
 importers:
 
   .: {}
+
+  packages/adapter:
+    dependencies:
+      '@openclaw/gateway-client':
+        specifier: 2026.9.7
+        version: 2026.9.7
+      '@openclaw/gateway-protocol':
+        specifier: 2026.9.7
+        version: 2026.9.7
+
+packages:
+
+  '@openclaw/gateway-client@2026.9.7':
+    resolution: {integrity: sha512-/3ghRJlZDOgkBxsS+i31+kqZHrref/0+N2UbOigcHPbHIR1bCh7HmHOZS6gC3bURC8EDhgZVSzm1UtN2f/RA1g==}
+    engines: {node: '>=22.19.0'}
+
+  '@openclaw/gateway-protocol@2026.9.7':
+    resolution: {integrity: sha512-0g/B9YzeCCNOYBrF/BDwGax5rm/t4UjqTSYUU87yZUlnsTpzEFla8PGMAINhRgMIxVFpnY/XZsxV5PDBQo37/g==}
+    engines: {node: '>=22.19.0'}
+
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
+
+  typebox@1.3.34:
+    resolution: {integrity: sha512-wbnzrXXDW8xEFHDZZs2jo1MkhaYlKAY4FRhpBc1+2LF1fZVBGCXGdLEhA/Z/NBbgzJMFfeM8m7elKPa/+KxaUQ==}
+
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+snapshots:
+
+  '@openclaw/gateway-client@2026.9.7':
+    dependencies:
+      '@openclaw/gateway-protocol': 2026.9.7
+      ipaddr.js: 2.5.0
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@openclaw/gateway-protocol@2026.9.7':
+    dependencies:
+      typebox: 1.3.34
+
+  ipaddr.js@2.5.0: {}
+
+  typebox@1.3.34: {}
+
+  ws@8.21.3: {}

@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Decision, Marco, ResultadoEnvio, Transporte } from "./transporte.ts";
+import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./transporte.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -17,10 +17,14 @@ export interface EstadoConexion {
 type Aviso =
   | { tipo: "conexion"; conectado: boolean; detalle?: string }
   | { tipo: "evento"; marco: Marco }
-  | { tipo: "respuesta"; id: string; ok: boolean; error?: string; local?: ResultadoEnvio["local"] };
+  | { tipo: "propuesta"; propuesta: Propuesta }
+  | { tipo: "respuesta"; id: string; ok: boolean; error?: string; local?: ResultadoEnvio["local"]; mensaje?: string };
+
+/** Lo que trae una respuesta del puente además del "ok". */
+type Extras = ResultadoEnvio & { mensaje?: string };
 
 interface Pendiente {
-  resolver: (resultado: ResultadoEnvio) => void;
+  resolver: (extras: Extras) => void;
   rechazar: (error: Error) => void;
   plazo: ReturnType<typeof setTimeout>;
 }
@@ -28,6 +32,7 @@ interface Pendiente {
 export class TransportePuente implements Transporte {
   private readonly oyentes = new Set<(marco: Marco) => void>();
   private readonly oyentesConexion = new Set<(estado: EstadoConexion) => void>();
+  private readonly oyentesPropuesta = new Set<(propuesta: Propuesta) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -61,9 +66,19 @@ export class TransportePuente implements Transporte {
     return () => this.oyentes.delete(oyente);
   }
 
-  private async pedir(pedido: Record<string, unknown>): Promise<ResultadoEnvio> {
+  alProponer(oyente: (propuesta: Propuesta) => void): () => void {
+    this.oyentesPropuesta.add(oyente);
+    return () => this.oyentesPropuesta.delete(oyente);
+  }
+
+  async decidirPlantilla(id: number, aceptar: boolean): Promise<string> {
+    const { mensaje } = await this.pedir({ tipo: "decidir-plantilla", plantilla: id, aceptar });
+    return mensaje ?? (aceptar ? "Listo, la aprendí." : "Ok, no la aprendo.");
+  }
+
+  private async pedir(pedido: Record<string, unknown>): Promise<Extras> {
     const id = String(this.siguienteId++);
-    const respuesta = new Promise<ResultadoEnvio>((resolver, rechazar) => {
+    const respuesta = new Promise<Extras>((resolver, rechazar) => {
       const plazo = setTimeout(() => {
         this.pendientes.delete(id);
         rechazar(new Error("OpenClaw no respondió a tiempo"));
@@ -100,10 +115,13 @@ export class TransportePuente implements Transporte {
         if (!pendiente) return;
         clearTimeout(pendiente.plazo);
         this.pendientes.delete(aviso.id);
-        if (aviso.ok) pendiente.resolver(aviso.local ? { local: aviso.local } : {});
+        if (aviso.ok) pendiente.resolver({ local: aviso.local, mensaje: aviso.mensaje });
         else pendiente.rechazar(new Error(aviso.error ?? "OpenClaw rechazó el pedido"));
         return;
       }
+      case "propuesta":
+        for (const oyente of this.oyentesPropuesta) oyente(aviso.propuesta);
+        return;
       case "conexion": {
         const estado = { conectado: aviso.conectado, detalle: aviso.detalle };
         if (estado.conectado === this.conexion.conectado && estado.detalle === this.conexion.detalle) return;

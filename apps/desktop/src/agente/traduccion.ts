@@ -46,8 +46,16 @@ export function traducir(marco: Marco): Suceso | null {
       const texto = textoDeContenido(mensaje.content);
       return texto ? { tipo: "mensaje-usuario", texto } : null;
     }
+    case "chat": {
+      // `chat` repite el flujo del agente resumido; solo interesa su cierre. Los comandos de
+      // OpenClaw (por ejemplo "/new") responden únicamente con este `final`, sin eventos `agent`:
+      // sin esto la isla se quedaría en "pensando".
+      if (payload?.state !== "final") return null;
+      const texto = textoDeContenido(payload.message?.content);
+      return texto ? { tipo: "fin", texto } : { tipo: "fin" };
+    }
     default:
-      // `chat` repite el mismo flujo resumido; `sessions.changed`, `tick`, etc. no cambian nada.
+      // `sessions.changed`, `tick`, etc. no cambian nada.
       return null;
   }
 }

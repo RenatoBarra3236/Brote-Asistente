@@ -22,6 +22,15 @@ export interface ResultadoEnvio {
   local?: { texto: string; intencion: string };
 }
 
+/** Una plantilla que propuso el agente para resolver frases como esta sin IA (paso 7). */
+export interface Propuesta {
+  id: number;
+  /** La frase del usuario que la originó. */
+  ejemplo: string;
+  /** Qué haría, en palabras: "anotar un gasto". */
+  accion: string;
+}
+
 export interface Transporte {
   /** Envía un mensaje del usuario (en el Gateway real, `chat.send`). Termina cuando el Gateway lo acepta. */
   enviar(texto: string): Promise<ResultadoEnvio | void>;
@@ -29,4 +38,8 @@ export interface Transporte {
   resolverAprobacion(id: string, kind: string, decision: Decision): Promise<void>;
   /** Escucha los eventos que llegan. Devuelve la función para dejar de escuchar. */
   escuchar(oyente: (marco: Marco) => void): () => void;
+  /** Avisa cuando el motor que aprende tiene una propuesta (solo el transporte real). */
+  alProponer?(oyente: (propuesta: Propuesta) => void): () => void;
+  /** Acepta o rechaza una propuesta. Devuelve el mensaje para mostrar. */
+  decidirPlantilla?(id: number, aceptar: boolean): Promise<string>;
 }

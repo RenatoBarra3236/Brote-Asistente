@@ -4,11 +4,17 @@
 
 import type { Estado } from "../personaje/estados.ts";
 import type { Aprobacion, Suceso } from "./traduccion.ts";
+import type { Propuesta } from "./transporte.ts";
 
 export interface HerramientaEnCurso {
   id: string;
   nombre: string;
   etiqueta: string;
+}
+
+export interface PropuestaPendiente extends Propuesta {
+  /** Ya se envió la decisión y se espera la confirmación. */
+  decidiendo: boolean;
 }
 
 export interface AprobacionPendiente extends Aprobacion {
@@ -29,11 +35,17 @@ export interface Conversacion {
   error: string | null;
   /** La respuesta la dio el motor de comandos, sin IA. */
   sinIA: boolean;
+  /** Una plantilla que el motor podría aprender, esperando que el usuario decida. */
+  propuesta: PropuestaPendiente | null;
 }
 
 /** Sucesos que no vienen del Gateway sino de la propia interfaz. */
 export type SucesoLocal =
   | { tipo: "resuelto-sin-ia"; texto: string }
+  | { tipo: "propuesta"; propuesta: Propuesta }
+  | { tipo: "decidiendo"; id: number }
+  | { tipo: "decision-fallida"; id: number }
+  | { tipo: "propuesta-decidida"; id: number; aceptada: boolean; mensaje: string }
   | { tipo: "respondiendo"; id: string }
   | { tipo: "respuesta-fallida"; id: string };
 
@@ -47,6 +59,7 @@ export const CONVERSACION_INICIAL: Conversacion = {
   aprobacion: null,
   error: null,
   sinIA: false,
+  propuesta: null,
 };
 
 /** El agente está ocupado con una ejecución: todavía no conviene enviarle otro mensaje. */
@@ -118,6 +131,25 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
         respuesta: suceso.texto,
         terminada: true,
         sinIA: true,
+      };
+
+    case "propuesta":
+      return { ...c, propuesta: { ...suceso.propuesta, decidiendo: false } };
+
+    case "decidiendo":
+    case "decision-fallida":
+      if (c.propuesta?.id !== suceso.id) return c;
+      return { ...c, propuesta: { ...c.propuesta, decidiendo: suceso.tipo === "decidiendo" } };
+
+    case "propuesta-decidida":
+      if (c.propuesta?.id !== suceso.id) return c;
+      // Aprender algo es motivo de celebración: el personaje vuelve a "listo".
+      return {
+        ...c,
+        propuesta: null,
+        respuesta: suceso.mensaje,
+        sinIA: false,
+        estado: suceso.aceptada ? "listo" : c.estado,
       };
 
     case "respondiendo":

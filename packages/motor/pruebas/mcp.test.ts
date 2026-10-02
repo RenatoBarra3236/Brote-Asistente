@@ -16,14 +16,14 @@ function llamar(name: string, args: object): { texto: string; error: boolean } {
 }
 
 describe("servidor MCP de gastos", () => {
-  it("se presenta y lista sus tres herramientas", () => {
+  it("se presenta y lista sus herramientas", () => {
     const inicio = atender(gastos, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }) as any;
     assert.equal(inicio.result.protocolVersion, "2025-03-26");
     assert.deepEqual(inicio.result.capabilities, { tools: {} });
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "motor_proponer_plantilla"],
     );
   });
 

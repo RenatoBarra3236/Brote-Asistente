@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Categoria } from "./categorias.ts";
 import type { Rango } from "./periodos.ts";
+import type { Intencion, Plantilla } from "./plantillas.ts";
 
 export interface Gasto {
   id: number;
@@ -26,6 +27,16 @@ export interface NuevoGasto {
 
 /** Donde viven los gastos: la comparten el puente (motor de comandos) y el servidor MCP (agente). */
 export const RUTA_BASE = join(homedir(), ".asistente-prototipo", "asistente.db");
+
+/** Una plantilla que propuso el agente (paso 7: el motor que aprende). */
+export interface PlantillaGuardada {
+  id: number;
+  patron: string;
+  intencion: Intencion;
+  /** La frase del usuario que la originó. */
+  ejemplo: string;
+  estado: "propuesta" | "activa" | "rechazada";
+}
 
 /** Quién resolvió un pedido: el motor de plantillas (sin IA) o el agente. */
 export type Via = "motor" | "agente";
@@ -73,6 +84,16 @@ export class Gastos {
         fecha_ms integer not null,
         via text not null check (via in ('motor', 'agente')),
         intencion text
+      );
+      -- Plantillas que propuso el agente; solo se usan cuando el usuario las acepta.
+      create table if not exists plantillas (
+        id integer primary key,
+        patron text not null unique,
+        intencion text not null,
+        ejemplo text not null,
+        estado text not null check (estado in ('propuesta', 'activa', 'rechazada')),
+        creada_ms integer not null,
+        decidida_ms integer
       );
     `);
   }
@@ -145,6 +166,54 @@ export class Gastos {
     const resumen: Record<Via, number> = { motor: 0, agente: 0 };
     for (const fila of filas) resumen[fila.via] = fila.cantidad;
     return resumen;
+  }
+
+  /** Guarda una propuesta (o la reemplaza si había una pendiente con el mismo patrón). */
+  proponerPlantilla(propuesta: { patron: string; intencion: Intencion; ejemplo: string }, fecha: Date): PlantillaGuardada {
+    const resultado = this.db
+      .prepare(
+        `insert into plantillas (patron, intencion, ejemplo, estado, creada_ms) values (?, ?, ?, 'propuesta', ?)
+         on conflict (patron) do update set intencion = excluded.intencion, ejemplo = excluded.ejemplo,
+           creada_ms = excluded.creada_ms where estado = 'propuesta'
+         returning id`,
+      )
+      .get(propuesta.patron, propuesta.intencion, propuesta.ejemplo, fecha.getTime()) as { id: number } | undefined;
+    // Sin fila: el patrón ya estaba aceptado o rechazado (aprendizaje.ts lo revisa antes).
+    if (!resultado) throw new Error(`La plantilla ya fue decidida: ${propuesta.patron}`);
+    return { id: resultado.id, ...propuesta, estado: "propuesta" };
+  }
+
+  /** El estado de un patrón, si ya fue propuesto alguna vez. */
+  estadoDePlantilla(patron: string): PlantillaGuardada["estado"] | null {
+    const fila = this.db.prepare("select estado from plantillas where patron = ?").get(patron) as
+      | { estado: PlantillaGuardada["estado"] }
+      | undefined;
+    return fila?.estado ?? null;
+  }
+
+  plantillasPropuestas(): PlantillaGuardada[] {
+    return this.db
+      .prepare("select id, patron, intencion, ejemplo, estado from plantillas where estado = 'propuesta' order by id")
+      .all() as unknown as PlantillaGuardada[];
+  }
+
+  /** El usuario acepta o rechaza una propuesta. Devuelve `null` si ya no estaba pendiente. */
+  decidirPlantilla(id: number, aceptar: boolean, fecha: Date): PlantillaGuardada | null {
+    const fila = this.db
+      .prepare(
+        `update plantillas set estado = ?, decidida_ms = ? where id = ? and estado = 'propuesta'
+         returning id, patron, intencion, ejemplo, estado`,
+      )
+      .get(aceptar ? "activa" : "rechazada", fecha.getTime(), id) as PlantillaGuardada | undefined;
+    return fila ?? null;
+  }
+
+  /** Las plantillas aprendidas que el motor usa, en el orden en que se aceptaron. */
+  plantillasActivas(): Plantilla[] {
+    const filas = this.db
+      .prepare("select id, patron, intencion from plantillas where estado = 'activa' order by decidida_ms, id")
+      .all() as { id: number; patron: string; intencion: Intencion }[];
+    return filas.map((f) => ({ id: `aprendida-${f.id}`, patron: f.patron, intencion: f.intencion, origen: "aprendida" }));
   }
 
   cerrar(): void {

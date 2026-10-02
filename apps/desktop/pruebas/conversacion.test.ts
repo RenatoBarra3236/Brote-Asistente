@@ -135,3 +135,32 @@ describe("motor de comandos", () => {
     assert.equal(c.sinIA, false);
   });
 });
+
+describe("motor que aprende", () => {
+  const propuesta = { id: 7, ejemplo: "paque luca y media de micro", accion: "anotar un gasto" };
+
+  test("la propuesta llega tras la respuesta y aceptarla celebra", () => {
+    let c = aplicar(CONVERSACION_INICIAL, { tipo: "mensaje-usuario", texto: propuesta.ejemplo });
+    c = aplicar(c, { tipo: "fin", texto: "Anotado: $1.500 en micro." });
+    c = aplicar(c, { tipo: "propuesta", propuesta });
+    assert.deepEqual(c.propuesta, { ...propuesta, decidiendo: false });
+    assert.equal(c.respuesta, "Anotado: $1.500 en micro.");
+
+    c = aplicar(c, { tipo: "decidiendo", id: 7 });
+    assert.equal(c.propuesta?.decidiendo, true);
+    c = aplicar(c, { tipo: "propuesta-decidida", id: 7, aceptada: true, mensaje: "Listo, aprendí." });
+    assert.equal(c.propuesta, null);
+    assert.equal(c.respuesta, "Listo, aprendí.");
+    assert.equal(c.estado, "listo");
+  });
+
+  test("si la decisión falla, la propuesta sigue pendiente; un mensaje nuevo la descarta", () => {
+    let c = aplicar(CONVERSACION_INICIAL, { tipo: "propuesta", propuesta });
+    c = aplicar(c, { tipo: "decidiendo", id: 7 });
+    c = aplicar(c, { tipo: "decision-fallida", id: 7 });
+    assert.equal(c.propuesta?.decidiendo, false);
+    assert.equal(aplicar(c, { tipo: "propuesta-decidida", id: 99, aceptada: true, mensaje: "x" }), c);
+    c = aplicar(c, { tipo: "mensaje-usuario", texto: "otra cosa" });
+    assert.equal(c.propuesta, null);
+  });
+});

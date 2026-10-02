@@ -106,6 +106,23 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Propuesta del motor que aprende: mismo formato que una aprobación, en verde. */
+.aprobacion.propuesta {
+  background: rgba(98, 214, 138, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(98, 214, 138, 0.35);
+}
+.propuesta .aprobacion-titulo {
+  color: rgb(132, 226, 160);
+}
+.propuesta-detalle {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.85);
+  overflow-wrap: anywhere;
+}
+.propuesta .boton-primario {
+  background: rgb(98, 214, 138);
+}
+
 .aprobacion-botones {
   display: flex;
   justify-content: flex-end;

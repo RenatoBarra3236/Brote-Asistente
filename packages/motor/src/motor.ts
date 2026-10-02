@@ -17,39 +17,80 @@ export interface Resultado {
   texto: string;
 }
 
+/** Lo que el motor entendió de una frase, antes de hacer nada. */
+export type Accion =
+  | { intencion: "registrar-gasto"; monto: number; categoria: Categoria; descripcion: string | null }
+  | { intencion: "consultar-gastos"; periodo: Periodo; categoria?: Categoria }
+  | { intencion: "ultimos-gastos" }
+  | { intencion: "borrar-ultimo-gasto" };
+
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
 /** Periodos ya terminados: "ayer gastaste", no "ayer llevas". */
 const PASADOS = new Set<Periodo>(["ayer", "la semana pasada", "el mes pasado"]);
 
+/** Lo que significa una frase según una plantilla, o `null` si no calza o no se puede interpretar. */
+export function interpretarCon(plantilla: Plantilla, texto: string): Accion | null {
+  const coincidencia = coincidir(plantilla, texto);
+  return coincidencia ? interpretar(plantilla.intencion, coincidencia) : null;
+}
+
+function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia): Accion | null {
+  switch (intencion) {
+    case "registrar-gasto": {
+      const monto = ranuras.monto === undefined ? null : leerMonto(ranuras.monto);
+      if (monto === null) return null;
+      const descripcion = originales.cosa ? sinArticulo(originales.cosa.trim()) || null : null;
+      const categoria = ranuras.cosa ? categoriaDe(normalizar(sinArticulo(ranuras.cosa))) : "otros";
+      return { intencion, monto, categoria, descripcion };
+    }
+    case "consultar-gastos": {
+      const periodo: Periodo | undefined = ranuras.periodo ? FORMAS_DE_PERIODO[ranuras.periodo] : "este mes";
+      const categoria = ranuras.categoria ? NOMBRES_DE_CATEGORIA[ranuras.categoria] : undefined;
+      if (!periodo || (ranuras.categoria && !categoria)) return null;
+      return categoria ? { intencion, periodo, categoria } : { intencion, periodo };
+    }
+    case "ultimos-gastos":
+    case "borrar-ultimo-gasto":
+      return { intencion };
+  }
+}
+
 export class Motor {
   private readonly gastos: Gastos;
-  private readonly plantillas: Plantilla[];
+  private readonly plantillas: () => Plantilla[];
   private readonly reloj: () => Date;
 
-  constructor(gastos: Gastos, opciones: { plantillas?: Plantilla[]; reloj?: () => Date } = {}) {
+  /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
+  constructor(gastos: Gastos, opciones: { plantillas?: Plantilla[] | (() => Plantilla[]); reloj?: () => Date } = {}) {
     this.gastos = gastos;
-    this.plantillas = opciones.plantillas ?? PLANTILLAS_BASE;
+    const plantillas = opciones.plantillas ?? PLANTILLAS_BASE;
+    this.plantillas = typeof plantillas === "function" ? plantillas : () => plantillas;
     this.reloj = opciones.reloj ?? (() => new Date());
   }
 
-  resolver(texto: string): Resultado | null {
-    for (const plantilla of this.plantillas) {
-      const coincidencia = coincidir(plantilla, texto);
-      if (!coincidencia) continue;
-      const respuesta = this.ejecutar(plantilla.intencion, coincidencia);
-      if (respuesta !== null) return { intencion: plantilla.intencion, plantilla: plantilla.id, texto: respuesta };
+  /** Qué haría el motor con una frase, sin hacerlo. */
+  entender(texto: string): { plantilla: Plantilla; accion: Accion } | null {
+    for (const plantilla of this.plantillas()) {
+      const accion = interpretarCon(plantilla, texto);
+      if (accion) return { plantilla, accion };
     }
     return null;
   }
 
-  /** La respuesta, o `null` si lo capturado no tiene sentido (por ejemplo, un monto que no es monto). */
-  private ejecutar(intencion: Intencion, { ranuras, originales }: Coincidencia): string | null {
-    switch (intencion) {
+  resolver(texto: string): Resultado | null {
+    const entendido = this.entender(texto);
+    if (!entendido) return null;
+    const { plantilla, accion } = entendido;
+    return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  private ejecutar(accion: Accion): string {
+    switch (accion.intencion) {
       case "registrar-gasto":
-        return this.registrar(ranuras.monto, ranuras.cosa, originales.cosa);
+        return this.registrar(accion.monto, accion.categoria, accion.descripcion);
       case "consultar-gastos":
-        return this.consultar(ranuras.periodo, ranuras.categoria);
+        return this.consultar(accion.periodo, accion.categoria);
       case "ultimos-gastos":
         return this.listarUltimos();
       case "borrar-ultimo-gasto":
@@ -57,24 +98,15 @@ export class Motor {
     }
   }
 
-  private registrar(montoTexto?: string, cosa?: string, cosaOriginal?: string): string | null {
-    const monto = montoTexto === undefined ? null : leerMonto(montoTexto);
-    if (monto === null) return null;
-    const descripcion = cosaOriginal ? sinArticulo(cosaOriginal.trim()) : null;
-    const categoria = cosa ? categoriaDe(normalizar(sinArticulo(cosa))) : "otros";
+  private registrar(monto: number, categoria: Categoria, descripcion: string | null): string {
     const ahora = this.reloj();
     this.gastos.agregar({ monto, categoria, descripcion, fecha: ahora });
-
     const mes = this.gastos.total(rangoDe("este mes", ahora));
     const que = descripcion ? ` en ${descripcion}` : "";
     return `Anotado: ${formatearMonto(monto)}${que} (${categoria}). Este mes llevas ${formatearMonto(mes.total)}.`;
   }
 
-  private consultar(periodoTexto?: string, categoriaTexto?: string): string | null {
-    const periodo: Periodo = periodoTexto ? FORMAS_DE_PERIODO[periodoTexto] : "este mes";
-    const categoria: Categoria | undefined = categoriaTexto ? NOMBRES_DE_CATEGORIA[categoriaTexto] : undefined;
-    if (!periodo || (categoriaTexto && !categoria)) return null;
-
+  private consultar(periodo: Periodo, categoria?: Categoria): string {
     const { total, cantidad } = this.gastos.total(rangoDe(periodo, this.reloj()), categoria);
     const enCategoria = categoria ? ` en ${categoria}` : "";
     if (cantidad === 0) return `${capitalizar(periodo)} no tienes gastos anotados${enCategoria}.`;

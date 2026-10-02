@@ -9,6 +9,7 @@ const PALABRAS: Record<Exclude<Categoria, "otros">, string[]> = {
   comida: [
     "almuerzo", "desayuno", "once", "cena", "comida", "cafe", "completo", "sushi", "pizza", "colacion",
     "snack", "bebida", "super", "supermercado", "pan", "empanada", "hamburguesa", "fruta", "galleta", "jugo",
+    "chicle", "dulce", "golosina", "chocolate", "helado", "papas", "sopaipilla", "mote", "te",
   ],
   transporte: [
     "micro", "metro", "bip", "uber", "didi", "cabify", "taxi", "colectivo", "bencina", "pasaje", "bus",

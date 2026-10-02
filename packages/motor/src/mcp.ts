@@ -5,12 +5,19 @@
 // Registro en OpenClaw (una vez):
 //   openclaw mcp add gastos --command node --arg <ruta del repo>/packages/motor/src/mcp.ts
 //
+// Cuándo usar estas herramientas y cuándo proponer plantillas lo explica la skill
+// (packages/motor/skill/gastos/SKILL.md), no los resultados de las herramientas: una
+// instrucción dentro de un resultado se parece a una inyección y el agente hace bien en ignorarla.
+//
 // No incluye borrar: el agente puede anotar y leer, pero borrar queda en manos del usuario
 // ("borra el último gasto" lo resuelve el motor, sin IA).
 
 import { createInterface } from "node:readline";
+import { proponerPlantilla } from "./aprendizaje.ts";
 import { CATEGORIAS, categoriaDe, type Categoria } from "./categorias.ts";
 import { Gastos, RUTA_BASE } from "./gastos.ts";
+import { Motor } from "./motor.ts";
+import { PLANTILLAS_BASE } from "./plantillas.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
@@ -23,7 +30,9 @@ const HERRAMIENTAS = [
     name: "gastos_anotar",
     description:
       "Anota un gasto del usuario en pesos chilenos (CLP, sin decimales). En Chile 1 luca = 1.000 pesos y " +
-      "1 palo = 1.000.000. Si no se indica la categoría, se deduce de la descripción. La fecha por defecto es hoy.",
+      "1 palo = 1.000.000. Si no se indica la categoría, se deduce de la descripción. La fecha por defecto es hoy. " +
+      "Antes de usar las herramientas de gastos, invoca la skill «gastos» (tiene las instrucciones del usuario " +
+      "para este servidor, incluido cómo enseñar al motor del personaje).",
     inputSchema: {
       type: "object",
       properties: {
@@ -66,9 +75,38 @@ const HERRAMIENTAS = [
     },
     annotations: { title: "Resumen de gastos", readOnlyHint: true },
   },
+  {
+    name: "motor_proponer_plantilla",
+    description:
+      "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
+      "Úsala UNA vez, justo después de resolver con gastos_anotar, gastos_resumen o gastos_listar un mensaje " +
+      "del usuario que era un comando simple (no una conversación). El usuario decide en la isla si la acepta.\n" +
+      "Formato (en minúsculas y sin tildes): palabra = debe aparecer tal cual; [a b] = opcional; " +
+      "[a|b] = opcional, una de varias; (a|b c) = una de varias; ranuras {monto}, {cosa}, {periodo}, {categoria}. " +
+      "Periodos válidos: hoy, ayer, esta semana, la semana pasada, este mes, el mes pasado, este ano. " +
+      `Categorías: ${CATEGORIAS.join(", ")}.\n` +
+      "Ejemplo: para «paque luca y media de micro» → patron «(pague|paque|pago) {monto} (de|en) {cosa}», " +
+      "intencion «registrar-gasto». Incluye la variante con error de tipeo si la hubo. Si la herramienta " +
+      "rechaza la propuesta, puedes corregirla una vez según el motivo; si no, déjalo.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ejemplo: { type: "string", maxLength: 300, description: "El mensaje del usuario, textual" },
+        patron: { type: "string", maxLength: 300 },
+        intencion: {
+          type: "string",
+          enum: ["registrar-gasto", "consultar-gastos", "ultimos-gastos", "borrar-ultimo-gasto"],
+        },
+      },
+      required: ["ejemplo", "patron", "intencion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Proponer plantilla", readOnlyHint: false, destructiveHint: false },
+  },
 ];
 
 class ErrorDeUso extends Error {}
+
 
 function leerFecha(texto: unknown, nombre: string): Date | undefined {
   if (texto === undefined) return undefined;
@@ -111,7 +149,10 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       const gasto = gastos.agregar({ monto, categoria, descripcion, fecha });
       const mes = gastos.total(rangoDe("este mes", ahora));
       const que = descripcion ? ` en ${descripcion}` : "";
-      return `Anotado (id ${gasto.id}): ${formatearMonto(monto)}${que} (${categoria}) el ${fechaIso(fecha)}. Este mes van ${formatearMonto(mes.total)}.`;
+      return (
+        `Anotado (id ${gasto.id}): ${formatearMonto(monto)}${que} (${categoria}) el ${fechaIso(fecha)}. ` +
+        `Este mes van ${formatearMonto(mes.total)}.`
+      );
     }
     case "gastos_listar": {
       const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 100) : 20;
@@ -136,6 +177,15 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         cantidad,
         porCategoria: gastos.porCategoria(rango),
       });
+    }
+    case "motor_proponer_plantilla": {
+      if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {
+        throw new ErrorDeUso("Faltan «patron», «ejemplo» o «intencion»");
+      }
+      const motor = new Motor(gastos, { plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()] });
+      const revision = proponerPlantilla(gastos, motor, args, new Date());
+      if (!revision.ok) throw new ErrorDeUso(`Propuesta rechazada: ${revision.motivo}`);
+      return "Propuesta guardada. Al terminar tu respuesta, el usuario decidirá en la isla si la aprendo.";
     }
     default:
       throw new ErrorDeUso(`Herramienta desconocida: ${nombre}`);

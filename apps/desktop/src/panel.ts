@@ -31,11 +31,16 @@ export class Panel {
   private readonly aprobacionDetalle: HTMLElement;
   private readonly permitir: HTMLButtonElement;
   private readonly rechazar: HTMLButtonElement;
+  private readonly propuesta: HTMLDivElement;
+  private readonly propuestaDetalle: HTMLParagraphElement;
+  private readonly aprender: HTMLButtonElement;
+  private readonly noAprender: HTMLButtonElement;
   private readonly entrada: HTMLInputElement;
   private readonly enviar: HTMLButtonElement;
   private visible = false;
   private leerHasta = 0;
   private terminadaAntes = false;
+  private respuestaAntes = "";
   /** Sin conexión con OpenClaw, el campo lo dice (los gastos funcionan igual). */
   private sinConexion: string | null = null;
 
@@ -78,7 +83,21 @@ export class Panel {
     this.enviar.setAttribute("aria-label", "Enviar");
     formulario.append(this.entrada, this.enviar);
 
-    this.raiz.append(this.burbuja, this.aprobacion, formulario);
+    this.propuesta = crear("div", "aprobacion propuesta");
+    const propuestaTitulo = crear("p", "aprobacion-titulo");
+    propuestaTitulo.textContent = "¿Aprendo a entender esto sin IA?";
+    this.propuestaDetalle = crear("p", "propuesta-detalle");
+    const botonesPropuesta = crear("div", "aprobacion-botones");
+    this.noAprender = crear("button", "boton");
+    this.noAprender.type = "button";
+    this.noAprender.textContent = "No";
+    this.aprender = crear("button", "boton boton-primario");
+    this.aprender.type = "button";
+    this.aprender.textContent = "Sí, aprende";
+    botonesPropuesta.append(this.noAprender, this.aprender);
+    this.propuesta.append(propuestaTitulo, this.propuestaDetalle, botonesPropuesta);
+
+    this.raiz.append(this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -99,6 +118,8 @@ export class Panel {
     });
     this.permitir.addEventListener("click", () => void this.agente.responder("allow-once"));
     this.rechazar.addEventListener("click", () => void this.agente.responder("deny"));
+    this.aprender.addEventListener("click", () => void this.agente.decidirPropuesta(true));
+    this.noAprender.addEventListener("click", () => void this.agente.decidirPropuesta(false));
 
     agente.alCambiar((c) => this.mostrar(c));
     this.mostrar(agente.conversacion);
@@ -106,7 +127,8 @@ export class Panel {
 
   /** La isla no debe cerrarse: hay texto escrito, un permiso pendiente o una respuesta por leer. */
   retieneIsla(ahora: number): boolean {
-    return this.entrada.value.trim() !== "" || this.agente.conversacion.aprobacion !== null || ahora < this.leerHasta;
+    const c = this.agente.conversacion;
+    return this.entrada.value.trim() !== "" || c.aprobacion !== null || c.propuesta !== null || ahora < this.leerHasta;
   }
 
   /** Alto que necesita el contenido, para que la isla crezca lo justo. */
@@ -164,12 +186,22 @@ export class Panel {
       this.rechazar.disabled = ap.respondiendo || !ap.decisiones.includes("deny");
     }
 
-    if (c.terminada && !this.terminadaAntes) {
+    const pr = c.propuesta;
+    this.propuesta.hidden = !pr;
+    if (pr) {
+      this.propuestaDetalle.textContent = `«${pr.ejemplo}» → ${pr.accion}`;
+      this.aprender.disabled = pr.decidiendo;
+      this.noAprender.disabled = pr.decidiendo;
+    }
+
+    // Una respuesta nueva (o el mensaje tras decidir una propuesta) da tiempo para leerla.
+    if (c.terminada && (!this.terminadaAntes || c.respuesta !== this.respuestaAntes)) {
       const largo = (c.error ?? c.respuesta).length;
       const ms = Math.min(LECTURA_MAX, Math.max(LECTURA_MIN, 2500 + largo * LECTURA_POR_LETRA));
       this.leerHasta = performance.now() + ms;
     }
     this.terminadaAntes = c.terminada;
+    this.respuestaAntes = c.respuesta;
 
     this.actualizarEntrada();
   }

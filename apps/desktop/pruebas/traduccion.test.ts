@@ -4,10 +4,14 @@ import { describirAprobacion, etiquetaHerramienta, traducir } from "../src/agent
 import { leerEjemplo } from "./ayuda.ts";
 
 describe("traducir", () => {
-  test("los eventos `chat` y los ajenos al agente no cambian nada", () => {
+  test("de los eventos `chat` solo cuenta el final, igual al texto del agente; los ajenos no cambian nada", () => {
     for (const nombre of ["respuesta-simple", "respuesta-con-herramienta", "aprobacion-permitida"]) {
-      for (const marco of leerEjemplo(nombre).filter((m) => m.event === "chat")) {
-        assert.equal(traducir(marco), null);
+      const ejemplo = leerEjemplo(nombre);
+      const finAgente = ejemplo.map(traducir).filter((s) => s?.tipo === "fin").at(-1);
+      for (const marco of ejemplo.filter((m) => m.event === "chat")) {
+        const suceso = traducir(marco);
+        if (marco.payload?.state === "final") assert.deepEqual(suceso, finAgente);
+        else assert.equal(suceso, null);
       }
     }
     assert.equal(traducir({ event: "tick", payload: {} }), null);
@@ -139,5 +143,19 @@ describe("describirAprobacion", () => {
       titulo: "¿Modifico este archivo?",
       detalle: "/tmp/a.md",
     });
+  });
+});
+
+describe("comandos de OpenClaw", () => {
+  test("un comando que responde solo por `chat` termina el turno", () => {
+    // Así respondió "/new" sin permiso de administrador: sin eventos `agent`.
+    const marco = {
+      event: "chat",
+      payload: {
+        state: "final",
+        message: { role: "assistant", content: [{ type: "text", text: "⚠️ You are not authorized to reset this session." }] },
+      },
+    };
+    assert.deepEqual(traducir(marco), { tipo: "fin", texto: "⚠️ You are not authorized to reset this session." });
   });
 });

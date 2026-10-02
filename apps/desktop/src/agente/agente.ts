@@ -21,15 +21,34 @@ export class Agente {
   /** Empieza a recibir eventos del transporte. */
   conectar(): void {
     if (this.dejarDeEscuchar) return;
-    this.dejarDeEscuchar = this.transporte.escuchar((marco) => {
+    const dejarEventos = this.transporte.escuchar((marco) => {
       const suceso = traducir(marco);
       if (suceso) this.aplicar(suceso);
     });
+    const dejarPropuestas = this.transporte.alProponer?.((propuesta) => this.aplicar({ tipo: "propuesta", propuesta }));
+    this.dejarDeEscuchar = () => {
+      dejarEventos();
+      dejarPropuestas?.();
+    };
   }
 
   desconectar(): void {
     this.dejarDeEscuchar?.();
     this.dejarDeEscuchar = null;
+  }
+
+  /** Acepta o rechaza la plantilla propuesta. Si falla, la deja pendiente para volver a intentarlo. */
+  async decidirPropuesta(aceptar: boolean): Promise<void> {
+    const propuesta = this.actual.propuesta;
+    if (!propuesta || propuesta.decidiendo || !this.transporte.decidirPlantilla) return;
+    this.aplicar({ tipo: "decidiendo", id: propuesta.id });
+    try {
+      const mensaje = await this.transporte.decidirPlantilla(propuesta.id, aceptar);
+      this.aplicar({ tipo: "propuesta-decidida", id: propuesta.id, aceptada: aceptar, mensaje });
+    } catch (error) {
+      console.error(`No pude responder la propuesta: ${mensajeDe(error)}`);
+      this.aplicar({ tipo: "decision-fallida", id: propuesta.id });
+    }
   }
 
   /** Avisa cada vez que cambia la conversación. Devuelve la función para dejar de escuchar. */

@@ -38,6 +38,8 @@ export interface Transporte {
   resolverAprobacion(id: string, kind: string, decision: Decision): Promise<void>;
   /** Escucha los eventos que llegan. Devuelve la función para dejar de escuchar. */
   escuchar(oyente: (marco: Marco) => void): () => void;
+  /** Corta el turno en curso del agente (en el Gateway real, `chat.abort`). */
+  detener?(runId?: string): Promise<void>;
   /** Avisa cuando el motor que aprende tiene una propuesta (solo el transporte real). */
   alProponer?(oyente: (propuesta: Propuesta) => void): () => void;
   /** Acepta o rechaza una propuesta. Devuelve el mensaje para mostrar. */

@@ -53,6 +53,6 @@ Monorepo con pnpm. Cada pieza se crea en su paso del plan:
 - [x] Paso 5: personaje conectado al agente (habla con OpenClaw a través de un puente Node; `ASISTENTE_SIMULADO=1` usa el simulador)
 - [x] Paso 6: motor de comandos y skill de gastos (`pnpm --dir packages/motor test`; skill: `openclaw mcp add gastos --command node --arg <repo>/packages/motor/src/mcp.ts`)
 - [x] Paso 7: motor que aprende (el agente resuelve, el motor deduce la plantilla y el usuario la confirma en la isla)
-- [ ] Paso 8: continuidad y memoria
+- [x] Paso 8: continuidad y memoria (memoria de OpenClaw con embeddings locales; el celular llega con la app propia)
 - [ ] Paso 9: lo que sé de ti
 - [ ] Paso 10: pulido y demo

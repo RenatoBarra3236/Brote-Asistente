@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "spike": "node src/spike.ts",
-    "puente": "node src/puente.ts"
+    "puente": "node src/puente.ts",
+    "test": "node --test \"pruebas/*.test.ts\""
   },
   "dependencies": {
     "@asistente/motor": "workspace:*",

@@ -4,14 +4,23 @@ import { CONVERSACION_INICIAL, aplicar, ocupado, type Conversacion, type SucesoL
 import { traducir, type Suceso } from "./traduccion.ts";
 import type { Decision, Transporte } from "./transporte.ts";
 
+/** Cuánto silencio del agente se tolera mientras trabaja, sin contar la espera de un permiso. */
+const SILENCIO_MAXIMO_MS = 120_000;
+
 export class Agente {
   private readonly transporte: Transporte;
+  private readonly silencioMaximoMs: number;
+  private readonly reloj: () => number;
   private actual: Conversacion = CONVERSACION_INICIAL;
   private readonly oyentes = new Set<(c: Conversacion) => void>();
   private dejarDeEscuchar: (() => void) | null = null;
+  /** La última señal del agente (un evento) o del usuario (un envío): mide el silencio. */
+  private ultimaSenal = 0;
 
-  constructor(transporte: Transporte) {
+  constructor(transporte: Transporte, opciones: { silencioMaximoMs?: number; reloj?: () => number } = {}) {
     this.transporte = transporte;
+    this.silencioMaximoMs = opciones.silencioMaximoMs ?? SILENCIO_MAXIMO_MS;
+    this.reloj = opciones.reloj ?? (() => Date.now());
   }
 
   get conversacion(): Conversacion {
@@ -22,14 +31,47 @@ export class Agente {
   conectar(): void {
     if (this.dejarDeEscuchar) return;
     const dejarEventos = this.transporte.escuchar((marco) => {
+      this.ultimaSenal = this.reloj();
       const suceso = traducir(marco);
       if (suceso) this.aplicar(suceso);
     });
     const dejarPropuestas = this.transporte.alProponer?.((propuesta) => this.aplicar({ tipo: "propuesta", propuesta }));
+    const vigilante = setInterval(() => this.revisarSilencio(), 5_000);
+    // Que el vigilante no mantenga vivo a Node en las pruebas.
+    (vigilante as { unref?: () => void }).unref?.();
     this.dejarDeEscuchar = () => {
       dejarEventos();
       dejarPropuestas?.();
+      clearInterval(vigilante);
     };
+  }
+
+  /**
+   * Si el agente trabaja pero lleva demasiado rato sin dar señales (por ejemplo, OpenClaw
+   * reintenta un modelo caído), corta la espera para que la isla no quede pegada.
+   */
+  revisarSilencio(): void {
+    const c = this.actual;
+    if (!ocupado(c) || c.aprobacion) return;
+    if (this.reloj() - this.ultimaSenal < this.silencioMaximoMs) return;
+    const minutos = Math.round(this.silencioMaximoMs / 60_000);
+    this.aplicar({
+      tipo: "error",
+      mensaje: `OpenClaw no da señales hace ${minutos} min, así que dejé de esperar. Revisa que esté funcionando.`,
+    });
+    this.transporte.detener?.(c.runId ?? undefined).catch(() => {});
+  }
+
+  /** Corta el turno en curso. La isla se libera al tiro, aunque OpenClaw tarde en confirmarlo. */
+  async detener(): Promise<void> {
+    const c = this.actual;
+    if (!ocupado(c)) return;
+    this.aplicar({ tipo: "detenido" });
+    try {
+      await this.transporte.detener?.(c.runId ?? undefined);
+    } catch (error) {
+      console.error(`No pude detener al agente: ${mensajeDe(error)}`);
+    }
   }
 
   desconectar(): void {
@@ -62,6 +104,7 @@ export class Agente {
     const limpio = texto.trim();
     if (!limpio || ocupado(this.actual)) return false;
     this.aplicar({ tipo: "mensaje-usuario", texto: limpio });
+    this.ultimaSenal = this.reloj();
     try {
       const resultado = await this.transporte.enviar(limpio);
       if (resultado?.local) this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });

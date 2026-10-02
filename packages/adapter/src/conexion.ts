@@ -38,7 +38,10 @@ export function crearCliente(avisos: Avisos): { cliente: GatewayClient; url: str
     platform: process.platform,
     mode: "ui",
     role: "operator",
-    scopes: ["operator.read", "operator.write", "operator.approvals"],
+    // `operator.admin` hace falta para que OpenClaw entregue las solicitudes de permiso de las
+    // herramientas nativas de Claude Code (Read, Bash…): solo las ven clientes administradores.
+    // Sin él, con el TUI cerrado, OpenClaw las niega al instante ("no-approval-route").
+    scopes: ["operator.read", "operator.write", "operator.approvals", "operator.admin"],
     caps: [
       GATEWAY_CLIENT_CAPS.TOOL_EVENTS,
       GATEWAY_CLIENT_CAPS.APPROVALS,
@@ -65,6 +68,11 @@ export async function suscribirseALaSesion(cliente: GatewayClient): Promise<void
 
 export function enviarMensaje(cliente: GatewayClient, texto: string): Promise<unknown> {
   return cliente.request("chat.send", { sessionKey: SESION, message: texto, idempotencyKey: randomUUID() });
+}
+
+/** Corta el turno en curso del agente (o uno en particular, con `runId`). */
+export function detenerTurno(cliente: GatewayClient, runId?: string): Promise<unknown> {
+  return cliente.request("chat.abort", { sessionKey: SESION, agentId: AGENTE, ...(runId ? { runId } : {}) });
 }
 
 export function resolverAprobacion(cliente: GatewayClient, id: string, kind: string, decision: Decision): Promise<unknown> {

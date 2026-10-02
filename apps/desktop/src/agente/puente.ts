@@ -71,6 +71,10 @@ export class TransportePuente implements Transporte {
     return () => this.oyentesPropuesta.delete(oyente);
   }
 
+  async detener(runId?: string): Promise<void> {
+    await this.pedir(runId ? { tipo: "detener", runId } : { tipo: "detener" });
+  }
+
   async decidirPlantilla(id: number, aceptar: boolean): Promise<string> {
     const { mensaje } = await this.pedir({ tipo: "decidir-plantilla", plantilla: id, aceptar });
     return mensaje ?? (aceptar ? "Listo, la aprendí." : "Ok, no la aprendo.");

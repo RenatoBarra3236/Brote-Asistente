@@ -120,6 +120,18 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
         aprobacion: null,
       };
 
+    case "detenido":
+      // Puede llegar dos veces (la isla lo marca al tiro y después confirma el Gateway).
+      if (c.terminada) return c;
+      return {
+        ...c,
+        estado: "reposo",
+        terminada: true,
+        herramienta: null,
+        aprobacion: null,
+        respuesta: c.respuesta || "Ok, lo dejé ahí. ✋",
+      };
+
     case "error":
       return { ...c, estado: "error", error: suceso.mensaje, terminada: true, herramienta: null, aprobacion: null };
 

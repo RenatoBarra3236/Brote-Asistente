@@ -25,6 +25,7 @@ export type Suceso =
   | { tipo: "aprobacion"; aprobacion: Aprobacion }
   | { tipo: "aprobacion-fin"; id: string; resultado: string }
   | { tipo: "fin"; texto?: string }
+  | { tipo: "detenido" }
   | { tipo: "error"; mensaje: string };
 
 const DECISIONES: readonly Decision[] = ["allow-once", "allow-always", "deny"];
@@ -50,6 +51,9 @@ export function traducir(marco: Marco): Suceso | null {
       // `chat` repite el flujo del agente resumido; solo interesa su cierre. Los comandos de
       // OpenClaw (por ejemplo "/new") responden únicamente con este `final`, sin eventos `agent`:
       // sin esto la isla se quedaría en "pensando".
+      // Si el turno falla o se cancela, también llega solo por aquí (por ejemplo, un 401 del modelo).
+      if (payload?.state === "error") return { tipo: "error", mensaje: mensajeDeError({ message: payload.errorMessage }) };
+      if (payload?.state === "aborted") return { tipo: "detenido" };
       if (payload?.state !== "final") return null;
       const texto = textoDeContenido(payload.message?.content);
       return texto ? { tipo: "fin", texto } : { tipo: "fin" };

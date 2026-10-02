@@ -102,6 +102,11 @@ export class Panel {
 
     formulario.addEventListener("submit", (evento) => {
       evento.preventDefault();
+      // Mientras el agente trabaja, el mismo botón lo detiene.
+      if (ocupado(this.agente.conversacion)) {
+        void this.agente.detener();
+        return;
+      }
       const texto = this.entrada.value;
       void this.agente.enviar(texto).then((enviado) => {
         if (enviado && this.entrada.value === texto) this.entrada.value = "";
@@ -222,8 +227,12 @@ export class Panel {
   }
 
   private actualizarBotonEnviar(): void {
-    this.enviar.disabled =
-      this.entrada.value.trim() === "" || ocupado(this.agente.conversacion);
+    const trabajando = ocupado(this.agente.conversacion);
+    this.enviar.textContent = trabajando ? "■" : "↑";
+    this.enviar.setAttribute("aria-label", trabajando ? "Detener" : "Enviar");
+    this.enviar.title = trabajando ? "Detener a Brote" : "";
+    this.enviar.classList.toggle("detener", trabajando);
+    this.enviar.disabled = !trabajando && this.entrada.value.trim() === "";
   }
 }
 

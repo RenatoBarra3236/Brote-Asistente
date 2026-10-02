@@ -153,6 +153,12 @@ body {
   filter: brightness(1.15);
 }
 
+/* Mientras Brote trabaja, el botón de enviar sirve para detenerlo. */
+.boton-enviar.detener {
+  background: rgb(255, 99, 99);
+  color: #fff;
+}
+
 .boton:disabled,
 .boton-enviar:disabled {
   opacity: 0.4;

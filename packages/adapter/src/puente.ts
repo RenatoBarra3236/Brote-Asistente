@@ -14,6 +14,7 @@
 //
 // Pedido para responder una propuesta del motor que aprende:
 //   { "id": "3", "tipo": "decidir-plantilla", "plantilla": 3, "aceptar": true }   → respuesta con "mensaje"
+//   { "id": "4", "tipo": "detener", "runId": "…" }   corta el turno del agente (runId opcional)
 //
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
@@ -32,7 +33,16 @@ import {
   porcentajeSinIA,
   proponerPlantilla,
 } from "@asistente/motor";
-import { type Decision, SESION, crearCliente, enviarMensaje, resolverAprobacion, suscribirseALaSesion } from "./conexion.ts";
+import {
+  type Decision,
+  SESION,
+  crearCliente,
+  detenerTurno,
+  enviarMensaje,
+  resolverAprobacion,
+  suscribirseALaSesion,
+} from "./conexion.ts";
+import { esDeMemoria } from "./permisos.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
 const IGNORADOS = new Set(["tick", "health", "presence", "heartbeat", "cron"]);
@@ -48,6 +58,19 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__gastos_listar",
   "mcp__gastos__gastos_resumen",
 ]);
+
+let renovacion: ReturnType<typeof setTimeout> | undefined;
+
+/** Vuelve a suscribirse a la sesión (agrupa los avisos seguidos en una sola renovación). */
+function renovarSuscripcion(cliente: Parameters<typeof suscribirseALaSesion>[0]): void {
+  clearTimeout(renovacion);
+  renovacion = setTimeout(() => {
+    suscribirseALaSesion(cliente).then(
+      () => registrar("suscripción renovada"),
+      (error) => registrar(`no se pudo renovar la suscripción: ${mensajeDe(error)}`),
+    );
+  }, 500);
+}
 
 const gastos = new Gastos(RUTA_BASE);
 // Las plantillas aprendidas se leen en cada mensaje: una recién aceptada sirve al tiro.
@@ -136,6 +159,9 @@ const cliente = (() => {
       },
       onEvent: (marco: any) => {
         if (IGNORADOS.has(marco?.event)) return;
+        // Tras un "/reset" la sesión cambia de id y las solicitudes de permiso dejan de llegar a
+        // una suscripción vieja (sin nadie que responda, OpenClaw las deniega): hay que renovarla.
+        if (marco.event === "sessions.changed") renovarSuscripcion(cliente);
         const reenviar = () =>
           avisar({ tipo: "evento", marco: { event: marco.event, payload: marco.payload, seq: marco.seq } });
         const aprobacion = marco.event === "session.approval" && marco.payload?.phase === "pending" ? marco.payload.approval : null;
@@ -153,7 +179,7 @@ const cliente = (() => {
           if (String(datos.name ?? "").endsWith("gastos_anotar")) recordarAnotacion(datos.args);
         }
         if (
-          PERMITIDAS_SIN_PREGUNTAR.has(herramienta) &&
+          (PERMITIDAS_SIN_PREGUNTAR.has(herramienta) || esDeMemoria(herramienta, aprobacion?.presentation?.detail)) &&
           aprobacion.presentation.allowedDecisions?.includes("allow-once")
         ) {
           // La isla no ve la solicitud; si permitirla falla, se la muestra para que decida el usuario.
@@ -223,6 +249,11 @@ async function atender(pedido: any): Promise<Extra> {
   ) {
     if (!cliente) throw new Error("OpenClaw no está conectado");
     await resolverAprobacion(cliente, pedido.aprobacion, pedido.kind, pedido.decision);
+    return {};
+  }
+  if (pedido?.tipo === "detener") {
+    if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
+    await detenerTurno(cliente, typeof pedido.runId === "string" ? pedido.runId : undefined);
     return {};
   }
   if (pedido?.tipo === "decidir-plantilla" && Number.isInteger(pedido.plantilla) && typeof pedido.aceptar === "boolean") {

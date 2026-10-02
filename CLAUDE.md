@@ -25,6 +25,7 @@ Personaje animado que vive en el PC (y más adelante en el celular y en su "casa
 - OpenClaw usa el runtime `claude-cli` (Claude Code del usuario, cuenta Pro) con `anthropic/claude-sonnet-5-5`. Nunca usar el método `setup-token`.
 - Política de comandos: `openclaw exec-policy preset cautious`. Por defecto OpenClaw ejecuta todo sin preguntar.
 - Sin identidad de dispositivo el Gateway solo da `operator.read`. La identidad está en `~/.asistente-prototipo/dispositivo.json` (`packages/adapter/src/identidad.ts`).
+- Eventos reales grabados del Gateway (anonimizados, uno por línea, tal como llegan a `onEvent`) en `packages/adapter/ejemplos/`: respuesta simple, respuesta con herramienta y aprobación permitida. Sirven para pruebas sin OpenClaw.
 - Las aprobaciones llegan como `session.approval` solo con `sessions.messages.subscribe` + `includeApprovals: true`; se responden con `approval.resolve { id, kind, decision }`.
 - Transparencia en macOS: `macOSPrivateApi: true` en `tauri.conf.json` + feature `macos-private-api` en Cargo.
 - Notch en macOS (`src-tauri/src/notch.rs`): la ventana se convierte en una subclase de `NSPanel` no activadora (`PersonajePanel`), nivel 27, `collectionBehavior` de todos los escritorios + pantalla completa, y la app usa `ActivationPolicy::Accessory`. Sin el panel no aparece sobre apps en pantalla completa. Los clics atraviesan la ventana salvo sobre la isla (`setIgnoreCursorEvents` cada 50 ms).

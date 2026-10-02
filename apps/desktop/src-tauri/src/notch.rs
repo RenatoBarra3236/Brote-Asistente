@@ -1,7 +1,9 @@
 //! macOS: medir el notch y subir la ventana del personaje por encima de la barra de menú.
 
-use objc2::msg_send;
-use objc2::runtime::{AnyClass, AnyObject, Sel};
+use std::sync::OnceLock;
+
+use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+use objc2::{msg_send, sel};
 use objc2_foundation::NSRect;
 
 pub struct PantallaPrincipal {
@@ -49,14 +51,46 @@ pub unsafe fn pantalla_principal() -> Option<PantallaPrincipal> {
     Some(PantallaPrincipal { marco, notch, alto_barra })
 }
 
-/// Pone la ventana sobre la barra de menú, visible en todos los escritorios y sobre apps
-/// a pantalla completa, y la ubica en `marco`. Debe llamarse en el hilo principal.
+/// Subclase de NSPanel creada en tiempo de ejecución. Solo un panel "no activador" puede
+/// aparecer sobre apps de otros en pantalla completa (así lo hacen Coucou y las apps de notch).
+fn clase_panel() -> &'static AnyClass {
+    static CLASE: OnceLock<&'static AnyClass> = OnceLock::new();
+    CLASE.get_or_init(|| {
+        extern "C-unwind" fn si(_: &AnyObject, _: Sel) -> Bool {
+            Bool::YES
+        }
+        extern "C-unwind" fn no(_: &AnyObject, _: Sel) -> Bool {
+            Bool::NO
+        }
+        let padre = AnyClass::get(c"NSPanel").expect("NSPanel no existe");
+        let mut clase = ClassBuilder::new(c"PersonajePanel", padre).expect("no se pudo crear PersonajePanel");
+        unsafe {
+            // Puede recibir teclado (para escribirle al agente) sin volverse ventana principal.
+            clase.add_method(sel!(canBecomeKeyWindow), si as extern "C-unwind" fn(_, _) -> _);
+            clase.add_method(sel!(canBecomeMainWindow), no as extern "C-unwind" fn(_, _) -> _);
+        }
+        clase.register()
+    })
+}
+
+/// Convierte la ventana en panel, la pone sobre la barra de menú, visible en todos los
+/// escritorios y sobre apps a pantalla completa, y la ubica en `marco`. Hilo principal.
 pub unsafe fn subir_sobre_la_barra(ns_window: *mut std::ffi::c_void, marco: NSRect) {
     let ventana = &*(ns_window as *mut AnyObject);
+    AnyObject::set_class(ventana, clase_panel());
+
+    // Panel que no activa la app al hacer clic (NSWindowStyleMaskNonactivatingPanel).
+    let estilo: usize = msg_send![ventana, styleMask];
+    let _: () = msg_send![ventana, setStyleMask: estilo | (1 << 7)];
+    // Los paneles se esconden por defecto cuando la app no está activa; esta nunca lo está.
+    let _: () = msg_send![ventana, setHidesOnDeactivate: false];
+    let _: () = msg_send![ventana, setFloatingPanel: true];
+    let _: () = msg_send![ventana, setBecomesKeyOnlyIfNeeded: true];
     // Por encima de la barra de menú (nivel 24), como hace OC-Claw.
     let _: () = msg_send![ventana, setLevel: 27isize];
     // En todos los escritorios · fija · fuera del ciclo de ventanas · sobre pantalla completa.
     let comportamiento: usize = (1 << 0) | (1 << 4) | (1 << 6) | (1 << 8);
     let _: () = msg_send![ventana, setCollectionBehavior: comportamiento];
     let _: () = msg_send![ventana, setFrame: marco, display: true];
+    let _: () = msg_send![ventana, orderFrontRegardless];
 }

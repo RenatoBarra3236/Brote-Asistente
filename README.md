@@ -49,7 +49,7 @@ Monorepo con pnpm. Cada pieza se crea en su paso del plan:
 - [x] Paso 1: preparar el entorno
 - [x] Paso 2: estudiar las referencias ([resumen](docs/referencias-tecnicas.md))
 - [x] Paso 3: prueba del Gateway (`pnpm --dir packages/adapter spike "mensaje"`)
-- [ ] Paso 4: personaje base
+- [x] Paso 4: personaje base (`pnpm --dir apps/desktop tauri dev`; en macOS vive en el notch, en el resto en una ventana flotante)
 - [ ] Paso 5: personaje conectado al agente
 - [ ] Paso 6: motor de comandos y skill de gastos
 - [ ] Paso 7: motor que aprende

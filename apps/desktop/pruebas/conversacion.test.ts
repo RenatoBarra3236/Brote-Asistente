@@ -119,3 +119,19 @@ describe("reglas del modelo", () => {
     assert.equal(c.aprobacion?.respondiendo, false);
   });
 });
+
+describe("motor de comandos", () => {
+  test("una respuesta sin IA termina al tiro en listo y queda marcada", () => {
+    let c = aplicar(CONVERSACION_INICIAL, { tipo: "mensaje-usuario", texto: "gasté 2 lucas en café" });
+    assert.equal(c.estado, "pensando");
+    c = aplicar(c, { tipo: "resuelto-sin-ia", texto: "Anotado: $2.000 en café (comida)." });
+    assert.equal(c.estado, "listo");
+    assert.equal(c.sinIA, true);
+    assert.equal(c.terminada, true);
+    assert.equal(c.mensajeUsuario, "gasté 2 lucas en café");
+    assert.equal(ocupado(c), false);
+    // El siguiente mensaje, que sí va al agente, ya no lleva la marca.
+    c = aplicar(c, { tipo: "mensaje-usuario", texto: "hola" });
+    assert.equal(c.sinIA, false);
+  });
+});

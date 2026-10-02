@@ -5,9 +5,11 @@
   "description": "Conexión al Gateway de OpenClaw para el personaje.",
   "type": "module",
   "scripts": {
-    "spike": "node src/spike.ts"
+    "spike": "node src/spike.ts",
+    "puente": "node src/puente.ts"
   },
   "dependencies": {
+    "@asistente/motor": "workspace:*",
     "@openclaw/gateway-client": "2026.9.7",
     "@openclaw/gateway-protocol": "2026.9.7"
   }

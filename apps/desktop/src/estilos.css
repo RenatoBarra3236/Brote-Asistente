@@ -75,6 +75,13 @@ body {
   font-style: italic;
 }
 
+.burbuja-sin-ia {
+  margin-top: 6px !important;
+  font-size: 11px;
+  color: rgb(255, 214, 102);
+  opacity: 0.85;
+}
+
 .aprobacion {
   flex: none;
   padding: 8px 10px;

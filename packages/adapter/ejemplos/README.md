@@ -12,7 +12,7 @@ Un evento por línea, tal como llegan a `onEvent` del `GatewayClient`. Los usan 
 
 Los dos archivos armados mantienen la forma de los grabados, pero tienen datos supuestos que hay que confirmar con el Gateway real:
 
-- Rechazo: `approval.status: "denied"` en la fase `terminal`, el `result` de la herramienta (`isError: true`) y `status: "failed"` en el `item` final.
+- Rechazo: `approval.status: "denied"` en la fase `terminal` (confirmado con el Gateway real), el `result` de la herramienta (`isError: true`) y `status: "failed"` en el `item` final.
 - Error: el flujo `error` con `data.message` y `lifecycle` con `phase: "error"` y `data.error`. La documentación del protocolo nombra el flujo `error`, pero aún no lo hemos visto en vivo.
 
 La traducción de eventos no depende de esos valores supuestos: un `terminal` siempre cierra la aprobación, y cualquier fase de `lifecycle` que contenga `error`, `fail` o `abort` cuenta como error.

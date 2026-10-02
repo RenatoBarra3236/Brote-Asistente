@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
+import { TransportePuente } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
 import { Panel } from "./panel";
@@ -33,15 +34,29 @@ const personaje = new Personaje();
 /** Cuánto dura la cara de error antes de volver al reposo; el mensaje sigue en la burbuja (ms). */
 const DURACION_ERROR = 6000;
 
-// Mientras no hay conexión real al Gateway, el agente reproduce eventos grabados.
-// Para conectarlo de verdad basta con cambiar este transporte por uno con el GatewayClient.
-const agente = new Agente(new TransporteSimulado({ escenas: ESCENAS }));
+/**
+ * El agente habla con OpenClaw a través del puente que lanza Rust. Si la app se abrió con
+ * `ASISTENTE_SIMULADO=1`, reproduce eventos grabados (no hace falta OpenClaw).
+ */
+async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
+  if ((await invoke<string>("agente_modo")) === "simulado") {
+    return { agente: new Agente(new TransporteSimulado({ escenas: ESCENAS })), puente: null };
+  }
+  const puente = new TransportePuente();
+  await puente.iniciar();
+  return { agente: new Agente(puente), puente };
+}
 
 async function iniciar(): Promise<void> {
   const diseno = await invoke<Diseno>("diseno");
+  const { agente, puente } = await crearAgente();
   const isla = diseno.modo === "notch" ? new Isla(diseno.notchAncho, diseno.notchAlto) : null;
   // La interfaz para hablarle al agente vive en la isla; en la ventana flotante aún no hay.
   const panel = isla ? new Panel(agente, document.body) : null;
+  if (panel && puente) {
+    panel.mostrarConexion(puente.estadoConexion);
+    puente.alCambiarConexion((estado) => panel.mostrarConexion(estado));
+  }
 
   let estadoAgente = agente.conversacion.estado;
   let temporizadorError: ReturnType<typeof setTimeout> | undefined;

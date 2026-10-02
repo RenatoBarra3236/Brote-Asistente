@@ -17,9 +17,14 @@ export interface Marco {
 /** Respuestas que acepta `approval.resolve`. */
 export type Decision = "allow-once" | "allow-always" | "deny";
 
+/** Con `local`, el motor de comandos resolvió el mensaje sin IA y no llegó al agente. */
+export interface ResultadoEnvio {
+  local?: { texto: string; intencion: string };
+}
+
 export interface Transporte {
   /** Envía un mensaje del usuario (en el Gateway real, `chat.send`). Termina cuando el Gateway lo acepta. */
-  enviar(texto: string): Promise<void>;
+  enviar(texto: string): Promise<ResultadoEnvio | void>;
   /** Responde una solicitud de permiso (en el Gateway real, `approval.resolve { id, kind, decision }`). */
   resolverAprobacion(id: string, kind: string, decision: Decision): Promise<void>;
   /** Escucha los eventos que llegan. Devuelve la función para dejar de escuchar. */

@@ -5,30 +5,16 @@
 //   pnpm spike "¿qué hora es?"      envía un mensaje y escucha la ejecución
 //   SPIKE_APROBACION=allow-once pnpm spike "..."   además responde las solicitudes de permiso
 
-import { randomUUID } from "node:crypto";
-import { appendFileSync, readFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GatewayClient } from "@openclaw/gateway-client";
-import { GATEWAY_CLIENT_CAPS } from "@openclaw/gateway-protocol/client-info";
-import { dependenciasDeDispositivo } from "./identidad.ts";
+import { type Decision, SESION, crearCliente, enviarMensaje, resolverAprobacion, suscribirseALaSesion } from "./conexion.ts";
 
-const AGENTE = process.env.OPENCLAW_AGENT ?? "asistente-multiplataforma";
-const SESION = process.env.OPENCLAW_SESSION ?? `agent:${AGENTE}:main`;
 const mensaje = process.argv.slice(2).join(" ").trim();
 // Respuesta automática a las solicitudes de permiso: "allow-once" o "deny". Sin valor, solo se muestran.
-const DECISION = process.env.SPIKE_APROBACION;
+const DECISION = process.env.SPIKE_APROBACION as Decision | undefined;
 
 type Estado = "reposo" | "pensando" | "trabajando" | "pidiendo-permiso" | "listo" | "error";
-
-// El token se lee al ejecutar, desde la configuración de OpenClaw; nunca se guarda en el repo.
-function leerConexion(): { url: string; token: string } {
-  const config = JSON.parse(readFileSync(join(homedir(), ".openclaw", "openclaw.json"), "utf8"));
-  const token = process.env.OPENCLAW_GATEWAY_TOKEN ?? config?.gateway?.auth?.token;
-  if (!token) throw new Error("No encontré el token del Gateway en ~/.openclaw/openclaw.json");
-  const puerto = config?.gateway?.port ?? 18789;
-  return { url: `ws://127.0.0.1:${puerto}`, token };
-}
 
 // Cómo se traducen los eventos a estados del personaje, según lo observado en la prueba.
 function estadoDesde(evento: string, payload: any): Estado | null {
@@ -61,49 +47,17 @@ function resumir(valor: unknown, max = 160): string {
 
 const archivoEventos = join(tmpdir(), `openclaw-eventos-${Date.now()}.jsonl`);
 
-// Las solicitudes de permiso solo llegan a quien se suscribe a la sesión con includeApprovals.
-async function suscribirseALaSesion(): Promise<void> {
-  await cliente.request("sessions.messages.subscribe", {
-    key: SESION,
-    agentId: AGENTE,
-    subscriptionId: "personaje",
-    includeApprovals: true,
-  });
-  console.log(`Suscrito a ${SESION} (con aprobaciones)`);
-}
-
 async function responderAprobacion(approval: any): Promise<void> {
   if (!DECISION) return;
   const kind = approval?.presentation?.kind ?? "exec";
-  const resultado = await cliente.request("approval.resolve", { id: approval.id, kind, decision: DECISION });
+  const resultado = await resolverAprobacion(cliente, approval.id, kind, DECISION);
   console.log(`  ✓ Respondida con "${DECISION}": ${resumir(resultado)}`);
 }
 
 let estadoActual: Estado = "reposo";
 let ejecucionTerminada = false;
 
-const { url, token } = leerConexion();
-
-const cliente = new GatewayClient({
-  url,
-  token,
-  clientName: "gateway-client",
-  clientDisplayName: "Personaje (prototipo)",
-  clientVersion: "0.0.0",
-  platform: process.platform,
-  mode: "ui",
-  role: "operator",
-  scopes: ["operator.read", "operator.write", "operator.approvals"],
-  caps: [
-    GATEWAY_CLIENT_CAPS.TOOL_EVENTS,
-    GATEWAY_CLIENT_CAPS.APPROVALS,
-    GATEWAY_CLIENT_CAPS.EXEC_APPROVALS,
-    GATEWAY_CLIENT_CAPS.PLUGIN_APPROVALS,
-  ],
-  minProtocol: 4,
-  maxProtocol: 4,
-  hostDeps: dependenciasDeDispositivo(),
-
+const { cliente, url } = crearCliente({
   onHelloOk: async (hello: any) => {
     const metodos: string[] = hello?.features?.methods ?? [];
     console.log(`\nConectado a ${url} · protocolo v${hello?.protocol}`);
@@ -113,7 +67,8 @@ const cliente = new GatewayClient({
     }
     console.log(`Eventos crudos en: ${archivoEventos}`);
     try {
-      await suscribirseALaSesion();
+      await suscribirseALaSesion(cliente);
+      console.log(`Suscrito a ${SESION} (con aprobaciones)`);
     } catch (error) {
       console.error(`✗ No se pudo suscribir a la sesión: ${(error as Error).message}`);
     }
@@ -125,11 +80,7 @@ const cliente = new GatewayClient({
     }
     try {
       console.log(`→ Enviando a ${SESION}: "${mensaje}"`);
-      const respuesta = await cliente.request("chat.send", {
-        sessionKey: SESION,
-        message: mensaje,
-        idempotencyKey: randomUUID(),
-      });
+      const respuesta = await enviarMensaje(cliente, mensaje);
       console.log(`← chat.send respondió: ${resumir(respuesta)}`);
     } catch (error) {
       console.error(`✗ chat.send falló: ${(error as Error).message}`);

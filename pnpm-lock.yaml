@@ -184,12 +184,17 @@ importers:
 
   packages/adapter:
     dependencies:
+      '@asistente/motor':
+        specifier: workspace:*
+        version: link:../motor
       '@openclaw/gateway-client':
         specifier: 2026.9.7
         version: 2026.9.7
       '@openclaw/gateway-protocol':
         specifier: 2026.9.7
         version: 2026.9.7
+
+  packages/motor: {}
 
 packages:
 

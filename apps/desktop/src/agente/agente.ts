@@ -44,7 +44,8 @@ export class Agente {
     if (!limpio || ocupado(this.actual)) return false;
     this.aplicar({ tipo: "mensaje-usuario", texto: limpio });
     try {
-      await this.transporte.enviar(limpio);
+      const resultado = await this.transporte.enviar(limpio);
+      if (resultado?.local) this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });
       return true;
     } catch (error) {
       this.aplicar({ tipo: "error", mensaje: `No pude enviar el mensaje: ${mensajeDe(error)}` });

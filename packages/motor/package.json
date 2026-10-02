@@ -1,0 +1,14 @@
+{
+  "name": "@asistente/motor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Motor de comandos sin IA (plantillas) y registro de gastos en SQLite.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test \"pruebas/*.test.ts\"",
+    "mcp": "node src/mcp.ts"
+  }
+}

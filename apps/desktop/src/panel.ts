@@ -4,6 +4,7 @@
 
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
+import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto sigue abierta la isla después de una respuesta, para alcanzar a leerla (ms). */
 const LECTURA_MIN = 4000;
@@ -24,6 +25,7 @@ export class Panel {
   private readonly usuario: HTMLParagraphElement;
   private readonly respuesta: HTMLParagraphElement;
   private readonly herramienta: HTMLParagraphElement;
+  private readonly sinIA: HTMLParagraphElement;
   private readonly aprobacion: HTMLDivElement;
   private readonly aprobacionTitulo: HTMLParagraphElement;
   private readonly aprobacionDetalle: HTMLElement;
@@ -34,6 +36,8 @@ export class Panel {
   private visible = false;
   private leerHasta = 0;
   private terminadaAntes = false;
+  /** Sin conexión con OpenClaw, el campo lo dice (los gastos funcionan igual). */
+  private sinConexion: string | null = null;
 
   constructor(agente: Agente, contenedor: HTMLElement) {
     this.agente = agente;
@@ -43,7 +47,10 @@ export class Panel {
     this.usuario = crear("p", "burbuja-usuario");
     this.respuesta = crear("p", "burbuja-respuesta");
     this.herramienta = crear("p", "burbuja-herramienta");
-    this.burbuja.append(this.usuario, this.respuesta, this.herramienta);
+    this.sinIA = crear("p", "burbuja-sin-ia");
+    this.sinIA.textContent = "⚡ sin IA";
+    this.sinIA.title = "Lo resolvió el motor de comandos, sin usar el agente";
+    this.burbuja.append(this.usuario, this.respuesta, this.herramienta, this.sinIA);
 
     this.aprobacion = crear("div", "aprobacion");
     this.aprobacionTitulo = crear("p", "aprobacion-titulo");
@@ -143,6 +150,7 @@ export class Panel {
     this.respuesta.hidden = this.respuesta.textContent === "";
     this.herramienta.textContent = c.herramienta?.etiqueta ?? "";
     this.herramienta.hidden = !c.herramienta;
+    this.sinIA.hidden = !c.sinIA;
     // La respuesta va llegando de a poco: se mantiene a la vista el final.
     this.burbuja.scrollTop = this.burbuja.scrollHeight;
 
@@ -163,12 +171,27 @@ export class Panel {
     }
     this.terminadaAntes = c.terminada;
 
-    this.entrada.placeholder = ocupado(c) ? "Espera a que termine…" : "Escríbeme algo…";
+    this.actualizarEntrada();
+  }
+
+  /** Muestra en el campo si se perdió la conexión con OpenClaw. */
+  mostrarConexion(estado: EstadoConexion): void {
+    this.sinConexion = estado.conectado ? null : (estado.detalle ?? "Sin conexión con OpenClaw");
+    // El campo es corto: el motivo completo queda en el título, al pasar el cursor.
+    this.entrada.title = this.sinConexion ?? "";
+    this.actualizarEntrada();
+  }
+
+  private actualizarEntrada(): void {
+    const c = this.agente.conversacion;
+    if (ocupado(c)) this.entrada.placeholder = "Espera a que termine…";
+    else this.entrada.placeholder = this.sinConexion ? "Sin OpenClaw: solo gastos…" : "Escríbeme algo…";
     this.actualizarBotonEnviar();
   }
 
   private actualizarBotonEnviar(): void {
-    this.enviar.disabled = this.entrada.value.trim() === "" || ocupado(this.agente.conversacion);
+    this.enviar.disabled =
+      this.entrada.value.trim() === "" || ocupado(this.agente.conversacion);
   }
 }
 

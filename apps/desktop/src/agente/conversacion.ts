@@ -27,10 +27,13 @@ export interface Conversacion {
   herramienta: HerramientaEnCurso | null;
   aprobacion: AprobacionPendiente | null;
   error: string | null;
+  /** La respuesta la dio el motor de comandos, sin IA. */
+  sinIA: boolean;
 }
 
 /** Sucesos que no vienen del Gateway sino de la propia interfaz. */
 export type SucesoLocal =
+  | { tipo: "resuelto-sin-ia"; texto: string }
   | { tipo: "respondiendo"; id: string }
   | { tipo: "respuesta-fallida"; id: string };
 
@@ -43,6 +46,7 @@ export const CONVERSACION_INICIAL: Conversacion = {
   herramienta: null,
   aprobacion: null,
   error: null,
+  sinIA: false,
 };
 
 /** El agente está ocupado con una ejecución: todavía no conviene enviarle otro mensaje. */
@@ -105,6 +109,16 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
 
     case "error":
       return { ...c, estado: "error", error: suceso.mensaje, terminada: true, herramienta: null, aprobacion: null };
+
+    case "resuelto-sin-ia":
+      return {
+        ...CONVERSACION_INICIAL,
+        estado: "listo",
+        mensajeUsuario: c.mensajeUsuario,
+        respuesta: suceso.texto,
+        terminada: true,
+        sinIA: true,
+      };
 
     case "respondiendo":
     case "respuesta-fallida":

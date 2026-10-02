@@ -1,7 +1,9 @@
 #[cfg(target_os = "macos")]
 mod notch;
+mod puente;
 
-use tauri::{AppHandle, LogicalPosition, Manager, State, WebviewWindow};
+use puente::Puente;
+use tauri::{AppHandle, LogicalPosition, Manager, RunEvent, State, WebviewWindow};
 
 /// Cómo vive el personaje: en el notch (macOS) o en una ventana flotante (el resto).
 #[derive(Clone, serde::Serialize)]
@@ -27,6 +29,29 @@ struct Desplazamiento {
 #[tauri::command]
 fn diseno(diseno: State<Diseno>) -> Diseno {
     diseno.inner().clone()
+}
+
+/// Con quién habla el personaje: con OpenClaw a través del puente, o con el simulador
+/// si la app se abrió con `ASISTENTE_SIMULADO=1`.
+struct Agente {
+    puente: Option<Puente>,
+}
+
+#[tauri::command]
+fn agente_modo(agente: State<Agente>) -> &'static str {
+    if agente.puente.is_some() { "real" } else { "simulado" }
+}
+
+/// El último aviso de conexión del puente (una línea JSON).
+#[tauri::command]
+fn agente_conexion(agente: State<Agente>) -> Result<String, String> {
+    agente.puente.as_ref().map(Puente::conexion).ok_or_else(|| "sin puente".into())
+}
+
+/// Envía un pedido al puente (una línea JSON armada por la ventana).
+#[tauri::command]
+fn agente_escribir(agente: State<Agente>, linea: String) -> Result<(), String> {
+    agente.puente.as_ref().ok_or("sin puente")?.escribir(&linea)
 }
 
 /// En macOS la app no tiene Dock ni menú, así que Cmd + Q lo maneja el propio personaje.
@@ -110,9 +135,28 @@ pub fn run() {
                 .expect("falta la ventana del personaje en tauri.conf.json");
             let diseno = preparar_ventana(&ventana)?;
             app.manage(diseno);
+
+            let simulado = std::env::var("ASISTENTE_SIMULADO").is_ok_and(|v| v == "1");
+            let puente = (!simulado).then(|| Puente::iniciar(app.handle()));
+            app.manage(Agente { puente });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![diseno, cursor_relativo, salir])
-        .run(tauri::generate_context!())
-        .expect("error al iniciar la app del personaje");
+        .invoke_handler(tauri::generate_handler![
+            diseno,
+            cursor_relativo,
+            salir,
+            agente_modo,
+            agente_conexion,
+            agente_escribir
+        ])
+        .build(tauri::generate_context!())
+        .expect("error al iniciar la app del personaje")
+        .run(|app, evento| {
+            // Al cerrar la app, el puente se desconecta del Gateway antes de terminar.
+            if let RunEvent::Exit = evento {
+                if let Some(puente) = app.try_state::<Agente>().as_ref().and_then(|a| a.puente.as_ref()) {
+                    puente.detener();
+                }
+            }
+        });
 }

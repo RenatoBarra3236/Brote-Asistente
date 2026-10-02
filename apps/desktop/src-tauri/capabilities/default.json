@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permisos de la ventana del personaje",
-  "windows": ["personaje"],
+  "description": "Permisos de la ventana del personaje y de \"Lo que sé de ti\"",
+  "windows": ["personaje", "memoria"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

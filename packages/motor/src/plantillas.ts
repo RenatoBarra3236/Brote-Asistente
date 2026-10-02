@@ -13,7 +13,7 @@ import { NOMBRES_DE_CATEGORIA } from "./categorias.ts";
 import { FORMAS_DE_PERIODO } from "./periodos.ts";
 import { normalizarConMapa } from "./texto.ts";
 
-export type Intencion = "registrar-gasto" | "consultar-gastos" | "ultimos-gastos" | "borrar-ultimo-gasto";
+export type Intencion = "registrar-gasto" | "consultar-gastos" | "ultimos-gastos" | "borrar-ultimo-gasto" | "ver-memoria";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria";
 
@@ -183,4 +183,10 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "consulta-resumen", intencion: "consultar-gastos", patron: "[mis] (gastos|resumen de [mis] gastos) [de|del] {periodo}" },
   { id: "ultimos", intencion: "ultimos-gastos", patron: "[(muestrame|ver|dame|cuales son)] [mis] ultimos gastos" },
   { id: "borrar-ultimo", intencion: "borrar-ultimo-gasto", patron: "(borra|elimina|quita|deshaz|anula) [el] ultimo gasto" },
+  {
+    id: "ver-memoria",
+    intencion: "ver-memoria",
+    patron: "[(muestrame|dime)] [lo] (que sabes|que recuerdas|lo que sabes|lo que recuerdas) de mi",
+  },
+  { id: "ver-memoria-corto", intencion: "ver-memoria", patron: "(tu memoria|lo que se de ti|que sabes de mi)" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

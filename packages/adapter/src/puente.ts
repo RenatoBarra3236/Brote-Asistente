@@ -16,6 +16,15 @@
 //   { "id": "3", "tipo": "decidir-plantilla", "plantilla": 3, "aceptar": true }   → respuesta con "mensaje"
 //   { "id": "4", "tipo": "detener", "runId": "…" }   corta el turno del agente (runId opcional)
 //
+// "Lo que sé de ti" (paso 9):
+//   { "tipo": "memoria-listar" }                        → respuesta con "datos": { recuerdos, frases, sinIA }
+//   { "tipo": "memoria-olvidar", "recuerdo": "brote:x.md" }
+//   { "tipo": "memoria-corregir", "recuerdo": "brote:x.md", "texto": "…" }
+//   { "tipo": "frase-olvidar", "plantilla": 3 }
+//   { "tipo": "conversacion-nueva" }                    archiva la conversación actual en OpenClaw
+//   { "tipo": "memoria-buscar", "tema": "notebook" }    → "datos": ids de lo que lo menciona
+//   { "tipo": "memoria-olvidar-tema", "tema": "notebook" }  conversación nueva + olvida todo lo que lo menciona
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
@@ -39,9 +48,11 @@ import {
   crearCliente,
   detenerTurno,
   enviarMensaje,
+  nuevaConversacion,
   resolverAprobacion,
   suscribirseALaSesion,
 } from "./conexion.ts";
+import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { esDeMemoria } from "./permisos.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
@@ -58,6 +69,41 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__gastos_listar",
   "mcp__gastos__gastos_resumen",
 ]);
+
+/** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
+function conversacionesGuardadas(): Set<string> {
+  return new Set(listarRecuerdos().filter((r) => r.tipo === "conversacion").map((r) => r.id));
+}
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((listo) => setTimeout(listo, ms));
+}
+
+/**
+ * Olvida un tema del todo. Primero empieza una conversación nueva: al cerrar la actual, OpenClaw
+ * escribe su resumen, que también puede mencionar el tema y hay que olvidarlo. Después manda a la
+ * Papelera todo lo que lo mencione y olvida las frases aprendidas que lo contengan.
+ */
+async function olvidarTema(tema: string): Promise<number> {
+  if (cliente && conectado) {
+    const antes = conversacionesGuardadas();
+    await nuevaConversacion(cliente);
+    for (let intento = 0; intento < 16; intento++) {
+      if ([...conversacionesGuardadas()].some((id) => !antes.has(id))) break;
+      await esperar(250);
+    }
+  }
+  const recuerdos = buscarRecuerdos(tema);
+  for (const recuerdo of recuerdos) olvidarRecuerdo(recuerdo.id);
+  const buscado = tema.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  let frases = 0;
+  for (const frase of gastos.plantillasAprendidas()) {
+    const ejemplo = frase.ejemplo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (ejemplo.includes(buscado) && gastos.olvidarPlantilla(frase.id, new Date())) frases++;
+  }
+  registrar(`tema olvidado (${recuerdos.length} recuerdos, ${frases} frases)`);
+  return recuerdos.length + frases;
+}
 
 let renovacion: ReturnType<typeof setTimeout> | undefined;
 
@@ -223,7 +269,7 @@ const cliente = (() => {
 })();
 
 /** Lo que se agrega a la respuesta: con `local`, el motor resolvió el pedido sin IA. */
-type Extra = { local?: { texto: string; intencion: string }; mensaje?: string };
+type Extra = { local?: { texto: string; intencion: string }; mensaje?: string; datos?: unknown };
 
 async function atender(pedido: any): Promise<Extra> {
   if (pedido?.tipo === "enviar" && typeof pedido.texto === "string" && pedido.texto.trim()) {
@@ -250,6 +296,44 @@ async function atender(pedido: any): Promise<Extra> {
     if (!cliente) throw new Error("OpenClaw no está conectado");
     await resolverAprobacion(cliente, pedido.aprobacion, pedido.kind, pedido.decision);
     return {};
+  }
+  switch (pedido?.tipo) {
+    case "memoria-listar":
+      return {
+        datos: {
+          recuerdos: listarRecuerdos(),
+          frases: gastos.plantillasAprendidas().map((p) => ({
+            id: p.id,
+            ejemplo: p.ejemplo,
+            accion: describirIntencion(p.intencion),
+          })),
+          sinIA: porcentajeSinIA(gastos),
+        },
+      };
+    case "memoria-olvidar":
+      if (typeof pedido.recuerdo !== "string") break;
+      olvidarRecuerdo(pedido.recuerdo);
+      registrar(`recuerdo olvidado: ${pedido.recuerdo}`);
+      return {};
+    case "memoria-corregir":
+      if (typeof pedido.recuerdo !== "string" || typeof pedido.texto !== "string") break;
+      corregirRecuerdo(pedido.recuerdo, pedido.texto);
+      registrar(`recuerdo corregido: ${pedido.recuerdo}`);
+      return {};
+    case "frase-olvidar":
+      if (!Number.isInteger(pedido.plantilla)) break;
+      if (!gastos.olvidarPlantilla(pedido.plantilla, new Date())) throw new Error("Esa frase ya no estaba aprendida");
+      return {};
+    case "memoria-buscar":
+      if (typeof pedido.tema !== "string") break;
+      return { datos: buscarRecuerdos(pedido.tema).map((r) => r.id) };
+    case "memoria-olvidar-tema":
+      if (typeof pedido.tema !== "string") break;
+      return { datos: { olvidados: await olvidarTema(pedido.tema) } };
+    case "conversacion-nueva":
+      if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
+      await nuevaConversacion(cliente);
+      return {};
   }
   if (pedido?.tipo === "detener") {
     if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");

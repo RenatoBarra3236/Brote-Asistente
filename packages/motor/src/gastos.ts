@@ -208,6 +208,21 @@ export class Gastos {
     return fila ?? null;
   }
 
+  /** Las plantillas aprendidas activas, con la frase que las originó (para "Lo que sé de ti"). */
+  plantillasAprendidas(): PlantillaGuardada[] {
+    return this.db
+      .prepare("select id, patron, intencion, ejemplo, estado from plantillas where estado = 'activa' order by decidida_ms desc, id desc")
+      .all() as unknown as PlantillaGuardada[];
+  }
+
+  /** Olvida una plantilla aprendida: el motor deja de usarla y no se vuelve a proponer. */
+  olvidarPlantilla(id: number, fecha: Date): boolean {
+    const resultado = this.db
+      .prepare("update plantillas set estado = 'rechazada', decidida_ms = ? where id = ? and estado = 'activa'")
+      .run(fecha.getTime(), id);
+    return Number(resultado.changes) > 0;
+  }
+
   /** Las plantillas aprendidas que el motor usa, en el orden en que se aceptaron. */
   plantillasActivas(): Plantilla[] {
     const filas = this.db

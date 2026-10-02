@@ -70,6 +70,11 @@ export function enviarMensaje(cliente: GatewayClient, texto: string): Promise<un
   return cliente.request("chat.send", { sessionKey: SESION, message: texto, idempotencyKey: randomUUID() });
 }
 
+/** Empieza una conversación nueva: OpenClaw archiva la actual (y guarda su resumen en la memoria). */
+export function nuevaConversacion(cliente: GatewayClient): Promise<unknown> {
+  return cliente.request("sessions.reset", { key: SESION, agentId: AGENTE, reason: "new" });
+}
+
 /** Corta el turno en curso del agente (o uno en particular, con `runId`). */
 export function detenerTurno(cliente: GatewayClient, runId?: string): Promise<unknown> {
   return cliente.request("chat.abort", { sessionKey: SESION, agentId: AGENTE, ...(runId ? { runId } : {}) });

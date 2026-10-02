@@ -54,6 +54,28 @@ fn agente_escribir(agente: State<Agente>, linea: String) -> Result<(), String> {
     agente.puente.as_ref().ok_or("sin puente")?.escribir(&linea)
 }
 
+/// Abre (o trae al frente) la ventana "Lo que sé de ti". Es asíncrono porque crear ventanas
+/// desde un comando síncrono puede bloquear el hilo principal.
+#[tauri::command]
+async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
+    let ventana = match app.get_webview_window("memoria") {
+        Some(ventana) => ventana,
+        None => tauri::WebviewWindowBuilder::new(&app, "memoria", tauri::WebviewUrl::App("memoria.html".into()))
+            .title("Lo que sé de ti")
+            .inner_size(480.0, 660.0)
+            .min_inner_size(380.0, 420.0)
+            .center()
+            .build()
+            .map_err(|e| e.to_string())?,
+    };
+    #[cfg(target_os = "macos")]
+    app.run_on_main_thread(|| unsafe { notch::activar_app() })
+        .map_err(|e| e.to_string())?;
+    ventana.show().map_err(|e| e.to_string())?;
+    ventana.unminimize().map_err(|e| e.to_string())?;
+    ventana.set_focus().map_err(|e| e.to_string())
+}
+
 /// En macOS la app no tiene Dock ni menú, así que Cmd + Q lo maneja el propio personaje.
 #[tauri::command]
 fn salir(app: AppHandle) {
@@ -147,7 +169,8 @@ pub fn run() {
             salir,
             agente_modo,
             agente_conexion,
-            agente_escribir
+            agente_escribir,
+            abrir_memoria
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la app del personaje")

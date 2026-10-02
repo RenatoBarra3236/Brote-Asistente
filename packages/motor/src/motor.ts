@@ -22,7 +22,8 @@ export type Accion =
   | { intencion: "registrar-gasto"; monto: number; categoria: Categoria; descripcion: string | null }
   | { intencion: "consultar-gastos"; periodo: Periodo; categoria?: Categoria }
   | { intencion: "ultimos-gastos" }
-  | { intencion: "borrar-ultimo-gasto" };
+  | { intencion: "borrar-ultimo-gasto" }
+  | { intencion: "ver-memoria" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -52,6 +53,7 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     }
     case "ultimos-gastos":
     case "borrar-ultimo-gasto":
+    case "ver-memoria":
       return { intencion };
   }
 }
@@ -95,6 +97,9 @@ export class Motor {
         return this.listarUltimos();
       case "borrar-ultimo-gasto":
         return this.borrarUltimo();
+      case "ver-memoria":
+        // La isla abre el panel "Lo que sé de ti" al ver esta intención.
+        return "Te muestro todo lo que sé de ti 🌱";
     }
   }
 

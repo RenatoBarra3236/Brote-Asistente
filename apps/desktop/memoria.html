@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lo que sé de ti</title>
+    <link rel="stylesheet" href="/src/memoria.css" />
+  </head>
+  <body>
+    <header class="cabecera">
+      <div>
+        <h1>Lo que sé de ti 🌱</h1>
+        <p class="bajada">Todo lo que Brote recuerda. Puedes corregirlo u olvidarlo.</p>
+      </div>
+      <span class="sin-ia" id="sin-ia" hidden></span>
+    </header>
+    <input class="buscar" id="buscar" type="search" placeholder="Buscar en lo que sé de ti (ej.: notebook)" autocomplete="off" />
+    <div class="tema" id="tema" hidden>
+      <span id="tema-texto"></span>
+      <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+    </div>
+    <p class="aviso" id="aviso" hidden></p>
+    <main id="secciones" aria-live="polite"></main>
+    <footer class="pie">
+      <p>Lo que olvidas va a la Papelera. Brote deja de usarlo desde la próxima conversación.</p>
+      <button type="button" class="boton" id="nueva">Empezar conversación nueva</button>
+    </footer>
+    <script type="module" src="/src/memoria.ts"></script>
+  </body>
+</html>

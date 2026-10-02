@@ -1,0 +1,257 @@
+/* Ventana "Lo que sé de ti": sigue el modo claro u oscuro del sistema. */
+
+:root {
+  --fondo: #f6f5f1;
+  --tarjeta: #ffffff;
+  --borde: rgba(0, 0, 0, 0.08);
+  --texto: #1d1d1f;
+  --suave: rgba(29, 29, 31, 0.62);
+  --acento: #3fae6a;
+  --peligro: #d64545;
+  --boton: rgba(0, 0, 0, 0.06);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #161616;
+    --tarjeta: #222222;
+    --borde: rgba(255, 255, 255, 0.08);
+    --texto: rgba(255, 255, 255, 0.92);
+    --suave: rgba(255, 255, 255, 0.58);
+    --acento: #62d68a;
+    --peligro: #ff6b6b;
+    --boton: rgba(255, 255, 255, 0.1);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 20px 20px 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 13px/1.45 system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.bajada,
+.nota,
+.vacio,
+.pie p {
+  margin: 2px 0 0;
+  color: var(--suave);
+}
+
+.sin-ia {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 196, 0, 0.16);
+  color: #b88300;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sin-ia {
+    color: rgb(255, 214, 102);
+  }
+}
+
+.buscar {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--tarjeta);
+  color: var(--texto);
+  font: inherit;
+}
+
+.tema {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(214, 69, 69, 0.08);
+}
+
+/* `display: flex` anularía el atributo `hidden`. */
+.tema[hidden] {
+  display: none;
+}
+
+.aviso {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(63, 174, 106, 0.14);
+}
+
+.aviso.error {
+  background: rgba(214, 69, 69, 0.14);
+}
+
+.seccion {
+  margin-bottom: 22px;
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.cuenta {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--boton);
+  color: var(--suave);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.nota {
+  margin: -4px 0 8px;
+  font-size: 12px;
+}
+
+.tarjeta {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: 0 0 0 1px var(--borde);
+}
+
+.tarjeta-cabeza {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.fecha {
+  flex: none;
+  color: var(--suave);
+  font-size: 11px;
+}
+
+.tarjeta-texto {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--suave);
+}
+
+/* Las conversaciones e importados pueden ser largos: se ven las primeras líneas. */
+.conversacion .tarjeta-texto,
+.importado .tarjeta-texto {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.frase .tarjeta-texto {
+  color: var(--texto);
+}
+
+.botones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.boton {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--boton);
+  color: var(--texto);
+  font: 600 12px system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+.boton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.boton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.boton-primario {
+  background: var(--acento);
+  color: #fff;
+}
+
+.boton-peligro {
+  color: var(--peligro);
+}
+
+.boton-peligro.confirmando {
+  background: var(--peligro);
+  color: #fff;
+}
+
+.editor {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: inherit;
+  resize: vertical;
+}
+
+.pie {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -20px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--borde);
+  background: var(--fondo);
+}
+
+.pie p {
+  font-size: 12px;
+}
+
+.pie .boton {
+  flex: none;
+}

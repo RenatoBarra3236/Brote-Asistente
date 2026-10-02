@@ -93,6 +93,8 @@ export function describirIntencion(intencion: Intencion): string {
       return "mostrar tus últimos gastos";
     case "borrar-ultimo-gasto":
       return "borrar el último gasto";
+    case "ver-memoria":
+      return "mostrar lo que sé de ti";
   }
 }
 

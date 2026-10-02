@@ -18,10 +18,18 @@ type Aviso =
   | { tipo: "conexion"; conectado: boolean; detalle?: string }
   | { tipo: "evento"; marco: Marco }
   | { tipo: "propuesta"; propuesta: Propuesta }
-  | { tipo: "respuesta"; id: string; ok: boolean; error?: string; local?: ResultadoEnvio["local"]; mensaje?: string };
+  | {
+      tipo: "respuesta";
+      id: string;
+      ok: boolean;
+      error?: string;
+      local?: ResultadoEnvio["local"];
+      mensaje?: string;
+      datos?: unknown;
+    };
 
 /** Lo que trae una respuesta del puente además del "ok". */
-type Extras = ResultadoEnvio & { mensaje?: string };
+type Extras = ResultadoEnvio & { mensaje?: string; datos?: unknown };
 
 interface Pendiente {
   resolver: (extras: Extras) => void;
@@ -36,6 +44,8 @@ export class TransportePuente implements Transporte {
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
+  /** Cada ventana le habla al mismo puente: el prefijo evita confundir las respuestas. */
+  private readonly prefijo = Math.random().toString(36).slice(2, 8);
 
   /** Empieza a escuchar el puente y pide el estado de la conexión, que pudo llegar antes. */
   async iniciar(): Promise<void> {
@@ -80,8 +90,14 @@ export class TransportePuente implements Transporte {
     return mensaje ?? (aceptar ? "Listo, la aprendí." : "Ok, no la aprendo.");
   }
 
+  /** Un pedido cualquiera al puente (por ejemplo, los de "Lo que sé de ti"); devuelve sus datos. */
+  async consultar<T = unknown>(pedido: Record<string, unknown>): Promise<T> {
+    const { datos } = await this.pedir(pedido);
+    return datos as T;
+  }
+
   private async pedir(pedido: Record<string, unknown>): Promise<Extras> {
-    const id = String(this.siguienteId++);
+    const id = `${this.prefijo}-${this.siguienteId++}`;
     const respuesta = new Promise<Extras>((resolver, rechazar) => {
       const plazo = setTimeout(() => {
         this.pendientes.delete(id);
@@ -119,7 +135,7 @@ export class TransportePuente implements Transporte {
         if (!pendiente) return;
         clearTimeout(pendiente.plazo);
         this.pendientes.delete(aviso.id);
-        if (aviso.ok) pendiente.resolver({ local: aviso.local, mensaje: aviso.mensaje });
+        if (aviso.ok) pendiente.resolver({ local: aviso.local, mensaje: aviso.mensaje, datos: aviso.datos });
         else pendiente.rechazar(new Error(aviso.error ?? "OpenClaw rechazó el pedido"));
         return;
       }

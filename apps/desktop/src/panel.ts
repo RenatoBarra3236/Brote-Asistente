@@ -44,7 +44,8 @@ export class Panel {
   /** Sin conexión con OpenClaw, el campo lo dice (los gastos funcionan igual). */
   private sinConexion: string | null = null;
 
-  constructor(agente: Agente, contenedor: HTMLElement) {
+  /** `alAbrirMemoria`: si está, aparece el botón 🧠 que abre "Lo que sé de ti". */
+  constructor(agente: Agente, contenedor: HTMLElement, opciones: { alAbrirMemoria?: () => void } = {}) {
     this.agente = agente;
     this.raiz = crear("div", "panel");
 
@@ -82,6 +83,15 @@ export class Panel {
     this.enviar.textContent = "↑";
     this.enviar.setAttribute("aria-label", "Enviar");
     formulario.append(this.entrada, this.enviar);
+    if (opciones.alAbrirMemoria) {
+      const memoria = crear("button", "boton-memoria");
+      memoria.type = "button";
+      memoria.textContent = "🧠";
+      memoria.title = "Lo que sé de ti";
+      memoria.setAttribute("aria-label", "Lo que sé de ti");
+      memoria.addEventListener("click", opciones.alAbrirMemoria);
+      formulario.prepend(memoria);
+    }
 
     this.propuesta = crear("div", "aprobacion propuesta");
     const propuestaTitulo = crear("p", "aprobacion-titulo");

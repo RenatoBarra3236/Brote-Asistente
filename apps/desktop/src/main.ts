@@ -44,7 +44,13 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
   }
   const puente = new TransportePuente();
   await puente.iniciar();
-  return { agente: new Agente(puente), puente };
+  // "¿Qué sabes de mí?" lo resuelve el motor sin IA y abre la ventana "Lo que sé de ti".
+  const agente = new Agente(puente, {
+    alResolverSinIA: (intencion) => {
+      if (intencion === "ver-memoria") void invoke("abrir_memoria");
+    },
+  });
+  return { agente, puente };
 }
 
 async function iniciar(): Promise<void> {
@@ -52,7 +58,9 @@ async function iniciar(): Promise<void> {
   const { agente, puente } = await crearAgente();
   const isla = diseno.modo === "notch" ? new Isla(diseno.notchAncho, diseno.notchAlto) : null;
   // La interfaz para hablarle al agente vive en la isla; en la ventana flotante aún no hay.
-  const panel = isla ? new Panel(agente, document.body) : null;
+  const panel = isla
+    ? new Panel(agente, document.body, puente ? { alAbrirMemoria: () => void invoke("abrir_memoria") } : {})
+    : null;
   if (panel && puente) {
     panel.mostrarConexion(puente.estadoConexion);
     puente.alCambiarConexion((estado) => panel.mostrarConexion(estado));

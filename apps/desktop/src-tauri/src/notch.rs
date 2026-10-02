@@ -51,6 +51,16 @@ pub unsafe fn pantalla_principal() -> Option<PantallaPrincipal> {
     Some(PantallaPrincipal { marco, notch, alto_barra })
 }
 
+/// Trae la app al frente. Hace falta para mostrar una ventana normal (como "Lo que sé de ti")
+/// porque la app es de tipo accesorio y macOS no la activa sola. Hilo principal.
+pub unsafe fn activar_app() {
+    let Some(clase) = AnyClass::get(c"NSApplication") else { return };
+    let app: *mut AnyObject = msg_send![clase, sharedApplication];
+    if !app.is_null() {
+        let _: () = msg_send![&*app, activateIgnoringOtherApps: true];
+    }
+}
+
 /// Subclase de NSPanel creada en tiempo de ejecución. Solo un panel "no activador" puede
 /// aparecer sobre apps de otros en pantalla completa (así lo hacen Coucou y las apps de notch).
 fn clase_panel() -> &'static AnyClass {

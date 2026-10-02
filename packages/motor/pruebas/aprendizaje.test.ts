@@ -110,3 +110,26 @@ describe("deducir la plantilla de cómo resolvió el agente", () => {
     assert.match(motor.resolver("paque 800 de chicle")!.texto, /\$800 en chicle/);
   });
 });
+
+describe("lo que sé de ti: frases aprendidas y panel", () => {
+  it("lista y olvida las frases aprendidas", () => {
+    const revision = proponer("paque {monto} de {cosa}", "paque 500 de pan");
+    assert.ok(revision.ok);
+    gastos.decidirPlantilla(revision.propuesta.id, true, AHORA);
+    assert.deepEqual(gastos.plantillasAprendidas().map((p) => p.ejemplo), ["paque 500 de pan"]);
+    assert.ok(motor.resolver("paque 300 de chicle"));
+
+    assert.equal(gastos.olvidarPlantilla(revision.propuesta.id, AHORA), true);
+    assert.equal(gastos.olvidarPlantilla(revision.propuesta.id, AHORA), false);
+    assert.deepEqual(gastos.plantillasAprendidas(), []);
+    assert.equal(motor.resolver("paque 300 de chicle"), null);
+    assert.equal(proponer("paque {monto} de {cosa}", "paque 500 de pan").ok, false);
+  });
+
+  it("«¿qué sabes de mí?» abre el panel sin IA", () => {
+    for (const frase of ["¿Qué sabes de mí?", "muéstrame lo que recuerdas de mí", "tu memoria", "dime qué sabes de mi"]) {
+      assert.equal(motor.resolver(frase)?.intencion, "ver-memoria", frase);
+    }
+    assert.equal(motor.resolver("qué sabes de historia"), null);
+  });
+});

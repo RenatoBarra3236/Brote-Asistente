@@ -11,14 +11,19 @@ export class Agente {
   private readonly transporte: Transporte;
   private readonly silencioMaximoMs: number;
   private readonly reloj: () => number;
+  private readonly alResolverSinIA?: (intencion: string) => void;
   private actual: Conversacion = CONVERSACION_INICIAL;
   private readonly oyentes = new Set<(c: Conversacion) => void>();
   private dejarDeEscuchar: (() => void) | null = null;
   /** La última señal del agente (un evento) o del usuario (un envío): mide el silencio. */
   private ultimaSenal = 0;
 
-  constructor(transporte: Transporte, opciones: { silencioMaximoMs?: number; reloj?: () => number } = {}) {
+  constructor(
+    transporte: Transporte,
+    opciones: { silencioMaximoMs?: number; reloj?: () => number; alResolverSinIA?: (intencion: string) => void } = {},
+  ) {
     this.transporte = transporte;
+    this.alResolverSinIA = opciones.alResolverSinIA;
     this.silencioMaximoMs = opciones.silencioMaximoMs ?? SILENCIO_MAXIMO_MS;
     this.reloj = opciones.reloj ?? (() => Date.now());
   }
@@ -107,7 +112,10 @@ export class Agente {
     this.ultimaSenal = this.reloj();
     try {
       const resultado = await this.transporte.enviar(limpio);
-      if (resultado?.local) this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });
+      if (resultado?.local) {
+        this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });
+        this.alResolverSinIA?.(resultado.local.intencion);
+      }
       return true;
     } catch (error) {
       this.aplicar({ tipo: "error", mensaje: `No pude enviar el mensaje: ${mensajeDe(error)}` });

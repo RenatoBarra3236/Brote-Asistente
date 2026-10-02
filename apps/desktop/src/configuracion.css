@@ -1,0 +1,47 @@
+/* "Configurar Brote": usa los estilos de memoria.css y agrega lo propio. */
+
+.paso.ok {
+  opacity: 0.75;
+}
+
+.paso.falta {
+  box-shadow: 0 0 0 1px rgba(255, 176, 33, 0.45);
+}
+
+.consentimiento {
+  display: block;
+  padding: 4px 6px;
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--texto);
+}
+
+.listo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(63, 174, 106, 0.16);
+}
+
+.listo[hidden] {
+  display: none;
+}
+
+.listo p {
+  margin: 0;
+}
+
+.botones-pie {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.consentimiento.resaltada {
+  background: rgba(255, 176, 33, 0.22);
+}

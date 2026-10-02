@@ -4,6 +4,7 @@
 
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
+import { analizarMarkdown, type Fragmento } from "./agente/markdown";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto sigue abierta la isla después de una respuesta, para alcanzar a leerla (ms). */
@@ -23,7 +24,9 @@ export class Panel {
   private readonly raiz: HTMLDivElement;
   private readonly burbuja: HTMLDivElement;
   private readonly usuario: HTMLParagraphElement;
-  private readonly respuesta: HTMLParagraphElement;
+  private readonly respuesta: HTMLDivElement;
+  /** El texto ya pintado en la respuesta, para no rehacerla si no cambió. */
+  private respuestaPintada: string | null = null;
   private readonly herramienta: HTMLParagraphElement;
   private readonly sinIA: HTMLParagraphElement;
   private readonly aprobacion: HTMLDivElement;
@@ -44,14 +47,17 @@ export class Panel {
   /** Sin conexión con OpenClaw, el campo lo dice (los gastos funcionan igual). */
   private sinConexion: string | null = null;
 
-  /** `alAbrirMemoria`: si está, aparece el botón 🧠 que abre "Lo que sé de ti". */
-  constructor(agente: Agente, contenedor: HTMLElement, opciones: { alAbrirMemoria?: () => void } = {}) {
+  /**
+   * `alAbrirMemoria`: si está, aparece el botón 🧠 que abre "Lo que sé de ti".
+   * `flotante`: el panel va sobre el escritorio (sin la isla negra detrás) y lleva fondo propio.
+   */
+  constructor(agente: Agente, contenedor: HTMLElement, opciones: { alAbrirMemoria?: () => void; flotante?: boolean } = {}) {
     this.agente = agente;
-    this.raiz = crear("div", "panel");
+    this.raiz = crear("div", opciones.flotante ? "panel flotante" : "panel");
 
     this.burbuja = crear("div", "burbuja");
     this.usuario = crear("p", "burbuja-usuario");
-    this.respuesta = crear("p", "burbuja-respuesta");
+    this.respuesta = crear("div", "burbuja-respuesta");
     this.herramienta = crear("p", "burbuja-herramienta");
     this.sinIA = crear("p", "burbuja-sin-ia");
     this.sinIA.textContent = "⚡ sin IA";
@@ -182,9 +188,15 @@ export class Panel {
     this.usuario.hidden = !c.mensajeUsuario;
 
     const esperando = ocupado(c) && !c.respuesta && !c.herramienta && !c.aprobacion;
-    this.respuesta.textContent = c.error ?? (esperando ? "…" : c.respuesta);
+    const texto = c.error ?? (esperando ? "…" : c.respuesta);
+    if (texto !== this.respuestaPintada) {
+      // Los errores van tal cual; las respuestas, con su formato (negrita, listas…).
+      if (c.error !== null) this.respuesta.textContent = texto;
+      else pintarMarkdown(this.respuesta, texto);
+      this.respuestaPintada = texto;
+    }
     this.respuesta.classList.toggle("error", c.error !== null);
-    this.respuesta.hidden = this.respuesta.textContent === "";
+    this.respuesta.hidden = texto === "";
     this.herramienta.textContent = c.herramienta?.etiqueta ?? "";
     this.herramienta.hidden = !c.herramienta;
     this.sinIA.hidden = !c.sinIA;
@@ -250,4 +262,34 @@ function crear<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase: string
   const elemento = document.createElement(etiqueta);
   elemento.className = clase;
   return elemento;
+}
+
+/** Convierte el markdown de una respuesta en elementos con texto (nunca HTML). */
+function pintarMarkdown(contenedor: HTMLElement, texto: string): void {
+  const fragmentos = (lista: Fragmento[]) =>
+    lista.map((f) => {
+      if (f.tipo === "texto") return document.createTextNode(f.texto);
+      const elemento = document.createElement(f.tipo === "negrita" ? "strong" : f.tipo === "cursiva" ? "em" : "code");
+      elemento.textContent = f.texto;
+      return elemento;
+    });
+  contenedor.replaceChildren(
+    ...analizarMarkdown(texto).map((bloque) => {
+      if (bloque.tipo === "lista") {
+        const lista = document.createElement(bloque.ordenada ? "ol" : "ul");
+        for (const item of bloque.items) {
+          const li = document.createElement("li");
+          li.append(...fragmentos(item));
+          lista.append(li);
+        }
+        return lista;
+      }
+      const parrafo = document.createElement("p");
+      bloque.lineas.forEach((linea, i) => {
+        if (i > 0) parrafo.append(document.createElement("br"));
+        parrafo.append(...fragmentos(linea));
+      });
+      return parrafo;
+    }),
+  );
 }

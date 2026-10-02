@@ -13,7 +13,8 @@ mkdirSync(secreto);
 writeFileSync(join(raiz, "workspace", "MEMORY.md"), "");
 writeFileSync(join(secreto, "claves.txt"), "");
 // Un enlace dentro de la memoria que apunta afuera.
-symlinkSync(secreto, join(memoria, "atajo"));
+// En Windows, un enlace a carpeta sin permisos de administrador es un "junction".
+symlinkSync(secreto, join(memoria, "atajo"), process.platform === "win32" ? "junction" : "dir");
 const config = { carpetas: [memoria], archivos: [join(raiz, "workspace", "MEMORY.md")] };
 
 const caso = (herramienta: string, ruta: unknown) => esDeMemoria(herramienta, JSON.stringify({ file_path: ruta }), config);

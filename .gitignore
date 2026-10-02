@@ -17,3 +17,6 @@ target/
 .vscode/
 .idea/
 *.log
+
+# Lo genera `pnpm --dir apps/desktop empaquetar-puente` (va dentro de la app empaquetada).
+apps/desktop/src-tauri/recursos/

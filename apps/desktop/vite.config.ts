@@ -5,10 +5,10 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  // Dos páginas: la isla del personaje y la ventana "Lo que sé de ti".
+  // Tres páginas: la isla del personaje, "Lo que sé de ti" y "Configurar Brote".
   build: {
     rollupOptions: {
-      input: { personaje: "index.html", memoria: "memoria.html" },
+      input: { personaje: "index.html", memoria: "memoria.html", configuracion: "configuracion.html" },
     },
   },
 

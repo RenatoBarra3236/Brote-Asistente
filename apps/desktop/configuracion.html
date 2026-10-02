@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Configurar Brote</title>
+    <link rel="stylesheet" href="/src/memoria.css" />
+    <link rel="stylesheet" href="/src/configuracion.css" />
+  </head>
+  <body>
+    <header class="cabecera">
+      <div>
+        <h1>Configurar Brote 🌱</h1>
+        <p class="bajada">Brote necesita OpenClaw y Claude Code con tu cuenta. Revisemos qué falta.</p>
+      </div>
+    </header>
+    <div class="listo" id="listo" hidden>
+      <p><strong>¡Todo listo!</strong> Brote ya puede conversar contigo usando tu cuenta de Claude.</p>
+      <button type="button" class="boton boton-primario" id="empezar">Empezar</button>
+    </div>
+    <p class="aviso" id="aviso" hidden></p>
+    <main id="pasos" aria-live="polite"><p class="vacio">Revisando…</p></main>
+    <footer class="pie">
+      <p>Todo queda en tu computador. Brote siempre te pide permiso antes de ejecutar comandos.</p>
+      <div class="botones-pie">
+        <button type="button" class="boton" id="revisar">Revisar de nuevo</button>
+        <button type="button" class="boton boton-primario" id="todo">Arreglar todo</button>
+      </div>
+    </footer>
+    <script type="module" src="/src/configuracion.ts"></script>
+  </body>
+</html>

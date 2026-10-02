@@ -2,6 +2,7 @@
 // y permite corregir u olvidar. Todo pasa por el puente; el contenido viene de archivos de
 // memoria, así que siempre se pone como texto, nunca como HTML.
 
+import { invoke } from "@tauri-apps/api/core";
 import { TransportePuente } from "./agente/puente";
 
 type TipoRecuerdo = "brote" | "conversacion" | "importado";
@@ -283,6 +284,8 @@ nueva.addEventListener("click", async () => {
     nueva.disabled = false;
   }
 });
+
+document.querySelector("#configurar")!.addEventListener("click", () => void invoke("abrir_configuracion"));
 
 // Al volver a la ventana se recarga, por si Brote aprendió o recordó algo mientras tanto.
 window.addEventListener("focus", () => void cargar());

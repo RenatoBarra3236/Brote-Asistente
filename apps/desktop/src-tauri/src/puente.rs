@@ -3,7 +3,6 @@
 //! entrada estándar y reenvía cada línea de su salida a la ventana como evento `puente`.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,12 +24,16 @@ fn aviso_desconectado(detalle: &str) -> String {
 impl Puente {
     /// Lanza el puente. Si no se puede, queda desconectado y la ventana muestra el motivo.
     pub fn iniciar(app: &AppHandle) -> Puente {
-        // Solo para el prototipo en desarrollo: el script se toma directo del repo.
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../packages/adapter/src/puente.ts");
-        let node = std::env::var("ASISTENTE_NODE").unwrap_or_else(|_| "node".into());
+        let script = crate::entorno::script_del_puente(app);
         let conexion = Arc::new(Mutex::new(aviso_desconectado("Conectando con OpenClaw…")));
+        let Some((node, _)) = crate::entorno::buscar_node() else {
+            let detalle = format!("No encontré Node {} o superior: instálalo desde nodejs.org", crate::entorno::NODE_MINIMO);
+            eprintln!("[puente] {detalle}");
+            *conexion.lock().unwrap() = aviso_desconectado(&detalle);
+            return Puente { hijo: Mutex::new(None), entrada: Mutex::new(None), conexion };
+        };
 
-        let lanzado = Command::new(&node)
+        let lanzado = crate::entorno::sin_consola(&mut Command::new(&node))
             .arg(&script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -39,7 +42,7 @@ impl Puente {
         let mut hijo = match lanzado {
             Ok(hijo) => hijo,
             Err(error) => {
-                eprintln!("[puente] no se pudo lanzar `{node} {}`: {error}", script.display());
+                eprintln!("[puente] no se pudo lanzar `{} {}`: {error}", node.display(), script.display());
                 *conexion.lock().unwrap() = aviso_desconectado(&format!("No pude iniciar el puente con OpenClaw ({error})"));
                 return Puente { hijo: Mutex::new(None), entrada: Mutex::new(None), conexion };
             }

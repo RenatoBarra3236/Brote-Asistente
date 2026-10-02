@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "tipos": "tsc --noEmit",
     "test": "node --test \"pruebas/*.test.ts\"",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "empaquetar-puente": "node scripts/empaquetar-puente.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2"

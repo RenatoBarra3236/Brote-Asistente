@@ -10,8 +10,8 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { WORKSPACE, memoriaDeClaudeCode } from "./rutas.ts";
 
 export type TipoRecuerdo = "brote" | "conversacion" | "importado";
 
@@ -34,9 +34,9 @@ export interface Lugares {
 }
 
 export const LUGARES: Lugares = {
-  brote: join(homedir(), ".claude", "projects", "-Users-renatobarra--openclaw-workspace", "memory"),
-  conversaciones: join(homedir(), ".openclaw", "workspace", "memory"),
-  importados: join(homedir(), ".openclaw", "workspace", "memory", "imports", "claude-code"),
+  brote: memoriaDeClaudeCode(WORKSPACE),
+  conversaciones: join(WORKSPACE, "memory"),
+  importados: join(WORKSPACE, "memory", "imports", "claude-code"),
 };
 
 const INDICE = "MEMORY.md";

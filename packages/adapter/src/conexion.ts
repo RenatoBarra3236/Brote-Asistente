@@ -3,13 +3,13 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { GatewayClient, type GatewayClientOptions } from "@openclaw/gateway-client";
 import { GATEWAY_CLIENT_CAPS } from "@openclaw/gateway-protocol/client-info";
 import { dependenciasDeDispositivo } from "./identidad.ts";
 
-export const AGENTE = process.env.OPENCLAW_AGENT ?? "asistente-multiplataforma";
+import { AGENTE, CONFIG_OPENCLAW } from "./rutas.ts";
+
+export { AGENTE };
 export const SESION = process.env.OPENCLAW_SESSION ?? `agent:${AGENTE}:main`;
 
 export type Decision = "allow-once" | "allow-always" | "deny";
@@ -19,9 +19,9 @@ export type Avisos = Pick<GatewayClientOptions, "onHelloOk" | "onEvent" | "onCon
 
 // El token se lee al ejecutar, desde la configuración de OpenClaw; nunca se guarda en el repo.
 export function leerConexion(): { url: string; token: string } {
-  const config = JSON.parse(readFileSync(join(homedir(), ".openclaw", "openclaw.json"), "utf8"));
+  const config = JSON.parse(readFileSync(CONFIG_OPENCLAW, "utf8"));
   const token = process.env.OPENCLAW_GATEWAY_TOKEN ?? config?.gateway?.auth?.token;
-  if (!token) throw new Error("No encontré el token del Gateway en ~/.openclaw/openclaw.json");
+  if (!token) throw new Error(`No encontré el token del Gateway en ${CONFIG_OPENCLAW}`);
   const puerto = config?.gateway?.port ?? 18789;
   return { url: `ws://127.0.0.1:${puerto}`, token };
 }

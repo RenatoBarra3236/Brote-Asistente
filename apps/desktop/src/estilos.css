@@ -34,6 +34,14 @@ body {
   transition: opacity 140ms ease-out;
 }
 
+/* Modo flotante: sin la isla negra detrás, el panel lleva su propio fondo. */
+.panel.flotante {
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(18, 18, 18, 0.94);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
 .panel.visible {
   opacity: 1;
   pointer-events: auto;
@@ -63,6 +71,26 @@ body {
   white-space: nowrap !important;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Formato de las respuestas (markdown mínimo). */
+.burbuja-respuesta p + p,
+.burbuja-respuesta p + ul,
+.burbuja-respuesta p + ol,
+.burbuja-respuesta ul + p,
+.burbuja-respuesta ol + p {
+  margin-top: 6px;
+}
+.burbuja-respuesta ul,
+.burbuja-respuesta ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.burbuja-respuesta code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 .burbuja-respuesta.error {

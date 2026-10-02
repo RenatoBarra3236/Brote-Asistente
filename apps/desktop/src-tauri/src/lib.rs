@@ -1,5 +1,7 @@
 #[cfg(target_os = "macos")]
 mod notch;
+mod configuracion;
+mod entorno;
 mod puente;
 
 use puente::Puente;
@@ -54,16 +56,18 @@ fn agente_escribir(agente: State<Agente>, linea: String) -> Result<(), String> {
     agente.puente.as_ref().ok_or("sin puente")?.escribir(&linea)
 }
 
-/// Abre (o trae al frente) la ventana "Lo que sé de ti". Es asíncrono porque crear ventanas
-/// desde un comando síncrono puede bloquear el hilo principal.
-#[tauri::command]
-async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
-    let ventana = match app.get_webview_window("memoria") {
+/// Abre (o trae al frente) una ventana normal de la app. Como la app es de tipo accesorio, en
+/// macOS hay que activarla para que la ventana quede al frente.
+async fn abrir_ventana(app: &AppHandle, etiqueta: &str, pagina: &str, titulo: &str, tamano: (f64, f64)) -> Result<(), String> {
+    let ventana = match app.get_webview_window(etiqueta) {
         Some(ventana) => ventana,
-        None => tauri::WebviewWindowBuilder::new(&app, "memoria", tauri::WebviewUrl::App("memoria.html".into()))
-            .title("Lo que sé de ti")
-            .inner_size(480.0, 660.0)
+        None => tauri::WebviewWindowBuilder::new(app, etiqueta, tauri::WebviewUrl::App(pagina.into()))
+            .title(titulo)
+            .inner_size(tamano.0, tamano.1)
             .min_inner_size(380.0, 420.0)
+            // Sin Dock, una ventana minimizada no tendría desde dónde volver: se cierra y se
+            // reabre desde 🌱 en la barra de menú (o con 🧠 en la isla).
+            .minimizable(false)
             .center()
             .build()
             .map_err(|e| e.to_string())?,
@@ -74,6 +78,19 @@ async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
     ventana.show().map_err(|e| e.to_string())?;
     ventana.unminimize().map_err(|e| e.to_string())?;
     ventana.set_focus().map_err(|e| e.to_string())
+}
+
+/// La ventana "Lo que sé de ti". Asíncrono: crear ventanas desde un comando síncrono puede
+/// bloquear el hilo principal.
+#[tauri::command]
+async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
+    abrir_ventana(&app, "memoria", "memoria.html", "Lo que sé de ti", (480.0, 660.0)).await
+}
+
+/// La ventana "Configurar Brote".
+#[tauri::command]
+async fn abrir_configuracion(app: AppHandle) -> Result<(), String> {
+    abrir_ventana(&app, "configuracion", "configuracion.html", "Configurar Brote", (520.0, 720.0)).await
 }
 
 /// En macOS la app no tiene Dock ni menú, así que Cmd + Q lo maneja el propio personaje.
@@ -98,8 +115,14 @@ fn cursor_relativo(window: WebviewWindow) -> Result<Desplazamiento, String> {
     })
 }
 
+/// Tamaño de la ventana flotante (Windows y, para probar, macOS con `ASISTENTE_MODO=flotante`).
+const ANCHO_FLOTANTE: f64 = 400.0;
+const ALTO_FLOTANTE: f64 = 280.0;
+
 /// Ventana flotante en la esquina inferior derecha de la pantalla principal.
 fn ubicar_en_esquina(ventana: &WebviewWindow) -> tauri::Result<()> {
+    // Lugar para Brote (a la derecha) y para el panel de conversación (a su izquierda).
+    ventana.set_size(tauri::LogicalSize::new(ANCHO_FLOTANTE, ALTO_FLOTANTE))?;
     let Some(monitor) = ventana.primary_monitor()? else {
         return Ok(());
     };
@@ -107,10 +130,10 @@ fn ubicar_en_esquina(ventana: &WebviewWindow) -> tauri::Result<()> {
     let area = monitor.work_area();
     let origen = area.position.to_logical::<f64>(escala);
     let tamano_area = area.size.to_logical::<f64>(escala);
-    let tamano_ventana = ventana.outer_size()?.to_logical::<f64>(escala);
+    // El tamaño fijo, no `outer_size()`: justo después de `set_size` todavía puede dar el anterior.
     ventana.set_position(LogicalPosition::new(
-        origen.x + tamano_area.width - tamano_ventana.width - 24.0,
-        origen.y + tamano_area.height - tamano_ventana.height - 24.0,
+        origen.x + tamano_area.width - ANCHO_FLOTANTE - 24.0,
+        origen.y + tamano_area.height - ALTO_FLOTANTE - 24.0,
     ))
 }
 
@@ -121,6 +144,12 @@ fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
     const ANCHO: f64 = 440.0;
     const ALTO: f64 = 220.0;
+
+    // Para probar en un Mac la experiencia de Windows (ventana flotante en vez de notch).
+    if std::env::var("ASISTENTE_MODO").is_ok_and(|modo| modo == "flotante") {
+        ubicar_en_esquina(ventana)?;
+        return Ok(Diseno::flotante());
+    }
 
     let Some(pantalla) = (unsafe { notch::pantalla_principal() }) else {
         ubicar_en_esquina(ventana)?;
@@ -143,6 +172,49 @@ fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
     Ok(Diseno::flotante())
 }
 
+/// El ícono 🌱 en la barra de menú (o la bandeja en Windows). La app no tiene Dock ni menú propio,
+/// así que desde aquí se abre lo demás y, sobre todo, se puede salir.
+fn crear_icono_de_barra(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let memoria = MenuItem::with_id(app, "memoria", "Lo que sé de ti", true, None::<&str>)?;
+    let configurar = MenuItem::with_id(app, "configurar", "Configurar Brote…", true, None::<&str>)?;
+    let salir = MenuItem::with_id(app, "salir", "Salir de Brote", true, None::<&str>)?;
+    let separador = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&memoria, &configurar, &separador, &salir])?;
+
+    let mut icono = TrayIconBuilder::with_id("brote")
+        .tooltip("Brote")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, evento| {
+            let app = app.clone();
+            match evento.id.as_ref() {
+                "memoria" => {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = abrir_memoria(app).await;
+                    });
+                }
+                "configurar" => {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = abrir_configuracion(app).await;
+                    });
+                }
+                "salir" => app.exit(0),
+                _ => {}
+            }
+        });
+    // En macOS la barra de menú muestra el brote como texto; en Windows hace falta un ícono.
+    if cfg!(target_os = "macos") {
+        icono = icono.title("🌱");
+    } else if let Some(imagen) = app.default_window_icon() {
+        icono = icono.icon(imagen.clone());
+    }
+    icono.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -161,6 +233,18 @@ pub fn run() {
             let simulado = std::env::var("ASISTENTE_SIMULADO").is_ok_and(|v| v == "1");
             let puente = (!simulado).then(|| Puente::iniciar(app.handle()));
             app.manage(Agente { puente });
+            crear_icono_de_barra(app)?;
+
+            // Si falta configurar algo (por ejemplo, en un computador nuevo), se abre el asistente.
+            let manija = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let listo = configuracion::configuracion(manija.clone(), "rapido".into(), None)
+                    .await
+                    .is_ok_and(|salida| salida.contains("\"listo\":true"));
+                if !listo {
+                    let _ = abrir_configuracion(manija).await;
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -170,7 +254,12 @@ pub fn run() {
             agente_modo,
             agente_conexion,
             agente_escribir,
-            abrir_memoria
+            abrir_memoria,
+            abrir_configuracion,
+            configuracion::configuracion,
+            configuracion::abrir_terminal,
+            configuracion::abrir_enlace,
+            configuracion::reiniciar
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la app del personaje")

@@ -125,7 +125,8 @@ export class Isla {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       // Achica la letra si el nombre del estado no cabe en la columna del personaje.
-      const nombre = ESTADOS[personaje.estado].nombre;
+      // En reposo se muestra su nombre: "En reposo" sobraba mientras se lee una respuesta.
+      const nombre = personaje.estado === "reposo" ? "Brote" : ESTADOS[personaje.estado].nombre;
       ctx.font = "600 11px system-ui, sans-serif";
       const tamano = Math.min(11, (11 * (COLUMNA - 12)) / ctx.measureText(nombre).width);
       ctx.font = `600 ${tamano.toFixed(1)}px system-ui, sans-serif`;

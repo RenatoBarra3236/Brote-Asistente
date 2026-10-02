@@ -31,6 +31,9 @@ const ctx = lienzo.getContext("2d")!;
 const ventana = getCurrentWindow();
 const personaje = new Personaje();
 
+/** Modo flotante: cuánto sigue abierto el panel después de que el cursor se va (ms). */
+const ESPERA_CIERRE_MS = 800;
+
 /** Cuánto dura la cara de error antes de volver al reposo; el mensaje sigue en la burbuja (ms). */
 const DURACION_ERROR = 6000;
 
@@ -57,11 +60,12 @@ async function iniciar(): Promise<void> {
   const diseno = await invoke<Diseno>("diseno");
   const { agente, puente } = await crearAgente();
   const isla = diseno.modo === "notch" ? new Isla(diseno.notchAncho, diseno.notchAlto) : null;
-  // La interfaz para hablarle al agente vive en la isla; en la ventana flotante aún no hay.
-  const panel = isla
-    ? new Panel(agente, document.body, puente ? { alAbrirMemoria: () => void invoke("abrir_memoria") } : {})
-    : null;
-  if (panel && puente) {
+  // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
+  const panel = new Panel(agente, document.body, {
+    flotante: !isla,
+    ...(puente ? { alAbrirMemoria: () => void invoke("abrir_memoria") } : {}),
+  });
+  if (puente) {
     panel.mostrarConexion(puente.estadoConexion);
     puente.alCambiarConexion((estado) => panel.mostrarConexion(estado));
   }
@@ -131,9 +135,7 @@ async function iniciar(): Promise<void> {
 
     const x = lienzo.clientWidth / 2 + d.x;
     const y = lienzo.clientHeight / 2 + d.y;
-    hover = isla
-      ? isla.contiene(x, y, lienzo.clientWidth) || (panel?.contiene(x, y) ?? false)
-      : personaje.contiene(x, y);
+    hover = (isla ? isla.contiene(x, y, lienzo.clientWidth) : personaje.contiene(x, y)) || panel.contiene(x, y);
     if (presion) return;
     if (hover === atravesable) {
       atravesable = !hover;
@@ -144,9 +146,12 @@ async function iniciar(): Promise<void> {
   // En calma se dibuja a la mitad de cuadros por segundo para gastar menos CPU.
   let anterior = performance.now();
   let saltarCuadro = false;
+  // Modo flotante: el panel se abre igual que la isla (cursor encima o agente activo) y se cierra solo.
+  let panelAbierto = false;
+  let ultimaActividad = -Infinity;
   function cuadro(ahora: number): void {
     requestAnimationFrame(cuadro);
-    if (personaje.enCalma() && (!isla || isla.quieta())) {
+    if (personaje.enCalma() && (isla ? isla.quieta() : !panelAbierto)) {
       saltarCuadro = !saltarCuadro;
       if (saltarCuadro) return;
     }
@@ -157,15 +162,25 @@ async function iniciar(): Promise<void> {
 
     personaje.actualizar(dt);
     ctx.clearRect(0, 0, W, H);
+    const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {
-      const activo = personaje.estado !== "reposo" || (panel?.retieneIsla(ahora) ?? false);
-      isla.actualizar(dt, hover, activo, panel?.alto() ?? 0);
+      isla.actualizar(dt, hover, activo, panel.alto());
       isla.dibujar(ctx, W, personaje);
-      panel?.ubicar(isla.zonaPanel(W), isla.lista());
+      panel.ubicar(isla.zonaPanel(W), isla.lista());
     } else {
-      const R = Math.min(W, H) * 0.26;
-      personaje.dibujar(ctx, W / 2, H * 0.6 + R * 0.92, R);
-      personaje.dibujarEtiqueta(ctx, W / 2, H - 16);
+      // Brote abajo a la derecha; el panel a su izquierda, alineado abajo.
+      const R = 40;
+      const centro = W - 62;
+      personaje.dibujar(ctx, centro, H - 16, R);
+      personaje.dibujarEtiqueta(ctx, centro, H - R * 2 - 34);
+      if (hover || activo) {
+        panelAbierto = true;
+        ultimaActividad = ahora;
+      } else if (ahora - ultimaActividad > ESPERA_CIERRE_MS) {
+        panelAbierto = false;
+      }
+      const ancho = W - 140;
+      panel.ubicar({ x: 10, y: Math.max(10, H - 12 - panel.alto()), ancho, altoMax: H - 22 }, panelAbierto);
     }
   }
   requestAnimationFrame(cuadro);

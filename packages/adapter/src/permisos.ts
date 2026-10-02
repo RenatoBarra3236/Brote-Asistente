@@ -2,14 +2,12 @@
 // Es un control de seguridad: todo lo que no esté aquí sigue pidiendo permiso al usuario.
 
 import { existsSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
-
-const WORKSPACE = join(homedir(), ".openclaw", "workspace");
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { WORKSPACE, memoriaDeClaudeCode } from "./rutas.ts";
 
 /** Dónde vive la memoria de Brote: la de OpenClaw y la propia de Claude Code para este workspace. */
 export const MEMORIA_DE_BROTE = {
-  carpetas: [join(WORKSPACE, "memory"), join(homedir(), ".claude", "projects", "-Users-renatobarra--openclaw-workspace", "memory")],
+  carpetas: [join(WORKSPACE, "memory"), memoriaDeClaudeCode(WORKSPACE)],
   archivos: [join(WORKSPACE, "MEMORY.md"), join(WORKSPACE, "USER.md")],
 };
 
@@ -34,7 +32,7 @@ export function esDeMemoria(herramienta: string, detalle: unknown, memoria = MEM
   if (!HERRAMIENTAS_DE_ARCHIVO.has(herramienta) || typeof detalle !== "string") return false;
   try {
     const ruta = JSON.parse(detalle)?.file_path;
-    if (typeof ruta !== "string" || !ruta.startsWith("/")) return false;
+    if (typeof ruta !== "string" || !isAbsolute(ruta)) return false;
     const real = rutaReal(ruta);
     return (
       memoria.archivos.some((archivo) => existsSync(archivo) && real === realpathSync(archivo)) ||

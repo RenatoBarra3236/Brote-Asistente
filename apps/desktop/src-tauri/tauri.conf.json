@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Asistente",
+  "productName": "Brote",
   "version": "0.1.0",
   "identifier": "com.asistente.prototipo",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm empaquetar-puente && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && pnpm empaquetar-puente",
     "frontendDist": "../dist"
   },
   "app": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "personaje",
-        "title": "Personaje",
+        "title": "Brote",
         "width": 220,
         "height": 260,
         "resizable": false,
@@ -42,6 +42,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "recursos/": "recursos/"
+    }
   }
 }

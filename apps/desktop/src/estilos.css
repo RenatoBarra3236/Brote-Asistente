@@ -15,3 +15,164 @@ body {
   height: 100%;
   cursor: default;
 }
+
+[hidden] {
+  display: none !important;
+}
+
+/* Panel para hablar con el agente, dentro de la isla negra (panel.ts). */
+.panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  font: 12px/1.4 system-ui, -apple-system, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out;
+}
+
+.panel.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.burbuja {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-width: thin;
+}
+
+.burbuja p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.burbuja-usuario {
+  margin-bottom: 4px !important;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.burbuja-respuesta.error {
+  color: rgb(255, 138, 128);
+}
+
+.burbuja-herramienta {
+  margin-top: 4px !important;
+  color: rgb(122, 178, 255);
+  font-style: italic;
+}
+
+.aprobacion {
+  flex: none;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 176, 33, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 176, 33, 0.35);
+}
+
+.aprobacion-titulo {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: rgb(255, 196, 92);
+}
+
+.aprobacion-detalle {
+  display: block;
+  margin-bottom: 8px;
+  max-height: 3.2em;
+  overflow: hidden;
+  font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  color: rgba(255, 255, 255, 0.85);
+  overflow-wrap: anywhere;
+}
+
+.aprobacion-botones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.boton,
+.boton-enviar {
+  border: none;
+  font: 600 12px system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+.boton {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.boton-primario {
+  background: rgb(255, 176, 33);
+  color: #1d1300;
+}
+
+.boton:hover:not(:disabled),
+.boton-enviar:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.boton:disabled,
+.boton-enviar:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.formulario {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 3px 3px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.formulario:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.entrada {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #fff;
+  font: 12px system-ui, -apple-system, sans-serif;
+  /* El body no deja seleccionar; en WebKit eso también puede bloquear la escritura. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.entrada::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.boton-enviar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+  line-height: 22px;
+  padding: 0;
+}

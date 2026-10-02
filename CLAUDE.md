@@ -16,6 +16,7 @@ Personaje animado que vive en el PC (y más adelante en el celular y en su "casa
 ## Cómo ejecutar
 
 - Personaje en el PC: `pnpm --dir apps/desktop tauri dev` (necesita `export PATH="$HOME/.cargo/bin:$PATH"`). Teclas 1–6 cambian el estado; Cmd + Q cierra (en macOS no hay ícono en el Dock).
+- Pruebas y tipos del personaje: `pnpm --dir apps/desktop test` y `pnpm --dir apps/desktop tipos` (las pruebas corren con `node --test`, sin compilar).
 - Prueba del Gateway: `pnpm --dir packages/adapter spike "mensaje"`. Con `SPIKE_APROBACION=allow-once` responde las solicitudes de permiso.
 - Gateway de OpenClaw: `openclaw gateway status` / `openclaw gateway restart`. Config en `~/.openclaw/openclaw.json` (no versionar; tiene el token).
 
@@ -25,7 +26,8 @@ Personaje animado que vive en el PC (y más adelante en el celular y en su "casa
 - OpenClaw usa el runtime `claude-cli` (Claude Code del usuario, cuenta Pro) con `anthropic/claude-sonnet-5-5`. Nunca usar el método `setup-token`.
 - Política de comandos: `openclaw exec-policy preset cautious`. Por defecto OpenClaw ejecuta todo sin preguntar.
 - Sin identidad de dispositivo el Gateway solo da `operator.read`. La identidad está en `~/.asistente-prototipo/dispositivo.json` (`packages/adapter/src/identidad.ts`).
-- Eventos reales grabados del Gateway (anonimizados, uno por línea, tal como llegan a `onEvent`) en `packages/adapter/ejemplos/`: respuesta simple, respuesta con herramienta y aprobación permitida. Sirven para pruebas sin OpenClaw.
+- Eventos reales grabados del Gateway (anonimizados, uno por línea, tal como llegan a `onEvent`) en `packages/adapter/ejemplos/`: respuesta simple, respuesta con herramienta y aprobación permitida. `aprobacion-rechazada.jsonl` y `error.jsonl` están **armados** con la misma forma (ver su README). Sirven para pruebas sin OpenClaw.
+- `apps/desktop/src/agente/` se importa desde Node en las pruebas: imports entre sus archivos con extensión `.ts`, `import type` para los tipos y nada que Node no pueda borrar (enums, propiedades en el constructor).
 - Las aprobaciones llegan como `session.approval` solo con `sessions.messages.subscribe` + `includeApprovals: true`; se responden con `approval.resolve { id, kind, decision }`.
 - Transparencia en macOS: `macOSPrivateApi: true` en `tauri.conf.json` + feature `macos-private-api` en Cargo.
 - Notch en macOS (`src-tauri/src/notch.rs`): la ventana se convierte en una subclase de `NSPanel` no activadora (`PersonajePanel`), nivel 27, `collectionBehavior` de todos los escritorios + pantalla completa, y la app usa `ActivationPolicy::Accessory`. Sin el panel no aparece sobre apps en pantalla completa. Los clics atraviesan la ventana salvo sobre la isla (`setIgnoreCursorEvents` cada 50 ms).
@@ -35,4 +37,5 @@ Personaje animado que vive en el PC (y más adelante en el celular y en su "casa
 
 - [x] Paso 1: entorno · [x] Paso 2: referencias · [x] Paso 3: prueba del Gateway
 - [x] Paso 4: personaje base — `apps/desktop` (Tauri 2 + Canvas: resortes, ojos sobre esfera que siguen al cursor global, 6 estados). macOS: isla en el notch (`src/isla.ts`) que se despliega con hover o actividad. Resto: ventana flotante arrastrable. Windows sin probar.
-- Siguiente: **paso 5** conectar personaje y agente · 6 motor de comandos y skill de gastos · 7 motor que aprende · 8 continuidad y memoria (embeddings locales) · 9 "Lo que sé de ti" · 10 pulido y demo.
+- [ ] Paso 5: personaje conectado al agente — hecho el código en `apps/desktop/src/agente/` (interfaz `Transporte`, traducción de eventos, modelo de la conversación, `TransporteSimulado` con los ejemplos) y el panel de la isla (`src/panel.ts`). Falta el transporte con el `GatewayClient` real y probar en el Mac.
+- Siguiente: 6 motor de comandos y skill de gastos · 7 motor que aprende · 8 continuidad y memoria (embeddings locales) · 9 "Lo que sé de ti" · 10 pulido y demo.

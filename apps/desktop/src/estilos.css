@@ -394,7 +394,7 @@ body {
 /* Modo programador: sesiones de Claude Code. */
 .sesion .fila-nombre {
   flex: 0 1 auto;
-  max-width: 45%;
+  max-width: 55%;
   font-weight: 600;
 }
 .fila-actividad {

@@ -85,6 +85,20 @@ function corto(texto: string, max = 40): string {
   return linea.length > max ? linea.slice(0, max - 1).trimEnd() : linea;
 }
 
+/**
+ * Lo que de verdad hace un comando: Claude Code suele anteponer `cd <ruta> &&` (o `;`), que no
+ * dice nada. Si el comando es solo un `cd`, queda "cd". "cd /Users/x/app && npm test" → "npm test".
+ */
+export function comandoUtil(comando: string): string {
+  let resto = comando.trim();
+  for (;;) {
+    const m = resto.match(/^(?:cd|pushd|Set-Location)\s+(?:"[^"]*"|'[^']*'|\S+)\s*(?:&&|;|\|\|)\s*/i);
+    if (!m) break;
+    resto = resto.slice(m[0].length);
+  }
+  return resto || comando.trim().split(/\s+/)[0];
+}
+
 /** "Editando lib.rs…", "Ejecutando npm test…", "Buscando «useState»…". */
 export function describirHerramienta(herramienta: string | undefined, entrada: EventoHook["entrada"]): string {
   const archivo = entrada?.archivo ? basename(entrada.archivo) : null;
@@ -101,7 +115,7 @@ export function describirHerramienta(herramienta: string | undefined, entrada: E
       return archivo ? `Leyendo ${archivo}…` : "Leyendo…";
     case "Bash":
     case "PowerShell":
-      return entrada?.comando ? `Ejecutando ${corto(entrada.comando)}…` : "Ejecutando un comando…";
+      return entrada?.comando ? `Ejecutando ${corto(comandoUtil(entrada.comando))}…` : "Ejecutando un comando…";
     case "Grep":
     case "Glob":
       return entrada?.patron ? `Buscando «${corto(entrada.patron, 30)}»…` : "Buscando en el código…";

@@ -33,6 +33,11 @@ describe("modo programador: eventos", () => {
     assert.equal(describirHerramienta("Read", { archivo: "C:\\proyecto\\main.py".replace(/\\/g, "/") }), "Leyendo main.py…");
     assert.equal(describirHerramienta("Bash", { comando: "npm test -- --watch=false   && echo listo y algo más largo" }), "Ejecutando npm test -- --watch=false && echo listo…");
     assert.equal(describirHerramienta("Grep", { patron: "useState" }), "Buscando «useState»…");
+    // Claude Code suele anteponer un cd: se muestra lo que de verdad corre.
+    assert.equal(describirHerramienta("Bash", { comando: "cd /Users/renato/Asistente-multiplataforma && pnpm test" }), "Ejecutando pnpm test…");
+    assert.equal(describirHerramienta("Bash", { comando: 'cd "/Users/r/mi proyecto"; cd src && cargo build' }), "Ejecutando cargo build…");
+    assert.equal(describirHerramienta("Bash", { comando: "cd /tmp" }), "Ejecutando cd /tmp…");
+    assert.equal(describirHerramienta("Bash", { comando: "cd /x && " }), "Ejecutando cd…");
     assert.equal(describirHerramienta("mcp__github__create_pull_request", undefined), "Usando create_pull_request…");
     assert.equal(describirHerramienta("Rara", undefined), "Usando Rara…");
   });

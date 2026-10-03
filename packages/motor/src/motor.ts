@@ -16,6 +16,7 @@ import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
 import { UNIDADES, describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
+import { MENSAJE_APAGADA, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
 
 export interface Resultado {
   intencion: Intencion;
@@ -138,6 +139,7 @@ export class Motor {
   private readonly sesionesClaude: (() => SesionClaude[]) | null;
   private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
   private readonly aula: (() => Entrega[] | null) | null;
+  private readonly activa: (funcion: IdFuncion) => boolean;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -160,8 +162,11 @@ export class Motor {
       crearEvento?: (evento: NuevoEvento) => ResultadoCreacion;
       /** Las entregas del aula (Canvas o Moodle; `null` si no está configurada). */
       aula?: () => Entrega[] | null;
+      /** Si una función está prendida (Configurar Brote → Funciones). Sin esto, todas lo están. */
+      activa?: (funcion: IdFuncion) => boolean;
     } = {},
   ) {
+    this.activa = opciones.activa ?? (() => true);
     this.aula = opciones.aula ?? null;
     this.crearEvento = opciones.crearEvento ?? null;
     this.sesionesClaude = opciones.sesionesClaude ?? null;
@@ -188,6 +193,11 @@ export class Motor {
   resolver(texto: string): Resultado | null {
     const entendido = this.entender(texto);
     if (!entendido) return null;
+    // Una frase de una función apagada no va al agente: se le dice al usuario dónde prenderla.
+    const funcion = funcionDeIntencion(entendido.accion.intencion);
+    if (funcion && !this.activa(funcion)) {
+      return { intencion: entendido.accion.intencion, plantilla: entendido.plantilla.id, texto: MENSAJE_APAGADA };
+    }
     // Sin temporizadores conectados (por ejemplo, en el servidor MCP), esas frases van al agente.
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
@@ -241,7 +251,7 @@ export class Motor {
     const resultado = this.crearEvento!(evento);
     const texto = describirCreacion(evento, resultado, ahora.getTime());
     const faltan = inicioMs - ahora.getTime();
-    if (resultado.ok || resultado.motivo === "invalido" || !this.temporizadores || faltan <= 0 || faltan > 12 * UNIDADES.HORA) return texto;
+    if (resultado.ok || resultado.motivo === "invalido" || !this.temporizadores || !this.activa("temporizadores") || faltan <= 0 || faltan > 12 * UNIDADES.HORA) return texto;
     this.temporizadores.crear(faltan, accion.titulo, ahora);
     return `${texto} Mientras, te dejé un recordatorio ⏰ para esa hora.`;
   }

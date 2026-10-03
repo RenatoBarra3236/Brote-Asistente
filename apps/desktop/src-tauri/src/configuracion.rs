@@ -21,14 +21,34 @@ pub fn script(app: &AppHandle) -> std::path::PathBuf {
     }
 }
 
-/// Lo que devuelve la revisión cuando ni siquiera hay Node para correr el script.
-fn sin_node() -> String {
+/// Dónde puede estar Homebrew (Apple Silicon e Intel). Lista cerrada: el comando de la terminal se
+/// arma solo con estas rutas.
+const RUTAS_BREW: &[&str] = &["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
+
+/// La ruta de Homebrew, si está instalado (solo en macOS).
+fn brew() -> Option<&'static str> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    RUTAS_BREW.iter().copied().find(|ruta| std::path::Path::new(ruta).exists())
+}
+
+/// Lo que devuelve la revisión cuando ni siquiera hay Node para correr el script. Con Homebrew se
+/// ofrece instalarlo con él (en una terminal, a la vista); si no, la página oficial.
+fn sin_node(con_brew: bool) -> String {
+    let descargar = serde_json::json!({ "tipo": "enlace", "etiqueta": "Descargar Node", "enlace": "node" });
+    let (accion, alternativa) = if con_brew {
+        (serde_json::json!({ "tipo": "terminal", "etiqueta": "Instalar con Homebrew", "terminal": "brew-node" }), descargar)
+    } else {
+        (descargar, serde_json::Value::Null)
+    };
     serde_json::json!([{
         "id": "node",
         "titulo": "Node",
         "estado": "falta",
-        "detalle": format!("No encontré Node {} o superior. Instálalo y vuelve a revisar.", entorno::NODE_MINIMO),
-        "accion": { "tipo": "enlace", "etiqueta": "Descargar Node", "enlace": "node" }
+        "detalle": format!("No encontré Node {} o superior. Brote lo necesita para funcionar.", entorno::NODE_MINIMO),
+        "accion": accion,
+        "alternativa": alternativa,
     }])
     .to_string()
 }
@@ -44,7 +64,7 @@ pub async fn configuracion(app: AppHandle, orden: String, paso: Option<String>) 
         _ => return Err("pedido no válido".into()),
     }
     let Some((node, _)) = entorno::buscar_node() else {
-        return Ok(if orden == "rapido" { r#"{"listo":false}"#.into() } else { sin_node() });
+        return Ok(if orden == "rapido" { r#"{"listo":false}"#.into() } else { sin_node(brew().is_some()) });
     };
     let script = script(&app);
     // El script puede tardar (instalar OpenClaw, configurarlo): se corre fuera del hilo principal.
@@ -61,14 +81,22 @@ pub async fn configuracion(app: AppHandle, orden: String, paso: Option<String>) 
     .map_err(|e| e.to_string())?
 }
 
+/// El comando de cada terminal que se puede abrir (lista cerrada). `brew` es la ruta de Homebrew,
+/// que solo puede ser una de `RUTAS_BREW`.
+fn comando_terminal(cual: &str, brew: Option<&'static str>) -> Option<String> {
+    match cual {
+        "login-claude" => Some("claude".into()),
+        "memoria-local" => Some("openclaw configure --section model".into()),
+        "brew-node" => brew.filter(|ruta| RUTAS_BREW.contains(ruta)).map(|ruta| format!("{ruta} install node")),
+        _ => None,
+    }
+}
+
 /// Abre una terminal con uno de los comandos que necesitan interacción del usuario.
 #[tauri::command]
 pub fn abrir_terminal(cual: String) -> Result<(), String> {
-    let comando = match cual.as_str() {
-        "login-claude" => "claude",
-        "memoria-local" => "openclaw configure --section model",
-        _ => return Err("terminal no válida".into()),
-    };
+    let comando = comando_terminal(&cual, brew()).ok_or("terminal no válida")?;
+    let comando = comando.as_str();
     #[cfg(target_os = "macos")]
     let lanzado = Command::new("osascript")
         .args(["-e", &format!("tell application \"Terminal\" to do script \"{comando}\""), "-e", "tell application \"Terminal\" to activate"])
@@ -87,6 +115,8 @@ pub fn abrir_enlace(cual: String) -> Result<(), String> {
         "node" => "https://nodejs.org/es/download",
         "claude-code" => "https://claude.com/claude-code",
         "privacidad-calendarios" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+        "privacidad-descargas" => "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
+        "privacidad-automatizacion" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
         _ => return Err("enlace no válido".into()),
     };
     #[cfg(target_os = "macos")]
@@ -221,6 +251,21 @@ pub fn guardar_aula(tipo: Option<String>, url: Option<String>, token: Option<Str
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn terminales_de_una_lista_cerrada() {
+        assert_eq!(comando_terminal("login-claude", None).unwrap(), "claude");
+        assert_eq!(comando_terminal("brew-node", Some("/opt/homebrew/bin/brew")).unwrap(), "/opt/homebrew/bin/brew install node");
+        // Sin Homebrew (o con una ruta que no es de la lista) no hay comando.
+        assert!(comando_terminal("brew-node", None).is_none());
+        assert!(comando_terminal("brew-node", Some("/tmp/brew")).is_none());
+        assert!(comando_terminal("rm -rf ~", None).is_none());
+        let sin = serde_json::from_str::<serde_json::Value>(&sin_node(false)).unwrap();
+        assert_eq!(sin[0]["accion"]["enlace"], "node");
+        let con = serde_json::from_str::<serde_json::Value>(&sin_node(true)).unwrap();
+        assert_eq!(con[0]["accion"]["terminal"], "brew-node");
+        assert_eq!(con[0]["alternativa"]["enlace"], "node");
+    }
 
     #[test]
     fn solo_direcciones_ical_https() {

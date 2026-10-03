@@ -1,0 +1,271 @@
+<!doctype html>
+<!--
+  Vista previa de "Configurar Brote" en un navegador, para trabajar el diseño sin abrir la app: simula
+  Tauri, el script `configurar` y el puente con datos de ejemplo. Con `tauri dev` (o `pnpm dev`)
+  corriendo: http://localhost:1420/vista-previa-configuracion.html
+  Parámetros:
+    ?escenario=nuevo    primera vez sin Node (con Homebrew): asistente de 3 pasos. "Instalar con Homebrew",
+                        "Iniciar sesión" y el consentimiento destraban "Preparar Brote", que avanza solo.
+    ?escenario=listo    todo listo: barra lateral (por defecto)
+    ?escenario=roto     ya se usaba Brote, pero OpenClaw está apagado: Estado ofrece "Reparar"
+    ?escenario=permiso  todo listo, pero la música no tiene el permiso de Automatización, el Calendario del
+                        Mac está negado y las descargas están apagadas (su permiso "ya no hace falta")
+    ?seccion=estado|funciones|conectores|aula|permisos|memoria · ?paso=2|3 (asistente) ·
+    ?plataforma=windows (sin permisos de macOS)
+  No es parte de la app (no está entre las páginas de vite.config.ts).
+-->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vista previa de Configurar Brote</title>
+    <link rel="stylesheet" href="/src/memoria.css" />
+    <link rel="stylesheet" href="/src/configuracion.css" />
+    <script>
+      const parametros = new URLSearchParams(location.search);
+      const escenario = parametros.get("escenario") ?? "listo";
+      if (parametros.get("plataforma") !== "windows") {
+        Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15" });
+      }
+
+      // ---- El estado simulado del computador.
+      const sim = {
+        node: escenario !== "nuevo",
+        openclaw: escenario !== "nuevo",
+        claude: escenario !== "nuevo",
+        agente: escenario !== "nuevo",
+        modelo: escenario !== "nuevo",
+        gateway: escenario !== "nuevo" && escenario !== "roto",
+        identidad: escenario !== "nuevo",
+        permisos: escenario !== "nuevo",
+        skill: escenario !== "nuevo",
+        mcp: escenario !== "nuevo",
+        memoria: escenario !== "nuevo",
+        "memoria-local": escenario === "listo",
+        programador: false,
+        calendarioMac: escenario === "permiso" ? 2 : escenario === "listo" ? 3 : 0,
+        ical: escenario === "listo",
+        aula: escenario !== "nuevo",
+        funciones:
+          escenario === "nuevo"
+            ? null
+            : JSON.stringify({
+                version: 1,
+                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "memoria-local": false },
+                tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: [] },
+              }),
+      };
+      const paso = (id, titulo, ok, detalleOk, detalleFalta, accion) => ({
+        id,
+        titulo,
+        estado: ok ? "ok" : "falta",
+        detalle: ok ? detalleOk : detalleFalta,
+        ...(ok || !accion ? {} : { accion }),
+      });
+      function revisar() {
+        if (!sim.node) {
+          // Sin Node, Rust responde solo con este paso (ver `sin_node` en configuracion.rs).
+          return [
+            {
+              id: "node",
+              titulo: "Node",
+              estado: "falta",
+              detalle: "No encontré Node 24 o superior. Brote lo necesita para funcionar.",
+              accion: { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-node" },
+              alternativa: { tipo: "enlace", etiqueta: "Descargar Node", enlace: "node" },
+            },
+          ];
+        }
+        const auto = (etiqueta) => ({ tipo: "automatica", etiqueta });
+        const conAgente = sim.agente;
+        return [
+          paso("node", "Node", true, "Node 24.16.0"),
+          paso("openclaw", "OpenClaw", sim.openclaw, "Versión 2026.9.7", "No está instalado. Es el agente que le da cerebro a Brote.", auto("Instalar OpenClaw")),
+          paso("claude", "Claude Code con tu cuenta", sim.claude, "Sesión iniciada (pro).", "Instalado, pero sin sesión iniciada.", { tipo: "terminal", etiqueta: "Iniciar sesión", terminal: "login-claude" }),
+          paso("agente", "Agente de OpenClaw", sim.agente, "Agente «asistente-multiplataforma», solo accesible desde este computador.", "Falta configurar OpenClaw: un agente que use Claude Code y que solo escuche en este computador.", { tipo: "automatica", etiqueta: "Configurar OpenClaw", requiereConsentimiento: true }),
+          paso("modelo", "Modelo", sim.modelo, "Claude Sonnet 5.5 a través de Claude Code.", "Brote debe usar anthropic/claude-sonnet-5-5 con Claude Code (hoy: ninguno).", conAgente ? auto("Usar Sonnet") : undefined),
+          paso("gateway", "OpenClaw en marcha", sim.gateway, "Funcionando.", "El servicio de OpenClaw no está corriendo.", conAgente ? auto("Encender") : undefined),
+          paso("identidad", "Brote 🌱", sim.identidad, "El agente se llama Brote y tiene su personalidad.", "El agente todavía no es Brote (nombre y personalidad).", conAgente ? auto("Darle su identidad") : undefined),
+          paso("permisos", "Permisos prudentes", sim.permisos, "Brote te pide permiso antes de ejecutar comandos.", "OpenClaw podría ejecutar comandos sin preguntarte. Brote debe pedir permiso.", conAgente ? auto("Pedir permiso siempre") : undefined),
+          paso("skill", "Skill de gastos", sim.skill, "El agente sabe cuándo usar tus gastos.", "Falta enseñarle al agente a usar tus gastos.", conAgente ? auto("Instalar skill") : undefined),
+          paso("mcp", "Gastos compartidos con el agente", sim.mcp, "El agente lee y anota en la misma base que Brote.", "Falta conectar tus gastos con el agente (servidor MCP de gastos).", conAgente ? auto("Conectar") : undefined),
+          paso("memoria", "Memoria transparente", sim.memoria, "Todo lo que Brote recuerda se ve en «Lo que sé de ti».", "OpenClaw también busca en transcripciones que el panel no muestra.", conAgente ? auto("Ajustar") : undefined),
+          {
+            id: "memoria-local",
+            titulo: "Búsqueda por significado (opcional)",
+            estado: sim["memoria-local"] ? "ok" : "opcional",
+            detalle: sim["memoria-local"] ? "La memoria busca por significado, en tu computador y sin costo." : "Sin esto, Brote busca en su memoria por palabras exactas. Descarga un modelo de ~0,3 GB.",
+            ...(sim["memoria-local"] ? {} : { accion: { tipo: "terminal", etiqueta: "Configurar en la terminal", terminal: "memoria-local" } }),
+          },
+          {
+            id: "calendario-mac",
+            titulo: "Calendario del Mac (opcional)",
+            estado: sim.calendarioMac === 3 ? "ok" : "opcional",
+            detalle:
+              sim.calendarioMac === 3
+                ? "Brote ve tus eventos (iCloud, Google, Exchange… los de la app Calendario) y te avisa 10 min antes."
+                : sim.calendarioMac === 0
+                  ? "Para que Brote te diga qué tienes hoy y te avise antes de cada clase. macOS te va a pedir permiso."
+                  : "Brote no tiene acceso a tus calendarios. Actívalo en Privacidad y seguridad → Calendarios → Brote (acceso completo).",
+            ...(sim.calendarioMac === 3
+              ? {}
+              : { accion: sim.calendarioMac === 0 ? auto("Permitir acceso") : { tipo: "enlace", etiqueta: "Abrir Privacidad", enlace: "privacidad-calendarios" } }),
+          },
+          {
+            id: "programador",
+            titulo: "Modo programador (opcional)",
+            estado: sim.programador ? "ok" : "opcional",
+            detalle: sim.programador
+              ? "Brote muestra tus sesiones de Claude Code en vivo y te deja responder sus permisos desde la isla."
+              : "Si programas con Claude Code, Brote muestra en la isla qué está haciendo cada sesión, celebra cuando termina y te deja responder sus permisos.",
+            ...(sim.programador
+              ? { quitar: { paso: "programador-quitar", etiqueta: "Desinstalar" } }
+              : {
+                  accion: {
+                    tipo: "automatica",
+                    etiqueta: "Instalar",
+                    requiereConsentimiento: true,
+                    textoConsentimiento:
+                      " Acepto que Brote agregue sus hooks a mi configuración de Claude Code (~/.claude/settings.json). Se respalda el archivo, no se tocan mis otros hooks, no se leen mis credenciales ni el texto de mis mensajes, y puedo desinstalarlo cuando quiera.",
+                  },
+                }),
+          },
+          {
+            id: "calendario-ical",
+            titulo: "Calendario por dirección iCal (opcional)",
+            estado: sim.ical ? "ok" : "opcional",
+            detalle: sim.ical
+              ? "Conectado: 4 eventos entre hoy y pasado mañana."
+              : "Pega la «dirección secreta en formato iCal» de Google Calendar (Configuración → tu calendario → Integrar el calendario). Queda solo en este computador.",
+            accion: { tipo: "ical", etiqueta: "Guardar", configurada: sim.ical },
+          },
+          {
+            id: "aula",
+            titulo: "Aula: Canvas o Moodle (opcional)",
+            estado: sim.aula ? "ok" : "opcional",
+            detalle: sim.aula
+              ? "Conectado a Canvas (campus.miu.cl): 3 entregas pendientes."
+              : "Brote te muestra tu próxima entrega y te avisa 24 h y 2 h antes. Pega la dirección de tu campus y un token personal (nunca tu contraseña). Solo lectura: Brote no puede entregar nada ni ver tus notas.",
+            accion: { tipo: "aula", etiqueta: "Guardar", configurada: sim.aula, plataforma: sim.aula ? "canvas" : null },
+          },
+        ];
+      }
+
+      const OK = {
+        openclaw: "OpenClaw 2026.9.7 instalado.",
+        agente: "OpenClaw quedó configurado con Claude Code, solo para este computador.",
+        modelo: "Brote usará Claude Sonnet 5.5 con tu cuenta.",
+        gateway: "OpenClaw está funcionando.",
+        identidad: "Ahora el agente es Brote 🌱",
+        permisos: "Brote te pedirá permiso antes de ejecutar comandos.",
+        skill: "Skill de gastos instalada.",
+        mcp: "Tus gastos quedaron conectados con el agente.",
+        memoria: "La memoria quedó limitada a lo que ves en «Lo que sé de ti».",
+        programador: "Modo programador instalado.",
+        "programador-quitar": "Desinstalé los hooks de Brote; tus otros hooks quedaron igual.",
+        "calendario-mac": "Listo: Brote ve tu calendario 📅",
+      };
+      function aplicar(id) {
+        if (id === "agente") sim.agente = sim.modelo = true;
+        else if (id === "programador") sim.programador = true;
+        else if (id === "programador-quitar") sim.programador = false;
+        else if (id === "calendario-mac") sim.calendarioMac = 3;
+        else sim[id] = true;
+        return { ok: true, detalle: OK[id] ?? "Listo." };
+      }
+
+      const conectores = {
+        catalogo: [
+          { id: "todoist", nombre: "Todoist", descripcion: "Tus tareas: buscarlas, verlas y agregar nuevas.", auth: "oauth", probado: true, estado: escenario === "nuevo" ? "desconectado" : "conectado", herramientas: 12 },
+          { id: "notion", nombre: "Notion", descripcion: "Tus páginas y bases de datos.", auth: "oauth", probado: false, estado: "desconectado", herramientas: 0 },
+          { id: "github", nombre: "GitHub", descripcion: "Tus repositorios, issues y pull requests.", auth: "token", probado: false, estado: "desconectado", herramientas: 0, ayudaToken: "En GitHub → Settings → Developer settings → Fine-grained tokens, uno de solo lectura." },
+          { id: "canva", nombre: "Canva", descripcion: "Tus diseños.", auth: "oauth", probado: false, estado: "desconectado", herramientas: 0 },
+        ],
+        propios: [],
+      };
+
+      // ---- Tauri simulado.
+      const callbacks = new Map();
+      const oyentes = new Map();
+      let siguiente = 1;
+      const emitir = (evento, payload) => {
+        const id = oyentes.get(evento);
+        if (id) callbacks.get(id)?.({ event: evento, id: 0, payload });
+      };
+      const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: "configuracion" }, currentWebview: { windowLabel: "configuracion", label: "configuracion" } },
+        transformCallback(cb) {
+          const id = siguiente++;
+          callbacks.set(id, cb);
+          return id;
+        },
+        unregisterCallback(id) {
+          callbacks.delete(id);
+        },
+        async invoke(comando, args) {
+          switch (comando) {
+            case "plugin:event|listen":
+              oyentes.set(args.event, args.handler);
+              return args.handler;
+            case "configuracion":
+              if (args.orden === "revisar") {
+                await esperar(350);
+                return JSON.stringify(revisar());
+              }
+              if (args.orden === "conectores") return JSON.stringify(conectores);
+              if (args.orden === "aplicar") {
+                await esperar(700);
+                return JSON.stringify(aplicar(args.paso));
+              }
+              return JSON.stringify({ ok: true, detalle: "Listo." });
+            case "abrir_terminal":
+              // Como si el usuario hubiera terminado en la terminal.
+              if (args.cual === "brew-node") sim.node = true;
+              if (args.cual === "login-claude") sim.claude = true;
+              if (args.cual === "memoria-local") sim["memoria-local"] = true;
+              setTimeout(() => window.dispatchEvent(new Event("focus")), 400);
+              return null;
+            case "leer_funciones":
+              return sim.funciones;
+            case "guardar_funciones":
+              sim.funciones = JSON.stringify({ version: 1, activas: args.activas, tarjetas: { orden: args.orden, ocultas: args.ocultas } });
+              console.log("funciones.json", sim.funciones);
+              return null;
+            case "guardar_calendario":
+              sim.ical = args.url !== null;
+              return null;
+            case "guardar_aula":
+              sim.aula = args.tipo !== null;
+              return null;
+            case "agente_conexion":
+              return JSON.stringify({ tipo: "conexion", conectado: true });
+            case "agente_escribir": {
+              const pedido = JSON.parse(args.linea);
+              const datos =
+                pedido.tipo === "permisos-estado"
+                  ? {
+                      descargas: escenario === "permiso" ? "sin-usar" : "concedido",
+                      automatizacion: escenario === "permiso" ? { Spotify: false } : { Spotify: true },
+                      calendarios: "sin-usar",
+                    }
+                  : null;
+              setTimeout(() => emitir("puente", JSON.stringify({ tipo: "respuesta", id: pedido.id, ok: true, datos })), 80);
+              return null;
+            }
+            case "reiniciar":
+              alert("Brote se reiniciaría ahora.");
+              return null;
+            default:
+              return null;
+          }
+        },
+      };
+    </script>
+    <script type="module" src="/src/configuracion.ts"></script>
+  </head>
+  <body>
+    <div id="raiz" class="raiz" aria-live="polite"><p class="vacio cargando">Revisando…</p></div>
+    <p class="aviso flotando" id="aviso" role="status" hidden></p>
+  </body>
+</html>

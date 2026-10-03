@@ -6,6 +6,8 @@ OpenCode "plan limits and when they reset, tokens, API value, models, projects a
 
 ## 1. Pestañas de la isla: de 4 a 3
 
+> Hecho (ver CLAUDE.md): Brote, Claude (con el espacio reservado para la sección 2) y Equipo.
+
 Hoy Inicio y Chat son casi lo mismo (las dos tienen el campo para preguntar). Propuesta:
 
 | Pestaña | Contenido |
@@ -50,6 +52,8 @@ Actualizar en CLAUDE.md la regla del modo programador ("el uso del plan solo lle
 no instalamos").
 
 ## 3. Configurar Brote: menos pasos y mejor distribución
+
+> Hecho (ver CLAUDE.md): asistente de 3 pasos, barra lateral, funciones.json y Node con Homebrew.
 
 Problema: 16 pasos seguidos con el mismo peso (Node, OpenClaw, Agente, Modelo, Gateway, Identidad, Permisos,
 Skill, MCP, Memoria… y después opcionales y conectores).

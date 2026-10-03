@@ -19,7 +19,7 @@ Pídeles que lo instalen siguiendo la guía. **No intervengas** salvo que lleven
 Anota:
 
 - ¿Lo logró sin ayuda? (Sí / Con ayuda / No)
-- ¿Dónde dudó o se trabó? (aviso de seguridad al abrir, Node, Claude Code, casilla de consentimiento, "Arreglar todo"…)
+- ¿Dónde dudó o se trabó? (aviso de seguridad al abrir, Node, Claude Code, casilla de consentimiento, "Preparar Brote", elegir funciones…)
 - ¿Cuánto tardó?
 
 ## 2. Tareas (10 min)

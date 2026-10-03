@@ -1,13 +1,17 @@
-// El contenido de la isla abierta: elementos HTML sobre el lienzo, en cuatro pestañas.
+// El contenido de la isla abierta: elementos HTML sobre el lienzo, en tres pestañas.
 //
-//   Inicio  tarjetas con lo que pasa ahora: temporizadores, próximo evento, música, descargas…
-//   Chat    la conversación con Brote, los permisos y las frases que puede aprender
-//   Código  las sesiones de Claude Code del usuario (modo programador), si hay
+//   Brote   tarjetas con lo que pasa ahora (temporizadores, próximo evento, entregas, música,
+//           descargas, Claude Code) y la conversación. Al conversar, la respuesta (y los permisos o
+//           propuestas) ocupa el espacio y las tarjetas se encogen a una fila de píldoras; al terminar
+//           la lectura, vuelven.
+//   Claude  el uso del plan (lo hará otra etapa: hoy es un espacio reservado) y las sesiones de
+//           Claude Code del usuario (modo programador) con sus pasos y permisos
 //   Equipo  batería, CPU, memoria y disco
 //
 // Las pestañas van en la fila del notch (a sus costados) y el contenido a la derecha de Brote,
-// que lo dibuja la isla. Brote cambia solo a la pestaña que importa: al chat cuando trabaja o pide
-// permiso, a Código cuando una sesión pide permiso, y vuelve a Inicio si la isla pasa un rato cerrada.
+// que lo dibuja la isla. Brote cambia solo a la pestaña que importa: a Brote cuando trabaja o pide
+// permiso, a Claude cuando una sesión pide permiso, y vuelve a Brote si la isla pasa un rato cerrada.
+// Qué tarjetas se ven y en qué orden se elige en Configurar Brote → Funciones (funciones.json).
 
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
@@ -26,11 +30,12 @@ import type {
   SesionClaude,
   TemporizadorActivo,
 } from "./agente/puente";
+import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
+import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { icono, type NombreIcono } from "./iconos";
 
 export { cuentaRegresiva } from "./agente/formato";
-
-export type Pestana = "inicio" | "chat" | "codigo" | "equipo";
+export type { Pestana } from "./agente/tarjetas";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
 const AVISO_DESTACADO_MS = 12_000;
@@ -40,7 +45,7 @@ const LECTURA_MIN = 4000;
 const LECTURA_MAX = 15000;
 const LECTURA_POR_LETRA = 45;
 
-/** Si la isla pasa este rato cerrada, al abrirse vuelve a Inicio (ms). */
+/** Si la isla pasa este rato cerrada, al abrirse vuelve a Brote (ms). */
 const VOLVER_A_INICIO_MS = 20_000;
 
 /** Cuántas lecturas de CPU guarda el gráfico de Equipo (una cada ~3 s). */
@@ -75,11 +80,30 @@ export class Panel {
   private readonly barra: HTMLDivElement;
   private readonly botonesPestana = new Map<Pestana, HTMLButtonElement>();
   private readonly vistas = new Map<Pestana, HTMLDivElement>();
-  private pestana: Pestana = "inicio";
+  private pestana: Pestana = "brote";
 
-  // Inicio
+  // Brote: tarjetas (o su fila de píldoras) y la conversación
+  private readonly cabeceraInicio: HTMLDivElement;
   private readonly tituloInicio: HTMLDivElement;
+  private readonly verRespuesta: HTMLButtonElement;
   private readonly tarjetas: HTMLDivElement;
+  private readonly pildoras: HTMLDivElement;
+  /** Las funciones prendidas y el orden de las tarjetas (hasta que el puente avise, todo prendido). */
+  private funciones: ConfigFunciones = { activas: activasDePreset("todo"), tarjetas: { orden: [...IDS_TARJETAS], ocultas: [] } };
+  /** Qué tarjetas tienen algo que mostrar. */
+  private readonly conDatos: Partial<Record<IdTarjeta, boolean>> = {};
+  private readonly datosPildoras: DatosPildoras = {
+    temporizadores: [],
+    calendario: null,
+    aula: null,
+    musica: null,
+    descargas: { enCurso: 0, listas: 0 },
+    claude: { sesiones: 0, pideProyecto: null },
+  };
+  private pildorasPintadas = "";
+  /** El usuario tocó una píldora: se ven las tarjetas aunque haya conversación (hasta la próxima). */
+  private forzarTarjetas = false;
+  private compacto = false;
   private readonly tarjetasTemporizador: HTMLDivElement;
   private readonly tarjetaCalendario: HTMLDivElement;
   private readonly tarjetaAula: HTMLDivElement;
@@ -93,8 +117,7 @@ export class Panel {
   private filasTemporizador: { fin: number; duracion: number; tiempo: HTMLElement; barra: HTMLElement }[] = [];
   private saludoPintado = "";
 
-  // Chat
-  private readonly chatVacio: HTMLDivElement;
+  // Conversación
   private readonly burbuja: HTMLDivElement;
   private readonly usuario: HTMLParagraphElement;
   private readonly respuesta: HTMLDivElement;
@@ -113,12 +136,13 @@ export class Panel {
   private readonly aprender: HTMLButtonElement;
   private readonly noAprender: HTMLButtonElement;
 
-  // Código
+  // Claude
   private readonly permisosClaude: HTMLDivElement;
   private readonly sesiones: HTMLDivElement;
   private readonly codigoVacio: HTMLDivElement;
   private pasos = new Map<string, string[]>();
   private hayPermisoClaude = false;
+  private hayActividadClaude = false;
   private permisosVistos = new Set<string>();
 
   // Equipo
@@ -152,9 +176,8 @@ export class Panel {
     this.barra = crear("div", "barra");
     const izquierda = crear("div", "barra-grupo");
     const pestanas: [Pestana, NombreIcono, string][] = [
-      ["inicio", "inicio", "Inicio"],
-      ["chat", "chat", "Chat"],
-      ["codigo", "codigo", "Claude Code"],
+      ["brote", "brote", "Brote"],
+      ["claude", "codigo", "Claude"],
       ["equipo", "equipo", "Equipo"],
     ];
     for (const [nombre, ic, titulo] of pestanas) {
@@ -179,10 +202,20 @@ export class Panel {
     this.avisoDestacado = crear("p", "aviso-destacado");
     this.avisoDestacado.hidden = true;
 
-    // --- Inicio ---
-    const inicio = crear("div", "vista vista-inicio");
+    // --- Brote: tarjetas y conversación ---
+    const inicio = crear("div", "vista vista-brote");
+    this.cabeceraInicio = crear("div", "cabecera-vista");
     this.tituloInicio = crear("div", "titulo-vista");
+    this.verRespuesta = boton("enlace-vista", "Ver la respuesta");
+    this.verRespuesta.addEventListener("click", () => {
+      this.forzarTarjetas = false;
+      this.leerHasta = performance.now() + LECTURA_MIN * 2;
+      this.aplicarModo();
+    });
+    this.cabeceraInicio.append(this.tituloInicio, this.verRespuesta);
     this.tarjetas = crear("div", "tarjetas");
+    this.pildoras = crear("div", "pildoras");
+    this.pildoras.hidden = true;
     this.tarjetasTemporizador = crear("div", "grupo-tarjetas");
     this.tarjetaCalendario = crear("div", "tarjeta calendario");
     this.tarjetaCalendario.hidden = true;
@@ -214,20 +247,13 @@ export class Panel {
     this.tarjetaClaude = crear("button", "tarjeta claude ancha");
     this.tarjetaClaude.type = "button";
     this.tarjetaClaude.hidden = true;
-    this.tarjetaClaude.addEventListener("click", () => this.elegir("codigo"));
+    this.tarjetaClaude.addEventListener("click", () => this.elegir("claude"));
     this.tarjetaVacia = crear("div", "tarjeta vacia ancha");
     const tranquilo = crear("p", "vacia-texto");
     tranquilo.textContent = "Todo tranquilo por aquí. Prueba:";
     this.tarjetaVacia.append(tranquilo, this.sugerencias());
     this.tarjetas.append(this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaAula, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude, this.tarjetaVacia);
-    inicio.append(this.tituloInicio, this.tarjetas);
 
-    // --- Chat ---
-    const chat = crear("div", "vista vista-chat");
-    this.chatVacio = crear("div", "chat-vacio");
-    const pregunta = crear("p", "vacia-texto");
-    pregunta.textContent = "¿En qué te ayudo? Anoto gastos, cronometro tu estudio y respondo lo que quieras.";
-    this.chatVacio.append(pregunta, this.sugerencias());
     this.burbuja = crear("div", "burbuja");
     this.usuario = crear("p", "burbuja-usuario");
     this.respuesta = crear("div", "burbuja-respuesta");
@@ -257,15 +283,24 @@ export class Panel {
     this.aprender = boton("boton boton-primario", "Sí, aprende");
     botonesPropuesta.append(this.noAprender, this.aprender);
     this.propuesta.append(propuestaTitulo, this.propuestaDetalle, botonesPropuesta);
-    chat.append(this.chatVacio, this.burbuja, this.aprobacion, this.propuesta);
+    inicio.append(this.cabeceraInicio, this.tarjetas, this.pildoras, this.burbuja, this.aprobacion, this.propuesta);
 
-    // --- Código ---
-    const codigo = crear("div", "vista vista-codigo");
+    // --- Claude ---
+    const codigo = crear("div", "vista vista-claude");
+    // Espacio reservado para el uso del plan de Claude (otra etapa: aún no hay datos que mostrar).
+    const usoPlan = crear("div", "uso-plan");
+    const usoTitulo = crear("div", "seccion-titulo");
+    usoTitulo.textContent = "Uso del plan";
+    const usoTexto = crear("p", "uso-plan-texto");
+    usoTexto.textContent = "Próximamente: cuánto llevas de tu plan de Claude y cuándo se reinicia.";
+    usoPlan.append(usoTitulo, usoTexto);
+    const tituloSesiones = crear("div", "seccion-titulo");
+    tituloSesiones.textContent = "Sesiones";
     this.permisosClaude = crear("div", "grupo-tarjetas");
     this.sesiones = crear("div", "grupo-tarjetas");
     this.codigoVacio = crear("p", "vacia-texto");
     this.codigoVacio.textContent = "No hay sesiones de Claude Code abiertas. Abre una con «claude» en una terminal o en la pestaña Code.";
-    codigo.append(this.permisosClaude, this.sesiones, this.codigoVacio);
+    codigo.append(usoPlan, tituloSesiones, this.permisosClaude, this.sesiones, this.codigoVacio);
 
     // --- Equipo ---
     const equipo = crear("div", "vista vista-equipo");
@@ -275,7 +310,7 @@ export class Panel {
     this.metricas.append(midiendo);
     equipo.append(this.metricas);
 
-    this.vistas.set("inicio", inicio).set("chat", chat).set("codigo", codigo).set("equipo", equipo);
+    this.vistas.set("brote", inicio).set("claude", codigo).set("equipo", equipo);
 
     // --- Campo de texto (en todas las pestañas) ---
     const formulario = crear("form", "formulario");
@@ -291,7 +326,7 @@ export class Panel {
 
     if (opciones.flotante) this.raiz.append(this.barra);
     else contenedor.append(this.barra);
-    this.raiz.append(this.avisoDestacado, inicio, chat, codigo, equipo, formulario);
+    this.raiz.append(this.avisoDestacado, inicio, codigo, equipo, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -316,7 +351,7 @@ export class Panel {
     this.aprender.addEventListener("click", () => void this.agente.decidirPropuesta(true));
     this.noAprender.addEventListener("click", () => void this.agente.decidirPropuesta(false));
 
-    this.elegir("inicio");
+    this.elegir("brote");
     this.actualizarInicio();
     agente.alCambiar((c) => this.mostrar(c));
     this.mostrar(agente.conversacion);
@@ -335,7 +370,7 @@ export class Panel {
       b.classList.toggle("activa", nombre === pestana);
       b.setAttribute("aria-pressed", String(nombre === pestana));
     }
-    if (pestana === "chat") this.respuestaSinVer = false;
+    if (pestana === "brote") this.respuestaSinVer = false;
     this.actualizarPuntos();
   }
 
@@ -378,7 +413,8 @@ export class Panel {
         return tarjeta;
       }),
     );
-    this.tarjetasTemporizador.hidden = lista.length === 0;
+    this.datosPildoras.temporizadores = lista;
+    this.conDatos.temporizadores = lista.length > 0;
     this.actualizarRelojes();
     this.actualizarInicio();
   }
@@ -420,7 +456,8 @@ export class Panel {
     const etiqueta = crear("div", "tarjeta-etiqueta");
     etiqueta.textContent = enCurso.length > 0 ? "Descargando" : "Descargas";
     this.tarjetaDescargas.replaceChildren(etiqueta, ...filas);
-    this.tarjetaDescargas.hidden = filas.length === 0;
+    this.datosPildoras.descargas = { enCurso: enCurso.length, listas: listas.length };
+    this.conDatos.descargas = filas.length > 0;
     this.actualizarInicio();
   }
 
@@ -428,7 +465,8 @@ export class Panel {
   mostrarCalendario(estado: EstadoCalendario): void {
     const proximo = estado.proximo;
     const visible = proximo !== null && proximo.inicioMs - Date.now() < 12 * 3_600_000;
-    this.tarjetaCalendario.hidden = !visible;
+    this.conDatos.calendario = visible;
+    this.datosPildoras.calendario = visible ? proximo : null;
     if (visible) {
       const etiqueta = crear("div", "tarjeta-etiqueta");
       etiqueta.append(icono("calendario"), " Próximo");
@@ -447,7 +485,8 @@ export class Panel {
   mostrarAula(estado: EstadoAula): void {
     const proxima = estado.proxima;
     const visible = estado.configurada && (proxima !== null || estado.error !== null);
-    this.tarjetaAula.hidden = !visible;
+    this.conDatos.aula = visible;
+    this.datosPildoras.aula = proxima;
     if (visible) {
       const etiqueta = crear("div", "tarjeta-etiqueta");
       etiqueta.append(icono("entrega"), estado.pendientes > 1 ? ` Entregas · ${estado.pendientes}` : " Entregas");
@@ -508,14 +547,15 @@ export class Panel {
     this.permisosClaude.hidden = estado.permisos.length === 0 || !puedeDecidir;
     this.codigoVacio.hidden = sesiones.length > 0 || estado.permisos.length > 0;
 
-    // Un permiso nuevo lleva a la pestaña Código.
+    // Un permiso nuevo lleva a la pestaña Claude (salvo que Brote mismo esté pidiendo algo).
     const nuevos = estado.permisos.filter((p) => !this.permisosVistos.has(p.id));
     this.permisosVistos = new Set(estado.permisos.map((p) => p.id));
-    if (nuevos.length > 0 && puedeDecidir && this.pestana !== "chat") this.elegir("codigo");
+    if (nuevos.length > 0 && puedeDecidir && !(this.pestana === "brote" && this.conversacionPendiente())) this.elegir("claude");
 
     // El resumen en Inicio: cuántas sesiones y qué hace la más reciente.
     const reciente = [...sesiones].sort((a, b) => b.ultimaActividadMs - a.ultimaActividadMs)[0];
-    this.tarjetaClaude.hidden = !reciente;
+    this.conDatos.claude = reciente !== undefined;
+    this.datosPildoras.claude = { sesiones: sesiones.length, pideProyecto: estado.permisos[0]?.proyecto ?? null };
     if (reciente) {
       const etiqueta = crear("div", "tarjeta-etiqueta");
       etiqueta.append(icono("codigo"), ` Claude Code · ${sesiones.length === 1 ? "1 sesión" : `${sesiones.length} sesiones`}`);
@@ -524,15 +564,16 @@ export class Panel {
       this.tarjetaClaude.replaceChildren(etiqueta, detalle);
       this.tarjetaClaude.classList.toggle("pide", estado.permisos.length > 0);
     }
-    this.botonesPestana.get("codigo")!.hidden = sesiones.length === 0 && estado.permisos.length === 0;
-    if (this.pestana === "codigo" && this.botonesPestana.get("codigo")!.hidden) this.elegir("inicio");
+    this.hayActividadClaude = sesiones.length > 0 || estado.permisos.length > 0;
+    this.actualizarPestanas();
     this.actualizarPuntos();
     this.actualizarInicio();
   }
 
   /** La tarjeta de la música, o nada si no hay un reproductor abierto. */
   mostrarMusica(estado: EstadoMusica | null): void {
-    this.tarjetaMusica.hidden = !estado;
+    this.conDatos.musica = estado !== null;
+    this.datosPildoras.musica = estado;
     if (estado) {
       this.musicaTitulo.textContent = estado.cancion ?? estado.app;
       this.musicaDetalle.textContent = [estado.artista, estado.app].filter(Boolean).join(" · ");
@@ -541,6 +582,16 @@ export class Panel {
       this.musicaPlay.replaceChildren(icono(estado.sonando ? "pausa" : "play"));
       this.musicaPlay.title = estado.sonando ? "Pausa" : "Play";
     }
+    this.actualizarInicio();
+  }
+
+  /**
+   * Las funciones prendidas y las tarjetas de Inicio (Configurar Brote → Funciones): oculta lo
+   * apagado, ordena las tarjetas y muestra u oculta las pestañas Claude y Equipo.
+   */
+  mostrarFunciones(config: ConfigFunciones): void {
+    this.funciones = config;
+    this.actualizarPestanas();
     this.actualizarInicio();
   }
 
@@ -592,6 +643,9 @@ export class Panel {
       barra.style.width = `${Math.min(100, Math.max(0, (1 - (fin - ahora) / duracion) * 100)).toFixed(1)}%`;
     }
     if (!this.avisoDestacado.hidden && ahora > this.avisoHasta) this.avisoDestacado.hidden = true;
+    // La fila de píldoras (con su cuenta regresiva) y, al terminar la lectura, de vuelta a las tarjetas.
+    this.pintarPildoras();
+    this.aplicarModo();
     const hoy = new Date(ahora);
     const texto = `${saludo(hoy)}|${fechaLarga(hoy)}`;
     if (texto !== this.saludoPintado) {
@@ -662,15 +716,75 @@ export class Panel {
   }
 
   private pestanaSugerida(): Pestana {
+    return pestanaSugerida({
+      conversacionPendiente: this.conversacionPendiente() || this.respuestaSinVer || performance.now() < this.leerHasta,
+      permisoClaude: this.hayPermisoClaude && !!this.opciones.alDecidirPermisoClaude,
+    });
+  }
+
+  /** Brote trabaja, pide permiso o propone aprender algo. */
+  private conversacionPendiente(): boolean {
     const c = this.agente.conversacion;
-    if (c.aprobacion || c.propuesta || ocupado(c) || this.respuestaSinVer || performance.now() < this.leerHasta) return "chat";
-    if (this.hayPermisoClaude && this.opciones.alDecidirPermisoClaude) return "codigo";
-    return "inicio";
+    return c.aprobacion !== null || c.propuesta !== null || ocupado(c);
+  }
+
+  /** Si hay algo de la conversación que mostrar (lo que escribiste, la respuesta, un error…). */
+  private hayConversacion(): boolean {
+    const c = this.agente.conversacion;
+    return c.mensajeUsuario !== null || c.respuesta !== "" || c.error !== null || c.herramienta !== null;
+  }
+
+  /**
+   * Tarjetas o conversación: mientras Brote trabaja, pide algo o se está leyendo la respuesta, la
+   * conversación ocupa el espacio y las tarjetas se encogen a una fila de píldoras.
+   */
+  private aplicarModo(): void {
+    const c = this.agente.conversacion;
+    const conversando = this.conversacionPendiente() || (this.hayConversacion() && performance.now() < this.leerHasta);
+    const compacto = conversando && !this.forzarTarjetas;
+    this.burbuja.hidden = !compacto || !this.hayConversacion() || (c.aprobacion !== null && c.respuesta === "");
+    this.verRespuesta.hidden = compacto || !this.hayConversacion() || ocupado(c);
+    if (compacto === this.compacto) return;
+    this.compacto = compacto;
+    this.cabeceraInicio.hidden = compacto;
+    this.tarjetas.hidden = compacto;
+    this.pildoras.hidden = !compacto || this.pildoras.childElementCount === 0;
+  }
+
+  /** Una píldora por tarjeta a la vista (en su orden); al tocarla vuelven las tarjetas. */
+  private pintarPildoras(): void {
+    const ahora = Date.now();
+    const lista = tarjetasVisibles(this.funciones, this.conDatos)
+      .map((id) => textoPildora(id, this.datosPildoras, ahora))
+      .filter((p): p is { texto: string; titulo: string } => p !== null);
+    const texto = JSON.stringify(lista);
+    if (texto === this.pildorasPintadas) return;
+    this.pildorasPintadas = texto;
+    this.pildoras.replaceChildren(
+      ...lista.map((p) => {
+        const b = boton("pildora", p.texto);
+        b.title = `${p.titulo} · toca para ver las tarjetas`;
+        b.addEventListener("click", () => {
+          this.forzarTarjetas = true;
+          this.aplicarModo();
+        });
+        return b;
+      }),
+    );
+    this.pildoras.hidden = !this.compacto || lista.length === 0;
+  }
+
+  /** Claude se ve con el modo programador prendido (o si hay sesiones); Equipo, con las reacciones al computador. */
+  private actualizarPestanas(): void {
+    this.botonesPestana.get("claude")!.hidden = !this.funciones.activas.programador && !this.hayActividadClaude;
+    this.botonesPestana.get("equipo")!.hidden = !this.funciones.activas.equipo;
+    if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }
 
   private enviarTexto(texto: string): void {
     if (!texto.trim()) return;
-    this.elegir("chat");
+    this.forzarTarjetas = false;
+    this.elegir("brote");
     void this.agente.enviar(texto).then((enviado) => {
       if (enviado && this.entrada.value === texto) this.entrada.value = "";
       this.actualizarBotonEnviar();
@@ -721,37 +835,51 @@ export class Panel {
     return tarjeta;
   }
 
-  /** En Inicio: la tarjeta "todo tranquilo" solo cuando no hay ninguna otra. */
+  /**
+   * Las tarjetas de Inicio: se ve la que tiene algo que mostrar, es de una función prendida y no se
+   * ocultó; en el orden elegido. "Todo tranquilo" solo cuando no hay ninguna.
+   */
   private actualizarInicio(): void {
-    const hayAlgo = [this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaAula, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude].some(
-      (t) => !t.hidden,
-    );
-    this.tarjetaVacia.hidden = hayAlgo;
+    const elementos: Record<IdTarjeta, HTMLElement> = {
+      temporizadores: this.tarjetasTemporizador,
+      calendario: this.tarjetaCalendario,
+      aula: this.tarjetaAula,
+      musica: this.tarjetaMusica,
+      descargas: this.tarjetaDescargas,
+      claude: this.tarjetaClaude,
+    };
+    const visibles = tarjetasVisibles(this.funciones, this.conDatos);
+    for (const id of IDS_TARJETAS) {
+      const elemento = elementos[id];
+      elemento.hidden = !visibles.includes(id);
+      const orden = String(this.funciones.tarjetas.orden.indexOf(id));
+      // Los temporizadores son tarjetas sueltas dentro de la grilla (su grupo no tiene caja propia).
+      for (const el of id === "temporizadores" ? [...elemento.children] : [elemento]) (el as HTMLElement).style.order = orden;
+    }
+    this.tarjetaVacia.hidden = visibles.length > 0;
+    this.pintarPildoras();
   }
 
   /** Un punto en la pestaña que tiene algo pendiente y no está a la vista. */
   private actualizarPuntos(): void {
     const c = this.agente.conversacion;
-    const chatPendiente = c.aprobacion !== null || c.propuesta !== null || this.respuestaSinVer;
-    this.botonesPestana.get("chat")!.classList.toggle("con-punto", chatPendiente && this.pestana !== "chat");
-    this.botonesPestana.get("codigo")!.classList.toggle("con-punto", this.hayPermisoClaude && this.pestana !== "codigo");
+    const brotePendiente = c.aprobacion !== null || c.propuesta !== null || this.respuestaSinVer;
+    this.botonesPestana.get("brote")!.classList.toggle("con-punto", brotePendiente && this.pestana !== "brote");
+    this.botonesPestana.get("claude")!.classList.toggle("con-punto", this.hayPermisoClaude && this.pestana !== "claude");
   }
 
   private mostrar(c: Conversacion): void {
-    // Brote empieza a trabajar, pide permiso o propone aprender algo: al chat.
+    // Brote empieza a trabajar, pide permiso o propone aprender algo: a su pestaña, con la conversación a la vista.
     const estaOcupado = ocupado(c);
     const aprobacion = c.aprobacion ? `${c.aprobacion.titulo}|${c.aprobacion.detalle}` : null;
     if ((estaOcupado && !this.ocupadoAntes) || (aprobacion && aprobacion !== this.aprobacionAntes) || (c.propuesta && !this.propuestaAntes)) {
-      this.elegir("chat");
+      this.forzarTarjetas = false;
+      this.elegir("brote");
     }
     this.ocupadoAntes = estaOcupado;
     this.aprobacionAntes = aprobacion;
     this.propuestaAntes = c.propuesta !== null;
 
-    // Con un permiso pendiente, el recuadro de la aprobación lo explica todo y necesita el espacio.
-    const hayAlgo = c.mensajeUsuario !== null || c.respuesta !== "" || c.error !== null || c.herramienta !== null;
-    this.chatVacio.hidden = hayAlgo || c.aprobacion !== null || c.propuesta !== null;
-    this.burbuja.hidden = !hayAlgo || (c.aprobacion !== null && c.respuesta === "");
     this.usuario.textContent = c.mensajeUsuario ?? "";
     this.usuario.hidden = !c.mensajeUsuario;
 
@@ -796,11 +924,13 @@ export class Panel {
       const largo = (c.error ?? c.respuesta).length;
       const ms = Math.min(LECTURA_MAX, Math.max(LECTURA_MIN, 2500 + largo * LECTURA_POR_LETRA));
       this.leerHasta = performance.now() + ms;
-      if (this.pestana !== "chat") this.respuestaSinVer = true;
+      this.forzarTarjetas = false;
+      if (this.pestana !== "brote") this.respuestaSinVer = true;
     }
     this.terminadaAntes = c.terminada;
     this.respuestaAntes = c.respuesta;
 
+    this.aplicarModo();
     this.actualizarPuntos();
     this.actualizarEntrada();
   }

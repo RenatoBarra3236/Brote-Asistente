@@ -3,8 +3,10 @@
   Vista previa de la isla en un navegador, para trabajar el diseño sin abrir la app: simula Tauri y
   el puente con datos de ejemplo (pomodoro, calendario, entregas del aula, música, una descarga y una
   sesión de Claude Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
-  Parámetros: ?pestana=inicio|chat|codigo|equipo · ?cerrada=1 (sin abrir la isla) · ?vacia=1 (sin datos) ·
-  ?modo=flotante (la ventana de Windows).
+  Parámetros: ?pestana=brote|chat|claude|equipo (chat = la pestaña Brote con una pregunta enviada: las
+  tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) ·
+  ?vacia=1 (sin datos) · ?modo=flotante (la ventana de Windows) · ?ocultas=musica,descargas (tarjetas
+  ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas).
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -66,6 +68,14 @@
               permisos: [],
             },
           };
+      // Configurar Brote → Funciones, como lo manda el puente.
+      const lista = (nombre) => (parametros.get(nombre) ?? "").split(",").filter(Boolean);
+      const funciones = {
+        activas: Object.fromEntries(
+          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "memoria-local"].map((id) => [id, !lista("apagadas").includes(id)]),
+        ),
+        tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: lista("ocultas") },
+      };
       const equipo = (cpu) => ({
         animo: null,
         lectura: {
@@ -123,6 +133,8 @@
               const pedido = JSON.parse(args.linea);
               const id = pedido.id;
               switch (pedido.tipo) {
+                case "funciones-estado":
+                  return responder(id, { datos: funciones });
                 case "temporizadores-listar":
                   return responder(id, { datos: datos.temporizadores });
                 case "musica-estado":
@@ -137,6 +149,36 @@
                   t += 1;
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
                 case "enviar":
+                  // Con ?permiso=1 la pregunta va al "agente", que pide permiso para un comando.
+                  if (parametros.has("permiso")) {
+                    responder(id, {});
+                    setTimeout(() => emitir({ tipo: "evento", marco: { event: "agent", payload: { runId: "r1", stream: "lifecycle", data: { phase: "start" } }, seq: 1 } }), 200);
+                    setTimeout(
+                      () =>
+                        emitir({
+                          tipo: "evento",
+                          marco: {
+                            event: "session.approval",
+                            payload: {
+                              phase: "pending",
+                              approval: {
+                                id: "a1",
+                                presentation: {
+                                  kind: "plugin",
+                                  title: "claude-cli native tool: Bash",
+                                  detail: JSON.stringify({ command: "ls ~/Documentos/universidad", description: "List files" }),
+                                  toolName: "Bash",
+                                  allowedDecisions: ["allow-once", "deny"],
+                                },
+                              },
+                            },
+                            seq: 2,
+                          },
+                        }),
+                      500,
+                    );
+                    return;
+                  }
                   return responder(id, {
                     local: { texto: "Esta semana llevas **$23.500**: comida $11.000, transporte $7.500 y otros $5.000.", intencion: "total-periodo" },
                   });
@@ -154,10 +196,10 @@
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.
       const pestana = parametros.get("pestana");
-      if (pestana) {
+      if (pestana || parametros.has("permiso")) {
         setTimeout(() => {
-          const titulos = { inicio: "Inicio", chat: "Chat", codigo: "Claude Code", equipo: "Equipo" };
-          if (pestana === "chat") {
+          const titulos = { brote: "Brote", claude: "Claude", equipo: "Equipo" };
+          if (pestana === "chat" || parametros.has("permiso")) {
             const entrada = document.querySelector(".entrada");
             entrada.value = "¿cuánto llevo esta semana?";
             entrada.dispatchEvent(new Event("input"));

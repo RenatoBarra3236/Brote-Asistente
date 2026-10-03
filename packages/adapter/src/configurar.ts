@@ -106,9 +106,13 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
   };
 }
 
-/** Carpetas donde buscar programas: la de este Node (ahí quedan los `npm -g`), el PATH y las típicas. */
+/**
+ * Carpetas donde buscar programas: primero el PATH (el mismo `openclaw` que el usuario usa en su
+ * terminal; las pruebas ponen ahí uno falso), después la de este Node (ahí quedan los `npm -g`
+ * cuando Brote se abre desde el Finder, con un PATH mínimo) y las típicas.
+ */
 function carpetasDeProgramas(): string[] {
-  const carpetas = [dirname(process.execPath), ...(process.env.PATH ?? "").split(delimiter)];
+  const carpetas = [...(process.env.PATH ?? "").split(delimiter), dirname(process.execPath)];
   if (EN_WINDOWS) carpetas.push(join(process.env.APPDATA ?? "", "npm"));
   else carpetas.push(join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin");
   return [...new Set(carpetas.filter(Boolean))];
@@ -131,7 +135,7 @@ export function buscarPrograma(nombre: string): string | null {
  * `ANTHROPIC_API_KEY`: OpenClaw no la tiene, y Claude Code debe revisarse como lo verá OpenClaw (si
  * la clave viene de la configuración de Claude Code, igual se detecta).
  */
-function ejecutar(programa: string, args: string[], tiempoMs = 60_000): { codigo: number; salida: string } {
+function ejecutar(programa: string, args: string[], tiempoMs = 60_000): { codigo: number; salida: string; stdout: string } {
   const resultado = spawnSync(programa, EN_WINDOWS ? args.map(citar) : args, {
     encoding: "utf8",
     timeout: tiempoMs,
@@ -139,7 +143,8 @@ function ejecutar(programa: string, args: string[], tiempoMs = 60_000): { codigo
     windowsHide: true,
     env: entornoProgramas(),
   });
-  return { codigo: resultado.status ?? 1, salida: `${resultado.stdout ?? ""}${resultado.stderr ?? ""}` };
+  // `stdout` aparte: lo que se lee como JSON (OpenClaw escribe avisos como "[state/lease] Waiting…" en stderr).
+  return { codigo: resultado.status ?? 1, salida: `${resultado.stdout ?? ""}${resultado.stderr ?? ""}`, stdout: resultado.stdout ?? "" };
 }
 
 function entornoProgramas(): NodeJS.ProcessEnv {
@@ -159,9 +164,9 @@ function conPerfil(args: readonly string[]): string[] {
   return perfil ? ["--profile", perfil, ...args] : [...args];
 }
 
-function openclaw(args: readonly string[], tiempoMs?: number): { codigo: number; salida: string } {
+function openclaw(args: readonly string[], tiempoMs?: number): { codigo: number; salida: string; stdout: string } {
   const programa = buscarPrograma("openclaw");
-  if (!programa) return { codigo: 1, salida: "OpenClaw no está instalado" };
+  if (!programa) return { codigo: 1, salida: "OpenClaw no está instalado", stdout: "" };
   return ejecutar(programa, conPerfil(args), tiempoMs);
 }
 
@@ -213,7 +218,7 @@ export function revisar(): Paso[] {
   let sesion: any = null;
   if (claude) {
     try {
-      sesion = JSON.parse(ejecutar(claude, ["auth", "status"]).salida);
+      sesion = JSON.parse(ejecutar(claude, ["auth", "status"]).stdout);
     } catch {
       sesion = null;
     }
@@ -622,7 +627,7 @@ export function conectores(): ReturnType<typeof estadoConectores> {
   const enConfig = Object.keys(config?.mcp?.servers ?? {}).some((n) => urlDeServidor(config.mcp.servers[n]) !== null);
   // El probe se conecta a cada servidor: solo vale la pena si hay alguno por URL.
   const probe = enConfig ? openclaw(ARGS_PROBAR, 90_000) : null;
-  const estado = estadoConectores(config, probe && probe.codigo === 0 ? herramientasPorServidor(probe.salida) : null);
+  const estado = estadoConectores(config, probe && probe.codigo === 0 ? herramientasPorServidor(probe.stdout) : null);
   guardarLista(estado);
   return estado;
 }
@@ -668,8 +673,8 @@ function escucharEntrada(): { primera: Promise<string>; cancelado: Promise<void>
 function terminarConexion(nombre: string, titulo: string): string {
   openclaw(ARGS_RECARGAR, 60_000);
   const probe = openclaw(ARGS_PROBAR, 90_000);
-  const cuantas = probe.codigo === 0 ? (herramientasPorServidor(probe.salida)?.get(nombre) ?? 0) : 0;
-  guardarLista(estadoConectores(leerConfig(), probe.codigo === 0 ? herramientasPorServidor(probe.salida) : null));
+  const cuantas = probe.codigo === 0 ? (herramientasPorServidor(probe.stdout)?.get(nombre) ?? 0) : 0;
+  guardarLista(estadoConectores(leerConfig(), probe.codigo === 0 ? herramientasPorServidor(probe.stdout) : null));
   const herramientas = cuantas > 0 ? ` (${cuantas} herramientas)` : "";
   return `${titulo} quedó conectado${herramientas}. El agente lo usará desde su próximo mensaje.`;
 }

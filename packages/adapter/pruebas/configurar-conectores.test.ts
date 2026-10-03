@@ -47,6 +47,8 @@ if (orden === "add") {
     servers[n] = { launch: { transport: "streamable-http" }, tools: listo ? 47 : 0 };
   }
   console.log(JSON.stringify({ generatedAt: new Date().toISOString(), servers, tools: [], diagnostics: [] }));
+  // Como el real: un aviso en stderr después del JSON.
+  console.error("[state/lease] Waiting for state lease core:mcp-oauth/" + Object.keys(servers)[0] + "-0 held by x; current lease expires at 2026-10-03T05:27:58.465Z.");
 } else if (orden === "unset") {
   const c = leer();
   delete c.mcp.servers[nombre];

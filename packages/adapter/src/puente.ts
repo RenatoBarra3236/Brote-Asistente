@@ -41,6 +41,10 @@
 //   pedido { "tipo": "descargas-listar" }                                   → "datos": las últimas 10
 //   Mostrar o abrir un archivo lo hace Rust (`mostrar_descarga`), que valida que esté en Descargas.
 //
+// Música (Spotify y Música en macOS, solo si ya están abiertos; controles de medios en Windows):
+//   aviso { "tipo": "musica", "estado": { app, sonando, cancion, artista } | null }   cuando cambia
+//   pedido { "tipo": "musica-control", "accion": "play-pausa" | "play" | "pausa" | "siguiente" | "anterior" }
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
@@ -52,8 +56,14 @@ import {
   Motor,
   PLANTILLAS_BASE,
   MedidorCpu,
+  ACCIONES_MUSICA,
   RUTA_BASE,
   SeguidorDescargas,
+  controlarMusica,
+  leerMusica,
+  type AccionMusica,
+  type AppMusica,
+  type EstadoMusica,
   Temporizadores,
   carpetaDescargas,
   listarCarpeta,
@@ -104,6 +114,9 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__temporizador_cancelar",
   "mcp__gastos__equipo_estado",
   "mcp__gastos__descargas_recientes",
+  // Play, pausa y cambiar de canción son inofensivos (y nunca abren una app).
+  "mcp__gastos__musica_estado",
+  "mcp__gastos__musica_control",
 ]);
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
@@ -165,7 +178,44 @@ const motor = new Motor(gastos, {
     const listado = listarCarpeta(CARPETA_DESCARGAS);
     return listado ? recientes(listado, CARPETA_DESCARGAS) : null;
   },
+  musica: { estado: () => musica, controlar: (accion) => void pedirMusica(accion) },
 });
+
+// Música: se revisa cada 3 s (5 en Windows, donde PowerShell tarda más en partir), una lectura a la
+// vez. Si el usuario negó el permiso de Automatización para una app, no se le pregunta de nuevo
+// hasta dentro de 30 min.
+let musica: EstadoMusica | null = null;
+let leyendoMusica = false;
+const sinPermisoHasta = new Map<AppMusica, number>();
+async function revisarMusica(): Promise<void> {
+  if (leyendoMusica) return;
+  leyendoMusica = true;
+  try {
+    const ahora = Date.now();
+    const ignorar = [...sinPermisoHasta].filter(([, hasta]) => hasta > ahora).map(([app]) => app);
+    const lectura = await leerMusica(ignorar);
+    for (const app of lectura?.sinPermiso ?? []) {
+      registrar(`música: sin permiso para ${app}`);
+      sinPermisoHasta.set(app, ahora + 30 * 60_000);
+    }
+    const estado = lectura?.estado ?? null;
+    if (JSON.stringify(estado) !== JSON.stringify(musica)) {
+      musica = estado;
+      avisar({ tipo: "musica", estado });
+    }
+  } finally {
+    leyendoMusica = false;
+  }
+}
+async function pedirMusica(accion: AccionMusica): Promise<void> {
+  if (!(await controlarMusica(accion, musica))) registrar(`música: no pude hacer ${accion}`);
+  // La app tarda un momento en cambiar de canción.
+  setTimeout(() => void revisarMusica(), 400);
+}
+if (process.platform === "darwin" || process.platform === "win32") {
+  setInterval(() => void revisarMusica(), process.platform === "win32" ? 5000 : 3000);
+  void revisarMusica();
+}
 
 // Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,
 // porque fs.watch no siempre avisa (carpetas en la nube, algunos sistemas de archivos).
@@ -466,6 +516,13 @@ async function atender(pedido: any): Promise<Extra> {
       return {};
     case "equipo-estado":
       return { datos: { animo, lectura: lecturaEquipo } };
+    case "musica-control":
+      if (!ACCIONES_MUSICA.includes(pedido.accion)) break;
+      if (!musica) throw new Error("No hay música abierta");
+      await pedirMusica(pedido.accion);
+      return {};
+    case "musica-estado":
+      return { datos: musica };
     case "descargas-listar": {
       const listado = listarCarpeta(CARPETA_DESCARGAS);
       return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };

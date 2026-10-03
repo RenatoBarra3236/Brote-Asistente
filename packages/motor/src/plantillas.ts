@@ -28,7 +28,12 @@ export type Intencion =
   | "estado-equipo"
   | "ver-descargas"
   | "abrir-ultima-descarga"
-  | "mostrar-ultima-descarga";
+  | "mostrar-ultima-descarga"
+  | "musica-pausa"
+  | "musica-play"
+  | "musica-siguiente"
+  | "musica-anterior"
+  | "musica-estado";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
 
@@ -185,6 +190,7 @@ const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apag
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
 const ABRIR = "abre|abreme|abrir|abri";
 const MOSTRAR = "muestrame|muestra|mostrar|ensename|donde esta|donde quedo";
+const MUSICA = "musica|cancion|tema|spotify";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
@@ -246,4 +252,15 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "abrir-descarga-ultimo", intencion: "abrir-ultima-descarga", patron: `(${ABRIR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
   { id: "mostrar-descarga", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) [la|mi] ultima descarga [en el (finder|explorador)]` },
   { id: "mostrar-descarga-ultimo", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
+  { id: "musica-pausa", intencion: "musica-pausa", patron: `(pausa|pausar|pon pausa a|ponle pausa a|${DETENER}) [la|el] (${MUSICA})` },
+  { id: "musica-play", intencion: "musica-play", patron: `(pon|ponme|reanuda|reanudar|sigue con|continua|play|dale play a|vuelve a poner) [la|el] (${MUSICA})` },
+  { id: "musica-play-corto", intencion: "musica-play", patron: "(play|dale play)" },
+  { id: "musica-pausa-corto", intencion: "musica-pausa", patron: "(pausa|pon pausa)" },
+  { id: "musica-siguiente", intencion: "musica-siguiente", patron: "[(pon|ponme|dale|pasa a)] [la] (siguiente|proxima|otra) (cancion|tema)" },
+  { id: "musica-siguiente-corto", intencion: "musica-siguiente", patron: "(pon|ponme|dale|pasa a) [la] (siguiente|proxima)" },
+  { id: "musica-siguiente-verbo", intencion: "musica-siguiente", patron: "(pasa|salta|cambia|adelanta) [la|el|de] (cancion|tema)" },
+  { id: "musica-anterior", intencion: "musica-anterior", patron: "[(pon|ponme|dale|vuelve a)] [la|el] (cancion|tema) anterior" },
+  { id: "musica-anterior-corto", intencion: "musica-anterior", patron: "(pon|ponme|dale|vuelve a) [la] anterior" },
+  { id: "musica-estado", intencion: "musica-estado", patron: "(que|cual) (cancion|tema|musica) (esta sonando|suena|es esta|es|estoy escuchando)" },
+  { id: "musica-estado-corto", intencion: "musica-estado", patron: "(que|quien) (esta sonando|suena|canta)" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

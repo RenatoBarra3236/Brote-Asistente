@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
-import { TransportePuente, type Descarga, type DescargaEnCurso, type TemporizadorActivo } from "./agente/puente";
+import { TransportePuente, type Descarga, type DescargaEnCurso, type EstadoMusica, type TemporizadorActivo } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
@@ -81,6 +81,7 @@ async function iniciar(): Promise<void> {
           alAbrirMemoria: () => void invoke("abrir_memoria"),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
+          alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
         }
       : {}),
   });
@@ -89,6 +90,7 @@ async function iniciar(): Promise<void> {
   // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
   let temporizadores: TemporizadorActivo[] = [];
   let descargasEnCurso: DescargaEnCurso[] = [];
+  let musica: EstadoMusica | null = null;
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
@@ -109,6 +111,15 @@ async function iniciar(): Promise<void> {
       .consultar<{ animo: "cansado" | "acalorado" | null }>({ tipo: "equipo-estado" })
       .then(({ animo }) => personaje.setAnimo(animo), () => {});
     void puente.consultar<TemporizadorActivo[]>({ tipo: "temporizadores-listar" }).then(mostrarTemporizadores, () => {});
+
+    // Música: la píldora con sus botones y Brote se balancea mientras suena.
+    const cambiarMusica = (estado: EstadoMusica | null) => {
+      musica = estado;
+      panel.mostrarMusica(estado);
+      personaje.setMusica(estado?.sonando === true);
+    };
+    puente.alCambiarMusica(cambiarMusica);
+    void puente.consultar<EstadoMusica | null>({ tipo: "musica-estado" }).then(cambiarMusica, () => {});
 
     // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
     let listas: { descarga: Descarga; hasta: number }[] = [];
@@ -161,6 +172,7 @@ async function iniciar(): Promise<void> {
   ajustarTamano();
   window.addEventListener("resize", ajustarTamano);
 
+  let probandoMusica = false;
   window.addEventListener("keydown", (evento) => {
     if (evento.metaKey && evento.key.toLowerCase() === "q") {
       void invoke("salir");
@@ -173,6 +185,8 @@ async function iniciar(): Promise<void> {
     // 7, 8 y 9 prueban el ánimo según el computador (cansado, acalorado, normal).
     const animo = ({ "7": "cansado", "8": "acalorado", "9": null } as const)[evento.key as "7" | "8" | "9"];
     if (animo !== undefined) personaje.setAnimo(animo);
+    // 0 prueba el balanceo con música.
+    if (evento.key === "0") personaje.setMusica((probandoMusica = !probandoMusica));
   });
 
   // Un clic toca al personaje. En modo flotante, si el mouse se mueve con el botón
@@ -231,8 +245,11 @@ async function iniciar(): Promise<void> {
 
     personaje.actualizar(dt);
     panel.actualizarRelojes();
-    // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador o una descarga.
-    const reloj = relojPrincipal(temporizadores) ?? (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null);
+    // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador, una descarga o la música.
+    const reloj =
+      relojPrincipal(temporizadores) ??
+      (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
+      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {

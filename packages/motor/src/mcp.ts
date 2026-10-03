@@ -22,6 +22,7 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
+import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
@@ -136,6 +137,27 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Descargas recientes", readOnlyHint: true },
+  },
+  {
+    name: "musica_estado",
+    description:
+      "Qué música está sonando en el computador del usuario (canción, artista, app y si está en pausa). En macOS mira " +
+      "Spotify y Música solo si ya están abiertos; en Windows, el reproductor que use los controles de medios.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Música: qué suena", readOnlyHint: true },
+  },
+  {
+    name: "musica_control",
+    description:
+      "Controla la música que ya está abierta: play, pausa, play-pausa, siguiente o anterior. Nunca abre una app de " +
+      "música; si no hay ninguna abierta, no hace nada. Úsala, por ejemplo, para pausar la música al empezar un pomodoro si el usuario lo pide.",
+    inputSchema: {
+      type: "object",
+      properties: { accion: { type: "string", enum: ACCIONES_MUSICA } },
+      required: ["accion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Música: controlar", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   {
     name: "motor_proponer_plantilla",
@@ -304,6 +326,16 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
           fecha: new Date(d.fechaMs).toISOString(),
         })),
       });
+    }
+    case "musica_estado": {
+      const lectura = leerMusicaAhora();
+      return lectura ? describirMusica(lectura.estado) : "No pude saber qué suena (en este sistema no se puede, o falta el permiso).";
+    }
+    case "musica_control": {
+      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
+      const estado = leerMusicaAhora()?.estado ?? null;
+      if (!estado) return "No hay música abierta (no abro apps de música).";
+      return controlarMusicaAhora(args.accion as AccionMusica, estado) ? `Hecho: ${args.accion} en ${estado.app}.` : "No pude controlar la música.";
     }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {

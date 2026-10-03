@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Tauri lo agrega al Info.plist de Brote.app. Son los textos de los avisos de permiso de macOS. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Brote mira qué suena en Spotify o Música (solo si ya están abiertos) para mostrarlo en la isla y pausar o cambiar de canción cuando se lo pides.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Brote mira tu carpeta de Descargas para avisarte cuando termina una descarga. Los nombres no salen de tu computador.</string>
+</dict>
+</plist>

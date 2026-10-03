@@ -5,7 +5,7 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
-import type { Descarga, DescargaEnCurso, TemporizadorActivo } from "./agente/puente";
+import type { AccionMusica, Descarga, DescargaEnCurso, EstadoMusica, TemporizadorActivo } from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
@@ -46,6 +46,9 @@ export class Panel {
   private readonly avisoDestacado: HTMLParagraphElement;
   private readonly descargas: HTMLDivElement;
   private readonly alMostrarDescarga?: (ruta: string) => void;
+  private readonly musica: HTMLDivElement;
+  private readonly musicaTitulo: HTMLSpanElement;
+  private readonly musicaPlay: HTMLButtonElement;
   private filasTemporizador: { fin: number; tiempo: HTMLSpanElement }[] = [];
   private avisoHasta = 0;
   private readonly alCancelarTemporizador?: (id: number) => void;
@@ -70,6 +73,7 @@ export class Panel {
       flotante?: boolean;
       alCancelarTemporizador?: (id: number) => void;
       alMostrarDescarga?: (ruta: string) => void;
+      alControlarMusica?: (accion: AccionMusica) => void;
     } = {},
   ) {
     this.agente = agente;
@@ -142,7 +146,26 @@ export class Panel {
     this.descargas = crear("div", "filas descargas");
     this.descargas.hidden = true;
 
-    this.raiz.append(this.avisoDestacado, this.temporizadores, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
+    // La píldora de la música: "♪ canción — artista" con ⏮ ⏯ ⏭.
+    this.musica = crear("div", "fila musica");
+    this.musica.hidden = true;
+    this.musicaTitulo = crear("span", "fila-nombre");
+    const boton = (texto: string, titulo: string, accion: AccionMusica) => {
+      const b = crear("button", "boton-musica");
+      b.type = "button";
+      b.textContent = texto;
+      b.title = titulo;
+      b.setAttribute("aria-label", titulo);
+      b.addEventListener("click", () => opciones.alControlarMusica?.(accion));
+      return b;
+    };
+    this.musicaPlay = boton("⏯", "Play / pausa", "play-pausa");
+    this.musica.append(this.musicaTitulo);
+    if (opciones.alControlarMusica) {
+      this.musica.append(boton("⏮", "Canción anterior", "anterior"), this.musicaPlay, boton("⏭", "Siguiente canción", "siguiente"));
+    }
+
+    this.raiz.append(this.avisoDestacado, this.temporizadores, this.musica, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -252,6 +275,18 @@ export class Panel {
     ];
     this.descargas.replaceChildren(...filas);
     this.descargas.hidden = filas.length === 0;
+  }
+
+  /** La píldora de la música, o nada si no hay un reproductor abierto. */
+  mostrarMusica(estado: EstadoMusica | null): void {
+    this.musica.hidden = !estado;
+    if (!estado) return;
+    const titulo = estado.cancion ? (estado.artista ? `${estado.cancion} — ${estado.artista}` : estado.cancion) : estado.app;
+    this.musicaTitulo.textContent = `${estado.sonando ? "♪" : "⏸"} ${titulo}`;
+    this.musicaTitulo.title = `${titulo} (${estado.app})`;
+    this.musica.classList.toggle("sonando", estado.sonando);
+    this.musicaPlay.textContent = estado.sonando ? "⏸" : "▶";
+    this.musicaPlay.title = estado.sonando ? "Pausa" : "Play";
   }
 
   /** Mantiene la isla abierta un rato (por ejemplo, al terminar una descarga). */

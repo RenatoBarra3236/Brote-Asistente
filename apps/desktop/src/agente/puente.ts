@@ -35,6 +35,16 @@ export interface DescargaEnCurso {
   tamano: number;
 }
 
+/** Lo que suena en el computador (Spotify, Música o, en Windows, el reproductor del sistema). */
+export interface EstadoMusica {
+  app: string;
+  sonando: boolean;
+  cancion: string | null;
+  artista: string | null;
+}
+
+export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
+
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
 export type Animo = "cansado" | "acalorado" | null;
 
@@ -53,6 +63,7 @@ type Aviso =
   | { tipo: "animo"; animo: Animo }
   | { tipo: "descargas"; enCurso: DescargaEnCurso[] }
   | { tipo: "descarga-lista"; descarga: Descarga }
+  | { tipo: "musica"; estado: EstadoMusica | null }
   | {
       tipo: "respuesta";
       id: string;
@@ -82,6 +93,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAnimo = new Set<(animo: Animo) => void>();
   private readonly oyentesDescargas = new Set<(enCurso: DescargaEnCurso[]) => void>();
   private readonly oyentesDescargaLista = new Set<(descarga: Descarga) => void>();
+  private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -150,6 +162,16 @@ export class TransportePuente implements Transporte {
   alDescargaLista(oyente: (descarga: Descarga) => void): () => void {
     this.oyentesDescargaLista.add(oyente);
     return () => this.oyentesDescargaLista.delete(oyente);
+  }
+
+  /** Lo que suena, cada vez que cambia (canción, pausa, app cerrada…). */
+  alCambiarMusica(oyente: (estado: EstadoMusica | null) => void): () => void {
+    this.oyentesMusica.add(oyente);
+    return () => this.oyentesMusica.delete(oyente);
+  }
+
+  async controlarMusica(accion: AccionMusica): Promise<void> {
+    await this.pedir({ tipo: "musica-control", accion });
   }
 
   async cancelarTemporizador(id: number): Promise<void> {
@@ -236,6 +258,9 @@ export class TransportePuente implements Transporte {
         return;
       case "descargas":
         for (const oyente of this.oyentesDescargas) oyente(aviso.enCurso);
+        return;
+      case "musica":
+        for (const oyente of this.oyentesMusica) oyente(aviso.estado);
         return;
       case "descarga-lista":
         for (const oyente of this.oyentesDescargaLista) oyente(aviso.descarga);

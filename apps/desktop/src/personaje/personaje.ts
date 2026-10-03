@@ -33,6 +33,17 @@ interface Particula {
   tam: number;
 }
 
+/** Una nota musical que sube flotando mientras suena música (en unidades del radio). */
+interface Nota {
+  x: number;
+  edad: number;
+  vida: number;
+  lado: number;
+}
+
+/** El ritmo del balanceo con música (radianes por segundo): unas 46 oscilaciones por minuto. */
+const RITMO = 2.4;
+
 const CREMA_ARRIBA: RGB = [1, 0.96, 0.84];
 const CREMA_ABAJO: RGB = [0.98, 0.82, 0.5];
 const TINTA = "rgb(58, 40, 30)";
@@ -72,6 +83,11 @@ export class Personaje {
   private desdeCambio = 0;
   private proximoParpadeo = 1.5;
   private etiqueta: { texto: string; hasta: number } | null = null;
+  /** Con música sonando, Brote se balancea: 0 quieto, 1 balanceo completo (sube y baja suave). */
+  private conMusica = false;
+  private ritmo = 0;
+  private notas: Nota[] = [];
+  private proximaNota = 0;
 
   /**
    * El ánimo según el computador, independiente del estado del agente (Brote puede estar
@@ -79,6 +95,11 @@ export class Personaje {
    */
   setAnimo(animo: Animo): void {
     this.animo = animo;
+  }
+
+  /** Si suena música en el computador: Brote se balancea suave y le salen notas. */
+  setMusica(sonando: boolean): void {
+    this.conMusica = sonando;
   }
 
   setEstado(nuevo: Estado, mostrarEtiqueta = false): void {
@@ -131,6 +152,8 @@ export class Personaje {
       this.animaciones.size === 0 &&
       this.particulas.length === 0 &&
       this.etiqueta === null &&
+      this.ritmo < 0.01 &&
+      this.notas.length === 0 &&
       Math.abs(this.hoja.velocidad) < 0.05
     );
   }
@@ -201,7 +224,13 @@ export class Personaje {
     this.color = mezclar(this.color, cfg.color, 1 - Math.exp(-6 * dt));
 
     // El brote se mece solo, cae si el estado lo pide y reacciona cuando el cuerpo salta.
-    this.hoja.objetivo = cfg.caidaHoja + (this.animo === "cansado" ? 0.35 : 0) + Math.sin(this.t * 1.3) * 0.06;
+    // Con música el balanceo entra y sale de a poco, y el brote se mece con un poco de retraso.
+    this.ritmo = acercar(this.ritmo, this.conMusica ? 1 : 0, dt, 1.5);
+    this.hoja.objetivo =
+      cfg.caidaHoja +
+      (this.animo === "cansado" ? 0.35 : 0) +
+      Math.sin(this.t * 1.3) * 0.06 +
+      Math.sin(this.t * RITMO - 0.7) * 0.16 * this.ritmo;
     this.hoja.impulsar((this.valores.salto - this.saltoAnterior) * 18);
     this.saltoAnterior = this.valores.salto;
     this.hoja.avanzar(dt);
@@ -218,6 +247,13 @@ export class Personaje {
       p.vy += 3.5 * dt;
     }
     this.particulas = this.particulas.filter((p) => p.edad < p.vida);
+
+    if (this.conMusica && this.ritmo > 0.5 && this.t > this.proximaNota) {
+      this.notas.push({ x: (Math.random() - 0.5) * 0.4, edad: 0, vida: 2.2, lado: Math.random() < 0.5 ? -1 : 1 });
+      this.proximaNota = this.t + 1.6 + Math.random() * 1.4;
+    }
+    for (const nota of this.notas) nota.edad += dt;
+    this.notas = this.notas.filter((n) => n.edad < n.vida);
 
     if (this.estado === "listo" && this.desdeCambio > 3) this.setEstado("reposo");
     if (this.etiqueta && this.t > this.etiqueta.hasta) this.etiqueta = null;
@@ -251,14 +287,17 @@ export class Personaje {
     const respiracion = 1 + Math.sin(t * 1.8) * 0.025;
     const rebote = cfg.rebota ? -Math.abs(Math.sin(t * 5.2)) * 0.09 : 0;
     const vaiven = cfg.trabaja ? -Math.abs(Math.sin(t * 9)) * 0.035 : 0;
-    const altura = (this.valores.salto + rebote + vaiven) * R;
+    // Con música: un vaivén lado a lado y un pequeño rebote en cada tiempo.
+    const balanceo = Math.sin(t * RITMO) * 0.08 * this.ritmo;
+    const pulso = -Math.abs(Math.sin(t * RITMO)) * 0.025 * this.ritmo;
+    const altura = (this.valores.salto + rebote + vaiven + pulso) * R;
 
     this.dibujarSombra(ctx, cx, suelo + R * 0.05, rx, R, altura);
 
     // El cuerpo se aplasta y estira desde la base, así se ve apoyado en el suelo.
     ctx.save();
     ctx.translate(cx, suelo + altura);
-    ctx.rotate(this.inclinacion + this.valores.sacudida);
+    ctx.rotate(this.inclinacion + this.valores.sacudida + balanceo);
     ctx.scale(this.valores.sx / Math.sqrt(respiracion), this.valores.sy * respiracion);
     ctx.translate(0, -ry);
 
@@ -276,6 +315,25 @@ export class Personaje {
     this.dibujarInsignia(ctx, cx, centroY, rx, ry, R);
     if (this.animo === "acalorado") this.dibujarSudor(ctx, cx, centroY, rx, ry, R);
     this.dibujarParticulas(ctx, cx, centroY, R);
+    this.dibujarNotas(ctx, cx, centroY, ry, R);
+  }
+
+  /** Notas que salen de un costado, suben ondulando y se desvanecen. */
+  private dibujarNotas(ctx: CanvasRenderingContext2D, cx: number, cy: number, ry: number, R: number): void {
+    if (this.notas.length === 0) return;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${Math.max(8, R * 0.38)}px system-ui, sans-serif`;
+    for (const nota of this.notas) {
+      const p = nota.edad / nota.vida;
+      ctx.globalAlpha = Math.min(1, p * 5) * (1 - p);
+      ctx.fillStyle = rgba(this.color);
+      const x = cx + nota.lado * R * (0.9 + p * 0.5) + Math.sin(nota.edad * 3) * R * 0.12 + nota.x * R;
+      const y = cy - ry * 0.4 - p * R * 1.1;
+      ctx.fillText(nota.lado < 0 ? "♪" : "♫", x, y);
+    }
+    ctx.restore();
   }
 
   private dibujarSombra(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, R: number, altura: number): void {

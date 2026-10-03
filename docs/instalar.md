@@ -72,6 +72,7 @@ Prueba decirle:
 | `pomodoro de 30 para cálculo` · `recuérdame en 10 minutos sacar la ropa` · `¿cuánto falta?` | Temporizadores y pomodoro, sin IA ⚡ (la cuenta regresiva se ve en la isla) |
 | `¿cómo está el computador?` · `¿cuánta batería me queda?` | Batería, CPU, memoria y disco, sin IA ⚡. Brote también se cansa con poca batería y suda con la CPU al máximo |
 | `mis descargas` · `abre la última descarga` · `muéstrame la última descarga` | Tus últimas descargas, sin IA ⚡. Mientras algo se descarga, la isla dice "📥 Descargando…" y al terminar "Lista ✓" con un botón **Mostrar**. Solo abre documentos (PDF, Word, imágenes…): un programa o instalador te lo muestra en el Finder / Explorador, nunca lo ejecuta |
+| `pausa la música` · `siguiente canción` · `pon la anterior` · `¿qué está sonando?` | Controla Spotify o Música (en Mac) o el reproductor que estés usando (en Windows), sin IA ⚡. La isla muestra "♪ canción — artista" con ⏮ ⏯ ⏭ y Brote se balancea mientras suena. **Nunca abre una app de música**: si no hay ninguna abierta, te lo dice |
 
 ### Permisos que tu Mac te va a preguntar
 
@@ -80,6 +81,8 @@ macOS pide permiso la primera vez que Brote necesita algo. Puedes cambiarlos des
 | Aviso | Por qué | Si dices que no |
 |---|---|---|
 | "Brote quiere acceder a archivos de la carpeta Descargas" | Para avisarte cuando termina una descarga y responder "mis descargas" | Brote no ve tus descargas; lo demás funciona igual |
+| "Brote quiere controlar Spotify" / "…controlar Música" (Automatización) | Para mostrar la canción y pausar o cambiarla. Solo aparece si esa app está abierta | Brote no muestra esa música (no vuelve a preguntar hasta dentro de un rato). Se cambia en **Privacidad y seguridad → Automatización → Brote** |
+| Lo mismo, pero a nombre de **node** u **OpenClaw** | Cuando se lo pides a la IA ("pausa la música" escrito de otra forma), la herramienta corre dentro de OpenClaw | La IA no puede ver ni controlar la música; las frases sin IA siguen funcionando |
 
 Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos botones: **Permitir** o **Rechazar**. Si se demora, el botón ■ lo detiene.
 
@@ -88,7 +91,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 ## Tus datos
 
 - Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
-- Los nombres de tus descargas no salen del computador; solo los ve la IA si le preguntas por ellas.
+- Los nombres de tus descargas y lo que escuchas no salen del computador; solo los ve la IA si le preguntas por ellos.
 - Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code.
 - En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
 

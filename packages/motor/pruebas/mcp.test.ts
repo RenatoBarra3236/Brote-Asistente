@@ -26,7 +26,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "motor_proponer_plantilla"],
     );
   });
 
@@ -68,6 +68,15 @@ describe("servidor MCP de gastos", () => {
     assert.deepEqual(lista.map((t: any) => t.tipo).sort(), ["pomodoro", "temporizador"]);
     assert.equal(llamar("temporizador_cancelar", { tipo: "pomodoro" }).texto, "Cancelados: 1.");
     assert.equal(llamar("temporizador_cancelar", {}).texto, "Cancelados: 1.");
+  });
+
+  it("la música valida la acción y, sin reproductor, no hace nada", () => {
+    assert.equal(llamar("musica_control", { accion: "subir-volumen" }).error, true);
+    // En Linux (las pruebas) no hay música que leer: responde sin error.
+    if (process.platform === "linux") {
+      assert.match(llamar("musica_estado", {}).texto, /No pude saber/);
+      assert.match(llamar("musica_control", { accion: "pausa" }).texto, /No hay música abierta/);
+    }
   });
 
   it("lista las descargas recientes sin abrirlas", () => {

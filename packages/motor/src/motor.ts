@@ -8,6 +8,7 @@ import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
+import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
@@ -38,7 +39,8 @@ export type Accion =
   | { intencion: "estado-equipo" }
   | { intencion: "ver-descargas" }
   | { intencion: "abrir-ultima-descarga" }
-  | { intencion: "mostrar-ultima-descarga" };
+  | { intencion: "mostrar-ultima-descarga" }
+  | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -76,6 +78,11 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "ver-descargas":
     case "abrir-ultima-descarga":
     case "mostrar-ultima-descarga":
+    case "musica-pausa":
+    case "musica-play":
+    case "musica-siguiente":
+    case "musica-anterior":
+    case "musica-estado":
       return { intencion };
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
@@ -97,6 +104,7 @@ export class Motor {
   private readonly temporizadores: Temporizadores | null;
   private readonly equipo: (() => LecturaEquipo | null) | null;
   private readonly descargas: (() => Descarga[] | null) | null;
+  private readonly musica: Musica | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -109,8 +117,11 @@ export class Motor {
       equipo?: () => LecturaEquipo | null;
       /** Las últimas descargas, de la más nueva a la más vieja (`null` si no se pudo leer la carpeta). */
       descargas?: () => Descarga[] | null;
+      /** Lo que suena y cómo pedirle algo (lo mantiene el puente). */
+      musica?: Musica;
     } = {},
   ) {
+    this.musica = opciones.musica ?? null;
     this.descargas = opciones.descargas ?? null;
     this.equipo = opciones.equipo ?? null;
     this.gastos = gastos;
@@ -136,12 +147,26 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (accion.intencion.startsWith("musica-")) {
+      if (!this.musica) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.tocar(accion.intencion) };
+    }
     if (esDeDescargas(accion)) {
       const lista = this.descargas?.();
       if (!lista) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, ...this.descargar(accion.intencion, lista) };
     }
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  /** "Pausa la música", "siguiente canción", "¿qué está sonando?". Nunca abre una app de música. */
+  private tocar(intencion: Intencion): string {
+    const musica = this.musica!;
+    const estado = musica.estado();
+    if (intencion === "musica-estado") return describirMusica(estado);
+    const accion = ACCION_DE[intencion]!;
+    if (estado) musica.controlar(accion);
+    return respuestaControl(accion, estado);
   }
 
   /** "Mis descargas" y "abre la última descarga". Abrir o mostrar lo hace la isla (Rust valida la ruta). */
@@ -257,6 +282,18 @@ export class Motor {
 /** "un café" → "café", "el almuerzo" → "almuerzo". */
 function sinArticulo(texto: string): string {
   return texto.replace(/^(un|una|unos|unas|el|la|los|las)\s+/i, "");
+}
+
+const ACCION_DE: Partial<Record<Intencion, AccionMusica>> = {
+  "musica-pausa": "pausa",
+  "musica-play": "play",
+  "musica-siguiente": "siguiente",
+  "musica-anterior": "anterior",
+};
+
+export interface Musica {
+  estado: () => EstadoMusica | null;
+  controlar: (accion: AccionMusica) => void;
 }
 
 function esDeDescargas(accion: Accion): boolean {

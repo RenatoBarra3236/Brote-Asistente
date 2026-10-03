@@ -346,3 +346,22 @@ body {
   padding: 2px 9px;
   font-size: 11px;
 }
+.musica.sonando {
+  background: rgba(155, 122, 247, 0.18);
+}
+.boton-musica {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 10px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.boton-musica:hover {
+  filter: brightness(1.3);
+}

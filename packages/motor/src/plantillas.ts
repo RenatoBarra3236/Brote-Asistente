@@ -39,7 +39,9 @@ export type Intencion =
   | "calendario-proximo"
   | "calendario-crear"
   | "calendario-crear-manana"
-  | "programador-sesiones";
+  | "programador-sesiones"
+  | "aula-entregas"
+  | "aula-semana";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
@@ -206,6 +208,7 @@ const AGENDA = "agenda|calendario|horario";
 const ACTIVIDADES = "clases|clase|pruebas|prueba|reuniones|reunion|eventos|evento|ayudantias|ayudantia";
 const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
 const MUSICA = "musica|cancion|tema|spotify";
+const ENTREGABLES = "entregas|tareas|trabajos|informes";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
@@ -299,4 +302,12 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "programador-que-hace", intencion: "programador-sesiones", patron: `(que|en que) (esta haciendo|hace|anda|esta) (${CLAUDE})` },
   { id: "programador-como-va", intencion: "programador-sesiones", patron: `como (va|van|anda|andan) (${CLAUDE})` },
   { id: "programador-sesiones", intencion: "programador-sesiones", patron: `[(muestrame|ver)] [mis] sesiones de (${CLAUDE})` },
+  // Aula (Canvas o Moodle). "Esta semana" va antes que la general.
+  { id: "aula-semana", intencion: "aula-semana", patron: `(que|cuales) (${ENTREGABLES}) tengo [para] esta semana` },
+  { id: "aula-semana-entregar", intencion: "aula-semana", patron: "(que|que cosas) tengo que entregar [para] esta semana" },
+  { id: "aula-semana-mis", intencion: "aula-semana", patron: "[(muestrame|ver|dame)] [mis] entregas (de|para) esta semana" },
+  { id: "aula-entregas", intencion: "aula-entregas", patron: "(que|cuales) entregas tengo [pendientes]" },
+  { id: "aula-entregas-mis", intencion: "aula-entregas", patron: "[(muestrame|ver|dame)] [mis] [proximas] entregas [pendientes]" },
+  { id: "aula-entregar", intencion: "aula-entregas", patron: `(que|que cosas|cuales) [(${ENTREGABLES})] tengo que entregar` },
+  { id: "aula-falta", intencion: "aula-entregas", patron: "que me falta entregar" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

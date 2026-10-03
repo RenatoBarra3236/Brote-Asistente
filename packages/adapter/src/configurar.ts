@@ -4,16 +4,41 @@
 //   node configurar.mjs revisar          → JSON con el estado de cada paso
 //   node configurar.mjs rapido           → JSON { listo }: solo lee archivos (para decidir al iniciar)
 //   node configurar.mjs aplicar <paso>   → JSON { ok, detalle }
+//   node configurar.mjs conectores       → JSON { catalogo, propios }: el estado de cada conector
+//   node configurar.mjs conectar <id>    → una línea JSON por fase (ver `conectar`); "cancelar" por la entrada lo corta
+//   node configurar.mjs conectar-propio <nombre> <url>   igual, para un servidor MCP agregado por URL
+//   node configurar.mjs conectar-token <id>              igual; el token llega en la primera línea de la entrada
+//   node configurar.mjs desconectar <id> → JSON { ok, detalle }
 //
 // Con `OPENCLAW_PROFILE=prueba` trabaja sobre un OpenClaw aislado (~/.openclaw-prueba), para
 // probar una instalación desde cero sin tocar la de verdad.
 
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal } from "@asistente/motor";
+import { descargarIcal, describirErrorAula, eventosDeIcal, leerAula, leerCalendarioMacAhora, leerConfigAula, leerUrlIcal, pendientes } from "@asistente/motor";
+import {
+  ARGS_PROBAR,
+  ARGS_RECARGAR,
+  argsAgregarConToken,
+  argsAgregarOauth,
+  argsLogin,
+  argsLogout,
+  argsQuitar,
+  conectorDe,
+  estadoConectores,
+  guardadoAlAgregar,
+  guardarConectados,
+  herramientasPorServidor,
+  leerLineaLogin,
+  ocultarSecretos,
+  urlDeServidor,
+  validarNombre,
+  validarUrlServidor,
+} from "./conectores.ts";
 import { agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks, rutaSettings } from "./hooks-claude.ts";
 import { CONFIG_OPENCLAW } from "./rutas.ts";
 
@@ -36,7 +61,9 @@ export type Accion =
   | { tipo: "terminal"; etiqueta: string; terminal: "login-claude" | "memoria-local" }
   | { tipo: "enlace"; etiqueta: string; enlace: "node" | "claude-code" | "privacidad-calendarios" }
   /** La dirección iCal secreta: la ventana muestra un campo y Rust la guarda (con permisos 600). */
-  | { tipo: "ical"; etiqueta: string; configurada: boolean };
+  | { tipo: "ical"; etiqueta: string; configurada: boolean }
+  /** El aula (Canvas o Moodle): dirección del campus y token personal; Rust los guarda (permisos 600). */
+  | { tipo: "aula"; etiqueta: string; configurada: boolean; plataforma: "canvas" | "moodle" | null };
 
 export interface Paso {
   id: string;
@@ -105,23 +132,37 @@ export function buscarPrograma(nombre: string): string | null {
  * la clave viene de la configuración de Claude Code, igual se detecta).
  */
 function ejecutar(programa: string, args: string[], tiempoMs = 60_000): { codigo: number; salida: string } {
-  const { ANTHROPIC_API_KEY: _clave, ...entorno } = process.env;
-  const resultado = spawnSync(programa, args, {
+  const resultado = spawnSync(programa, EN_WINDOWS ? args.map(citar) : args, {
     encoding: "utf8",
     timeout: tiempoMs,
     shell: EN_WINDOWS,
     windowsHide: true,
-    env: { ...entorno, PATH: carpetasDeProgramas().join(delimiter), NO_COLOR: "1" },
+    env: entornoProgramas(),
   });
   return { codigo: resultado.status ?? 1, salida: `${resultado.stdout ?? ""}${resultado.stderr ?? ""}` };
 }
 
-function openclaw(args: string[], tiempoMs?: number): { codigo: number; salida: string } {
-  const programa = buscarPrograma("openclaw");
-  if (!programa) return { codigo: 1, salida: "OpenClaw no está instalado" };
+function entornoProgramas(): NodeJS.ProcessEnv {
+  const { ANTHROPIC_API_KEY: _clave, ...entorno } = process.env;
+  return { ...entorno, PATH: carpetasDeProgramas().join(delimiter), NO_COLOR: "1" };
+}
+
+/** En Windows los argumentos pasan por cmd: los que tienen espacios o símbolos van entre comillas. */
+function citar(argumento: string): string {
+  return /[\s&|<>()]/.test(argumento) ? `"${argumento}"` : argumento;
+}
+
+/** Los argumentos para OpenClaw, con el perfil si hay uno. */
+function conPerfil(args: readonly string[]): string[] {
   // Con un perfil (pruebas), se pasa explícito: nunca debe tocarse la instalación de verdad por error.
   const perfil = process.env.OPENCLAW_PROFILE;
-  return ejecutar(programa, perfil ? ["--profile", perfil, ...args] : args, tiempoMs);
+  return perfil ? ["--profile", perfil, ...args] : [...args];
+}
+
+function openclaw(args: readonly string[], tiempoMs?: number): { codigo: number; salida: string } {
+  const programa = buscarPrograma("openclaw");
+  if (!programa) return { codigo: 1, salida: "OpenClaw no está instalado" };
+  return ejecutar(programa, conPerfil(args), tiempoMs);
 }
 
 function leerConfig(): any {
@@ -379,6 +420,28 @@ export async function revisarOpcionales(): Promise<Paso[]> {
     detalle,
     accion: { tipo: "ical", etiqueta: "Guardar", configurada: url !== null },
   });
+
+  // El aula: se prueba el token al revisar (nunca se muestra ni se registra).
+  const aula = leerConfigAula();
+  let detalleAula =
+    "Brote te muestra tu próxima entrega y te avisa 24 h y 2 h antes. Pega la dirección de tu campus y un token personal " +
+    "(nunca tu contraseña). Solo lectura: Brote no puede entregar nada ni ver tus notas.";
+  let estadoAula: Estado = "opcional";
+  if (aula) {
+    const lectura = await leerAula(aula, Date.now());
+    if ("entregas" in lectura) {
+      const cuantas = pendientes(lectura.entregas, Date.now()).length;
+      estadoAula = "ok";
+      detalleAula = `Conectado a ${aula.tipo === "canvas" ? "Canvas" : "Moodle"} (${new URL(aula.url).host}): ${cuantas === 1 ? "1 entrega pendiente" : `${cuantas} entregas pendientes`}.`;
+    } else detalleAula = describirErrorAula(lectura.error);
+  }
+  pasos.push({
+    id: "aula",
+    titulo: "Aula: Canvas o Moodle (opcional)",
+    estado: estadoAula,
+    detalle: detalleAula,
+    accion: { tipo: "aula", etiqueta: "Guardar", configurada: aula !== null, plataforma: aula?.tipo ?? null },
+  });
   return pasos;
 }
 
@@ -551,16 +614,192 @@ export function aplicar(id: string): string {
   }
 }
 
+// ---------------------------------------------------------------- conectores
+
+/** El estado de cada conector (y deja al día ~/.asistente-prototipo/conectores.json para el puente). */
+export function conectores(): ReturnType<typeof estadoConectores> {
+  const config = leerConfig();
+  const enConfig = Object.keys(config?.mcp?.servers ?? {}).some((n) => urlDeServidor(config.mcp.servers[n]) !== null);
+  // El probe se conecta a cada servidor: solo vale la pena si hay alguno por URL.
+  const probe = enConfig ? openclaw(ARGS_PROBAR, 90_000) : null;
+  const estado = estadoConectores(config, probe && probe.codigo === 0 ? herramientasPorServidor(probe.salida) : null);
+  guardarLista(estado);
+  return estado;
+}
+
+function guardarLista(estado: ReturnType<typeof estadoConectores>): void {
+  try {
+    mkdirSync(join(homedir(), ".asistente-prototipo"), { recursive: true, mode: 0o700 });
+    guardarConectados(estado.catalogo.filter((c) => c.estado === "conectado").map((c) => c.id));
+  } catch {
+    // Sin la lista, el puente pregunta por todo: es lo seguro.
+  }
+}
+
+/** Una línea JSON con la fase de una conexión (la lee Rust y la pasa a la ventana). */
+function fase(datos: { fase: "agregando" | "autorizar" | "esperando" | "listo" | "error" | "cancelado"; url?: string; detalle?: string }): void {
+  process.stdout.write(`${JSON.stringify(datos)}\n`);
+}
+
+/** La primera línea de la entrada (el token) y, después, si llega "cancelar" o se cierra. */
+function escucharEntrada(): { primera: Promise<string>; cancelado: Promise<void> } {
+  const lineas = createInterface({ input: process.stdin });
+  let darPrimera: (texto: string) => void = () => {};
+  let darCancelado: () => void = () => {};
+  const primera = new Promise<string>((listo) => (darPrimera = listo));
+  const cancelado = new Promise<void>((listo) => (darCancelado = listo));
+  let leida = false;
+  lineas.on("line", (linea) => {
+    if (!leida) {
+      leida = true;
+      darPrimera(linea.trim());
+      if (linea.trim() !== "cancelar") return;
+    }
+    if (linea.trim() === "cancelar") darCancelado();
+  });
+  lineas.on("close", () => {
+    darPrimera("");
+    darCancelado();
+  });
+  return { primera, cancelado };
+}
+
+/** Recarga los servidores MCP de OpenClaw y cuenta las herramientas del recién conectado. */
+function terminarConexion(nombre: string, titulo: string): string {
+  openclaw(ARGS_RECARGAR, 60_000);
+  const probe = openclaw(ARGS_PROBAR, 90_000);
+  const cuantas = probe.codigo === 0 ? (herramientasPorServidor(probe.salida)?.get(nombre) ?? 0) : 0;
+  guardarLista(estadoConectores(leerConfig(), probe.codigo === 0 ? herramientasPorServidor(probe.salida) : null));
+  const herramientas = cuantas > 0 ? ` (${cuantas} herramientas)` : "";
+  return `${titulo} quedó conectado${herramientas}. El agente lo usará desde su próximo mensaje.`;
+}
+
+/**
+ * Agrega el servidor (si hace falta) y abre el inicio de sesión OAuth. Fases por la salida:
+ *   { fase: "agregando" } → { fase: "autorizar", url } → { fase: "esperando" } → { fase: "listo", detalle }
+ * o { fase: "error", detalle } / { fase: "cancelado" }. "cancelar" por la entrada (o cerrarla) mata el login.
+ */
+async function conectarOauth(nombre: string, url: string, titulo: string, cancelado: Promise<void>): Promise<void> {
+  const programa = buscarPrograma("openclaw");
+  if (!programa) return fase({ fase: "error", detalle: "OpenClaw no está instalado." });
+  fase({ fase: "agregando" });
+  const actual = urlDeServidor(leerConfig()?.mcp?.servers?.[nombre]);
+  if (actual !== null && actual !== url && actual.replace(/\/$/, "") !== url.replace(/\/$/, "")) openclaw(argsQuitar(nombre));
+  if (actual === null || actual.replace(/\/$/, "") !== url.replace(/\/$/, "")) {
+    const agregado = openclaw(argsAgregarOauth(nombre, url));
+    if (agregado.codigo !== 0 || !guardadoAlAgregar(agregado.salida, nombre)) {
+      return fase({ fase: "error", detalle: `No pude agregar ${titulo}: ${ocultarSecretos(ultimas(agregado.salida))}` });
+    }
+  }
+  const login = spawn(programa, conPerfil(argsLogin(nombre)), {
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: EN_WINDOWS,
+    windowsHide: true,
+    env: entornoProgramas(),
+  });
+  let listo = false;
+  let ultimasLineas: string[] = [];
+  const leer = (flujo: NodeJS.ReadableStream) =>
+    createInterface({ input: flujo }).on("line", (linea) => {
+      ultimasLineas = [...ultimasLineas, linea].slice(-3);
+      const leida = leerLineaLogin(linea);
+      if (leida.tipo === "autorizar") fase({ fase: "autorizar", url: leida.url });
+      else if (leida.tipo === "esperando") fase({ fase: "esperando" });
+      else if (leida.tipo === "listo") listo = true;
+    });
+  leer(login.stdout);
+  leer(login.stderr);
+  const plazo = setTimeout(() => login.kill(), 10 * 60_000);
+  let cancelo = false;
+  void cancelado.then(() => {
+    cancelo = true;
+    login.kill();
+  });
+  const codigo = await new Promise<number | null>((fin) => login.on("close", fin));
+  clearTimeout(plazo);
+  if (cancelo && !listo) return fase({ fase: "cancelado" });
+  if (!listo || codigo !== 0) {
+    return fase({ fase: "error", detalle: `No se completó la autorización de ${titulo}. ${ocultarSecretos(ultimasLineas.join(" "))}`.trim() });
+  }
+  fase({ fase: "listo", detalle: terminarConexion(nombre, titulo) });
+}
+
+/** GitHub y otros sin OAuth dinámico: el token va en la cabecera. Nunca se muestra ni se registra. */
+function conectarConToken(nombre: string, url: string, titulo: string, token: string): void {
+  fase({ fase: "agregando" });
+  let args: string[];
+  try {
+    args = argsAgregarConToken(nombre, url, token);
+  } catch (error) {
+    return fase({ fase: "error", detalle: (error as Error).message });
+  }
+  if (urlDeServidor(leerConfig()?.mcp?.servers?.[nombre]) !== null) openclaw(argsQuitar(nombre));
+  const agregado = openclaw(args);
+  if (agregado.codigo !== 0 || !guardadoAlAgregar(agregado.salida, nombre)) {
+    return fase({ fase: "error", detalle: `No pude agregar ${titulo}: ${ocultarSecretos(ultimas(agregado.salida), [token])}` });
+  }
+  const detalle = terminarConexion(nombre, titulo);
+  if (!/\(\d+ herramientas\)/.test(detalle)) {
+    return fase({ fase: "error", detalle: `${titulo} quedó guardado, pero no respondió: revisa que el token sea válido y no haya vencido.` });
+  }
+  fase({ fase: "listo", detalle });
+}
+
+/** Cierra la sesión (si era OAuth) y quita el servidor de la configuración de OpenClaw. */
+export function desconectar(nombre: string): string {
+  const config = leerConfig();
+  if (urlDeServidor(config?.mcp?.servers?.[nombre]) === null) throw new Error("Ese conector no estaba conectado.");
+  // Logout borra las credenciales OAuth que guardó OpenClaw (nunca las leemos); con token no aplica.
+  openclaw(argsLogout(nombre));
+  exigir(openclaw(argsQuitar(nombre)), "No pude quitar el conector");
+  openclaw(ARGS_RECARGAR, 60_000);
+  guardarLista(estadoConectores(leerConfig(), null));
+  return `${conectorDe(nombre)?.nombre ?? nombre} quedó desconectado.`;
+}
+
+function ultimas(salida: string): string {
+  return salida.trim().split("\n").slice(-3).join(" ");
+}
+
+/** Valida el pedido de conexión y lo lanza. Siempre termina con una fase final. */
+async function ordenConectar(orden: string, args: string[]): Promise<void> {
+  const entrada = escucharEntrada();
+  if (orden === "conectar" || orden === "conectar-token") {
+    const conector = conectorDe(args[0] ?? "");
+    if (!conector) return fase({ fase: "error", detalle: "Conector desconocido." });
+    if (orden === "conectar") {
+      if (conector.auth !== "oauth") return fase({ fase: "error", detalle: `${conector.nombre} se conecta con un token.` });
+      return conectarOauth(conector.id, conector.url, conector.nombre, entrada.cancelado);
+    }
+    if (conector.auth !== "token") return fase({ fase: "error", detalle: `${conector.nombre} se conecta con OAuth.` });
+    return conectarConToken(conector.id, conector.url, conector.nombre, await entrada.primera);
+  }
+  // Conector propio: nombre nuevo y URL https. Nunca queda nada permitido sin preguntar.
+  const [nombre = "", texto = ""] = args;
+  const existentes = Object.keys(leerConfig()?.mcp?.servers ?? {});
+  const error = validarNombre(nombre, existentes);
+  if (error) return fase({ fase: "error", detalle: error });
+  const url = validarUrlServidor(texto);
+  if (!url) return fase({ fase: "error", detalle: "La dirección debe empezar con https:// y no tener espacios ni símbolos raros." });
+  return conectarOauth(nombre, url, nombre, entrada.cancelado);
+}
+
 // ---------------------------------------------------------------- línea de comandos
 
 /** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
 const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac", "programador", "programador-quitar"];
 
 if (import.meta.main) {
-  const [orden, paso] = process.argv.slice(2);
+  const [orden, paso, ...resto] = process.argv.slice(2);
   let respuesta: unknown;
+  if (orden === "conectar" || orden === "conectar-token" || orden === "conectar-propio") {
+    await ordenConectar(orden, [paso, ...resto].filter((a): a is string => typeof a === "string"));
+    process.exit(0);
+  }
   try {
-    if (orden === "revisar") respuesta = [...revisar(), ...(await revisarOpcionales())];
+    if (orden === "conectores") respuesta = conectores();
+    else if (orden === "desconectar" && paso) respuesta = { ok: true, detalle: desconectar(paso) };
+    else if (orden === "revisar") respuesta = [...revisar(), ...(await revisarOpcionales())];
     else if (orden === "rapido") respuesta = rapido();
     else if (orden === "aplicar" && paso) {
       const detalle = aplicar(paso);

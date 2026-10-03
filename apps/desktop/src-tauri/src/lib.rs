@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 mod notch;
+mod conectores;
 mod configuracion;
 mod descargas;
 mod entorno;
@@ -235,6 +236,7 @@ pub fn run() {
             let simulado = std::env::var("ASISTENTE_SIMULADO").is_ok_and(|v| v == "1");
             let puente = (!simulado).then(|| Puente::iniciar(app.handle()));
             app.manage(Agente { puente });
+            app.manage(conectores::Conexiones::default());
             crear_icono_de_barra(app)?;
 
             // Si falta configurar algo (por ejemplo, en un computador nuevo), se abre el asistente.
@@ -263,6 +265,10 @@ pub fn run() {
             configuracion::abrir_enlace,
             configuracion::reiniciar,
             configuracion::guardar_calendario,
+            configuracion::guardar_aula,
+            conectores::conector_conectar,
+            conectores::conector_cancelar,
+            conectores::abrir_autorizacion,
             descargas::mostrar_descarga
         ])
         .build(tauri::generate_context!())
@@ -270,6 +276,9 @@ pub fn run() {
         .run(|app, evento| {
             // Al cerrar la app, el puente se desconecta del Gateway antes de terminar.
             if let RunEvent::Exit = evento {
+                if let Some(conexiones) = app.try_state::<conectores::Conexiones>() {
+                    let _ = conectores::conector_cancelar(conexiones);
+                }
                 if let Some(puente) = app.try_state::<Agente>().as_ref().and_then(|a| a.puente.as_ref()) {
                     puente.detener();
                 }

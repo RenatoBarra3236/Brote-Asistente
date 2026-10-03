@@ -49,6 +49,23 @@ export interface EstadoCalendario {
   etiqueta: string | null;
 }
 
+/** Una entrega del aula (Canvas o Moodle). */
+export interface Entrega {
+  curso: string;
+  titulo: string;
+  entregaMs: number;
+  url: string | null;
+  entregada: boolean;
+}
+
+/** El aula: la próxima entrega pendiente, cuántas quedan y, si no se pudo leer, por qué. */
+export interface EstadoAula {
+  configurada: boolean;
+  proxima: Entrega | null;
+  pendientes: number;
+  error: string | null;
+}
+
 /** Una sesión de Claude Code del usuario (modo programador). */
 export interface SesionClaude {
   id: string;
@@ -103,6 +120,8 @@ type Aviso =
   | { tipo: "musica"; estado: EstadoMusica | null }
   | ({ tipo: "calendario" } & EstadoCalendario)
   | { tipo: "calendario-aviso"; texto: string }
+  | ({ tipo: "aula" } & EstadoAula)
+  | { tipo: "aula-aviso"; texto: string }
   | ({ tipo: "programador" } & EstadoProgramador)
   | { tipo: "programador-reaccion"; reaccion: "termino" | "fallo"; proyecto: string }
   | {
@@ -137,6 +156,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesAula = new Set<(estado: EstadoAula) => void>();
+  private readonly oyentesAvisoAula = new Set<(texto: string) => void>();
   private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
   private readonly oyentesReaccion = new Set<(reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
@@ -225,6 +246,18 @@ export class TransportePuente implements Transporte {
   alAvisoCalendario(oyente: (texto: string) => void): () => void {
     this.oyentesAvisoCalendario.add(oyente);
     return () => this.oyentesAvisoCalendario.delete(oyente);
+  }
+
+  /** El aula (próxima entrega), cada vez que cambia. */
+  alCambiarAula(oyente: (estado: EstadoAula) => void): () => void {
+    this.oyentesAula.add(oyente);
+    return () => this.oyentesAula.delete(oyente);
+  }
+
+  /** El aviso 24 h y 2 h antes de una entrega. */
+  alAvisoAula(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoAula.add(oyente);
+    return () => this.oyentesAvisoAula.delete(oyente);
   }
 
   /** Las sesiones de Claude Code y sus permisos pendientes, cada vez que cambian. */
@@ -337,6 +370,12 @@ export class TransportePuente implements Transporte {
         return;
       case "calendario-aviso":
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
+        return;
+      case "aula":
+        for (const oyente of this.oyentesAula) oyente({ configurada: aviso.configurada, proxima: aviso.proxima, pendientes: aviso.pendientes, error: aviso.error });
+        return;
+      case "aula-aviso":
+        for (const oyente of this.oyentesAvisoAula) oyente(aviso.texto);
         return;
       case "programador":
         for (const oyente of this.oyentesProgramador) oyente({ sesiones: aviso.sesiones, permisos: aviso.permisos });

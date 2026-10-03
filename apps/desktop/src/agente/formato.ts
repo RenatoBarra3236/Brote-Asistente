@@ -39,6 +39,21 @@ export function cuandoEmpieza(evento: { inicioMs: number; finMs: number; todoElD
   return `${inicio.getDate()}/${inicio.getMonth() + 1} ${hora(inicio)}`;
 }
 
+/** Cuánto falta para una entrega, dicho corto: "en 45 min", "en 3 h", "hoy 23:59", "mañana 23:59", "jue 23:59", "14/10". */
+export function venceEn(entregaMs: number, ahoraMs: number): string {
+  const falta = entregaMs - ahoraMs;
+  if (falta <= 0) return "venció";
+  if (falta < 3_600_000) return `en ${Math.max(1, Math.round(falta / 60_000))} min`;
+  if (falta < 6 * 3_600_000) return `en ${Math.floor(falta / 3_600_000)} h`;
+  const fecha = new Date(entregaMs);
+  const ahora = new Date(ahoraMs);
+  const dentro = (dias: number) => mismoDia(fecha, new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + dias));
+  if (dentro(0)) return `hoy ${hora(fecha)}`;
+  if (dentro(1)) return `mañana ${hora(fecha)}`;
+  if (falta < 6 * 86_400_000) return `${DIAS[fecha.getDay()].slice(0, 3)} ${hora(fecha)}`;
+  return `${fecha.getDate()}/${fecha.getMonth() + 1}`;
+}
+
 /** "Buenos días", "Buenas tardes" o "Buenas noches". */
 export function saludo(fecha: Date): string {
   const h = fecha.getHours();

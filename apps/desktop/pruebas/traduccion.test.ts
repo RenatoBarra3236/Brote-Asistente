@@ -158,4 +158,26 @@ describe("comandos de OpenClaw", () => {
     };
     assert.deepEqual(traducir(marco), { tipo: "fin", texto: "⚠️ You are not authorized to reset this session." });
   });
+
+  test("conectores: el nombre bonito que pone el puente en vez de «claude-cli native tool: …»", () => {
+    const presentacion = {
+      title: "claude-cli native tool: mcp__todoist__add-tasks",
+      toolName: "mcp__todoist__add-tasks",
+      detail: JSON.stringify({ tasks: [{ content: "Comprar pan" }], projectId: "" }),
+      conector: { servicio: "Todoist", accion: "Agregar tareas", propio: false },
+    };
+    assert.deepEqual(describirAprobacion(presentacion), { titulo: "Todoist · Agregar tareas", detalle: 'tasks: [{"content":"Comprar pan"}]' });
+    const propio = { ...presentacion, conector: { servicio: "mi-wiki", accion: "search", propio: true } };
+    assert.equal(describirAprobacion(propio).titulo, "mi-wiki · search (servicio agregado por ti)");
+    // Sin la anotación del puente, como antes.
+    assert.equal(describirAprobacion({ ...presentacion, conector: undefined }).titulo, "¿Uso mcp__todoist__add-tasks?");
+  });
+
+  test("conectores: la etiqueta mientras corre la herramienta", () => {
+    const suceso = traducir({
+      event: "agent",
+      payload: { stream: "tool", data: { phase: "start", name: "mcp__todoist__find-tasks", toolCallId: "t1", conector: { servicio: "Todoist", accion: "Buscar tareas" } } },
+    } as any);
+    assert.equal(suceso?.tipo === "herramienta-inicio" && suceso.etiqueta, "Todoist · Buscar tareas…");
+  });
 });

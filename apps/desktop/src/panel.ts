@@ -11,13 +11,14 @@
 
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
-import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto } from "./agente/formato";
+import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto, venceEn } from "./agente/formato";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
 import type {
   AccionMusica,
   Descarga,
   DescargaEnCurso,
   EstadoCalendario,
+  EstadoAula,
   EstadoConexion,
   EstadoMusica,
   EstadoProgramador,
@@ -81,6 +82,7 @@ export class Panel {
   private readonly tarjetas: HTMLDivElement;
   private readonly tarjetasTemporizador: HTMLDivElement;
   private readonly tarjetaCalendario: HTMLDivElement;
+  private readonly tarjetaAula: HTMLDivElement;
   private readonly tarjetaMusica: HTMLDivElement;
   private readonly musicaTitulo: HTMLDivElement;
   private readonly musicaDetalle: HTMLDivElement;
@@ -184,6 +186,8 @@ export class Panel {
     this.tarjetasTemporizador = crear("div", "grupo-tarjetas");
     this.tarjetaCalendario = crear("div", "tarjeta calendario");
     this.tarjetaCalendario.hidden = true;
+    this.tarjetaAula = crear("div", "tarjeta aula");
+    this.tarjetaAula.hidden = true;
 
     this.tarjetaMusica = crear("div", "tarjeta musica ancha");
     this.tarjetaMusica.hidden = true;
@@ -215,7 +219,7 @@ export class Panel {
     const tranquilo = crear("p", "vacia-texto");
     tranquilo.textContent = "Todo tranquilo por aquí. Prueba:";
     this.tarjetaVacia.append(tranquilo, this.sugerencias());
-    this.tarjetas.append(this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude, this.tarjetaVacia);
+    this.tarjetas.append(this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaAula, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude, this.tarjetaVacia);
     inicio.append(this.tituloInicio, this.tarjetas);
 
     // --- Chat ---
@@ -435,6 +439,32 @@ export class Panel {
       this.tarjetaCalendario.replaceChildren(etiqueta, titulo, cuando);
       this.tarjetaCalendario.title = proximo.lugar ? `${proximo.titulo} · ${proximo.lugar}` : proximo.titulo;
       this.tarjetaCalendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
+    }
+    this.actualizarInicio();
+  }
+
+  /** La próxima entrega del aula (Canvas o Moodle) y cuánto falta; o por qué no se pudo leer. */
+  mostrarAula(estado: EstadoAula): void {
+    const proxima = estado.proxima;
+    const visible = estado.configurada && (proxima !== null || estado.error !== null);
+    this.tarjetaAula.hidden = !visible;
+    if (visible) {
+      const etiqueta = crear("div", "tarjeta-etiqueta");
+      etiqueta.append(icono("entrega"), estado.pendientes > 1 ? ` Entregas · ${estado.pendientes}` : " Entregas");
+      const titulo = crear("div", "tarjeta-titulo");
+      const detalle = crear("div", "tarjeta-detalle");
+      if (proxima) {
+        titulo.textContent = proxima.titulo;
+        detalle.textContent = `${venceEn(proxima.entregaMs, Date.now())} · ${proxima.curso}`;
+        this.tarjetaAula.title = `${proxima.titulo} (${proxima.curso})`;
+      } else {
+        titulo.textContent = "No pude leer tu aula";
+        detalle.textContent = estado.error ?? "";
+        this.tarjetaAula.title = estado.error ?? "";
+      }
+      this.tarjetaAula.replaceChildren(etiqueta, titulo, detalle);
+      this.tarjetaAula.classList.toggle("pronto", proxima !== null && proxima.entregaMs - Date.now() <= 24 * 3_600_000);
+      this.tarjetaAula.classList.toggle("con-error", proxima === null);
     }
     this.actualizarInicio();
   }
@@ -693,7 +723,7 @@ export class Panel {
 
   /** En Inicio: la tarjeta "todo tranquilo" solo cuando no hay ninguna otra. */
   private actualizarInicio(): void {
-    const hayAlgo = [this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude].some(
+    const hayAlgo = [this.tarjetasTemporizador, this.tarjetaCalendario, this.tarjetaAula, this.tarjetaMusica, this.tarjetaDescargas, this.tarjetaClaude].some(
       (t) => !t.hidden,
     );
     this.tarjetaVacia.hidden = hayAlgo;

@@ -1,0 +1,4 @@
+[
+  { "id": 101, "name": "Cálculo II", "course_code": "MAT1620", "workflow_state": "available", "enrollment_term_id": 7, "enrollments": [{ "type": "student", "role": "StudentEnrollment", "enrollment_state": "active" }] },
+  { "id": 102, "name": "Álgebra Lineal", "course_code": "MAT1203", "workflow_state": "available", "enrollment_term_id": 7, "enrollments": [{ "type": "student", "role": "StudentEnrollment", "enrollment_state": "active" }] }
+]

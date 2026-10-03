@@ -21,6 +21,7 @@ const ICONOS = {
   alerta: `<path ${TRAZO} d="M8 2.5 14 13H2zM8 6.5v3M8 11.3v.2"/>`,
   musica: `<path ${TRAZO} d="M6 12V3.5l7-1.5V10.5"/><circle fill="currentColor" cx="4.5" cy="12" r="1.8"/><circle fill="currentColor" cx="11.5" cy="10.5" r="1.8"/>`,
   calendario: `<rect ${TRAZO} x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path ${TRAZO} d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/>`,
+  entrega: `<path ${TRAZO} d="M4 2.5h5.5L12 5v8.5H4zM9.5 2.5V5H12M6 8.5l1.5 1.5L10.5 7"/>`,
   descarga: `<path ${TRAZO} d="M8 2.5V10M4.8 7 8 10.2 11.2 7M3 13h10"/>`,
 };
 

@@ -1,8 +1,8 @@
 <!doctype html>
 <!--
   Vista previa de la isla en un navegador, para trabajar el diseño sin abrir la app: simula Tauri y
-  el puente con datos de ejemplo (pomodoro, calendario, música, una descarga y una sesión de Claude
-  Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
+  el puente con datos de ejemplo (pomodoro, calendario, entregas del aula, música, una descarga y una
+  sesión de Claude Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
   Parámetros: ?pestana=inicio|chat|codigo|equipo · ?cerrada=1 (sin abrir la isla) · ?vacia=1 (sin datos) ·
   ?modo=flotante (la ventana de Windows).
   No es parte de la app (no está entre las páginas de vite.config.ts).
@@ -36,7 +36,13 @@
       const vacia = parametros.has("vacia");
       const ahora = Date.now();
       const datos = vacia
-        ? { temporizadores: [], musica: null, calendario: { proximo: null, etiqueta: null }, programador: { sesiones: [], permisos: [] } }
+        ? {
+            temporizadores: [],
+            musica: null,
+            calendario: { proximo: null, etiqueta: null },
+            aula: { configurada: false, proxima: null, pendientes: 0, error: null },
+            programador: { sesiones: [], permisos: [] },
+          }
         : {
             temporizadores: [
               { id: 1, tipo: "pomodoro", etiqueta: "cálculo", fase: "estudio", ciclos: 1, finMs: ahora + 18 * 60_000 + 42_000, duracionMs: 25 * 60_000 },
@@ -45,6 +51,12 @@
             calendario: {
               proximo: { titulo: "Cálculo II", lugar: "Sala B-12", inicioMs: ahora + 25 * 60_000, finMs: ahora + 115 * 60_000, todoElDia: false },
               etiqueta: "Cálculo II en 25 min",
+            },
+            aula: {
+              configurada: true,
+              proxima: { curso: "Física I", titulo: "Laboratorio 4: péndulo", entregaMs: ahora + 20 * 3_600_000, url: null, entregada: false },
+              pendientes: 3,
+              error: null,
             },
             programador: {
               sesiones: [
@@ -117,6 +129,8 @@
                   return responder(id, { datos: datos.musica });
                 case "calendario-estado":
                   return responder(id, { datos: datos.calendario });
+                case "aula-estado":
+                  return responder(id, { datos: datos.aula });
                 case "programador-estado":
                   return responder(id, { datos: datos.programador });
                 case "equipo-estado":

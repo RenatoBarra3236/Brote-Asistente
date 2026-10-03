@@ -2,10 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
-import { TransportePuente } from "./agente/puente";
+import { TransportePuente, type TemporizadorActivo } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
-import { Panel } from "./panel";
+import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
 import { Personaje } from "./personaje/personaje";
 
@@ -63,8 +63,38 @@ async function iniciar(): Promise<void> {
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
-    ...(puente ? { alAbrirMemoria: () => void invoke("abrir_memoria") } : {}),
+    ...(puente
+      ? {
+          alAbrirMemoria: () => void invoke("abrir_memoria"),
+          alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
+        }
+      : {}),
   });
+
+  // Temporizadores y pomodoro: la lista viene del puente cada vez que cambia (y al iniciar, por
+  // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
+  let temporizadores: TemporizadorActivo[] = [];
+  const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
+    temporizadores = lista;
+    panel.mostrarTemporizadores(lista);
+  };
+  if (puente) {
+    puente.alCambiarTemporizadores(mostrarTemporizadores);
+    puente.alAvisoTemporizador((texto) => {
+      panel.mostrarAviso(texto);
+      personaje.setEstado("listo");
+    });
+    // Brote reacciona al computador: su ánimo (cansado, acalorado) y avisos con personalidad.
+    puente.alAvisoEquipo(({ texto, celebrar }) => {
+      panel.mostrarAviso(texto);
+      if (celebrar) personaje.setEstado("listo");
+    });
+    puente.alCambiarAnimo((animo) => personaje.setAnimo(animo));
+    void puente
+      .consultar<{ animo: "cansado" | "acalorado" | null }>({ tipo: "equipo-estado" })
+      .then(({ animo }) => personaje.setAnimo(animo), () => {});
+    void puente.consultar<TemporizadorActivo[]>({ tipo: "temporizadores-listar" }).then(mostrarTemporizadores, () => {});
+  }
   if (puente) {
     panel.mostrarConexion(puente.estadoConexion);
     puente.alCambiarConexion((estado) => panel.mostrarConexion(estado));
@@ -104,6 +134,9 @@ async function iniciar(): Promise<void> {
     if (evento.target instanceof HTMLInputElement) return;
     const estado = TECLAS[evento.key];
     if (estado) personaje.setEstado(estado, true);
+    // 7, 8 y 9 prueban el ánimo según el computador (cansado, acalorado, normal).
+    const animo = ({ "7": "cansado", "8": "acalorado", "9": null } as const)[evento.key as "7" | "8" | "9"];
+    if (animo !== undefined) personaje.setAnimo(animo);
   });
 
   // Un clic toca al personaje. En modo flotante, si el mouse se mueve con el botón
@@ -161,11 +194,13 @@ async function iniciar(): Promise<void> {
     const H = lienzo.clientHeight;
 
     personaje.actualizar(dt);
+    panel.actualizarRelojes();
+    const reloj = relojPrincipal(temporizadores);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {
       isla.actualizar(dt, hover, activo, panel.alto());
-      isla.dibujar(ctx, W, personaje);
+      isla.dibujar(ctx, W, personaje, reloj ?? undefined);
       panel.ubicar(isla.zonaPanel(W), isla.lista());
     } else {
       // Brote abajo a la derecha; el panel a su izquierda, alineado abajo.
@@ -173,6 +208,12 @@ async function iniciar(): Promise<void> {
       const centro = W - 62;
       personaje.dibujar(ctx, centro, H - 16, R);
       personaje.dibujarEtiqueta(ctx, centro, H - R * 2 - 34);
+      if (reloj && !panelAbierto) {
+        ctx.fillStyle = reloj.color;
+        ctx.font = "600 12px ui-monospace, 'SF Mono', Menlo, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(reloj.texto, centro, H - R * 2 - 22);
+      }
       if (hover || activo) {
         panelAbierto = true;
         ultimaActividad = ahora;
@@ -184,6 +225,15 @@ async function iniciar(): Promise<void> {
     }
   }
   requestAnimationFrame(cuadro);
+}
+
+/** El temporizador que se muestra con la isla cerrada: el pomodoro primero, si no el que termina antes. */
+function relojPrincipal(lista: TemporizadorActivo[]): { texto: string; color: string } | null {
+  const principal = lista.find((t) => t.tipo === "pomodoro") ?? lista[0];
+  if (!principal) return null;
+  const color =
+    principal.tipo === "temporizador" ? "#ffffff" : principal.fase === "descanso" ? "rgb(132, 226, 160)" : "rgb(255, 128, 102)";
+  return { texto: cuentaRegresiva(principal.finMs - Date.now()), color };
 }
 
 void iniciar();

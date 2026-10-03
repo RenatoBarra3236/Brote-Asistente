@@ -25,6 +25,16 @@
 //   { "tipo": "memoria-buscar", "tema": "notebook" }    → "datos": ids de lo que lo menciona
 //   { "tipo": "memoria-olvidar-tema", "tema": "notebook" }  conversación nueva + olvida todo lo que lo menciona
 //
+// Temporizadores y pomodoro:
+//   aviso { "tipo": "temporizadores", "lista": [...] }       cada vez que cambian
+//   aviso { "tipo": "temporizador-aviso", "texto": "…" }    al terminar uno o cambiar de fase el pomodoro
+//   pedido { "tipo": "temporizador-cancelar", "temporizador": 3 }
+//
+// Brote reacciona al computador:
+//   aviso { "tipo": "animo", "animo": "cansado" | "acalorado" | null }   cuando cambia
+//   aviso { "tipo": "equipo-aviso", "texto": "…", "celebrar": false }     batería baja, CPU alta, disco lleno…
+//   pedido { "tipo": "equipo-estado" }                                      → "datos": { animo, lectura }
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
@@ -35,11 +45,21 @@ import {
   Gastos,
   Motor,
   PLANTILLAS_BASE,
+  MedidorCpu,
   RUTA_BASE,
+  Temporizadores,
+  UMBRALES,
+  Vigilante,
+  type Animo,
+  type LecturaEquipo,
   deducirPlantilla,
   describirIntencion,
   mismaFrase,
+  leerBateria,
+  leerDisco,
+  leerMemoria,
   porcentajeSinIA,
+  procesoMasPesado,
   proponerPlantilla,
 } from "@asistente/motor";
 import {
@@ -68,6 +88,10 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__gastos_anotar",
   "mcp__gastos__gastos_listar",
   "mcp__gastos__gastos_resumen",
+  "mcp__gastos__temporizador_crear",
+  "mcp__gastos__temporizador_listar",
+  "mcp__gastos__temporizador_cancelar",
+  "mcp__gastos__equipo_estado",
 ]);
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
@@ -120,7 +144,69 @@ function renovarSuscripcion(cliente: Parameters<typeof suscribirseALaSesion>[0])
 
 const gastos = new Gastos(RUTA_BASE);
 // Las plantillas aprendidas se leen en cada mensaje: una recién aceptada sirve al tiro.
-const motor = new Motor(gastos, { plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()] });
+const temporizadores = new Temporizadores(gastos);
+const motor = new Motor(gastos, {
+  plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
+  temporizadores,
+  equipo: () => lecturaEquipo,
+});
+
+// Brote reacciona al computador. La CPU se mide cada 5 s; la batería cada 15 s y el disco cada
+// 10 min (cuestan más y cambian lento). El programa culpable solo se busca con la CPU alta.
+const medidorCpu = new MedidorCpu();
+const vigilante = new Vigilante();
+let lecturaEquipo: LecturaEquipo | null = null;
+let animo: Animo = null;
+let bateria: LecturaEquipo["bateria"] = null;
+let memoria: LecturaEquipo["memoria"] = null;
+let disco: LecturaEquipo["disco"] = null;
+let proximaBateria = 0;
+let proximoDisco = 0;
+
+function revisarEquipo(): void {
+  const ahora = Date.now();
+  if (ahora >= proximaBateria) {
+    bateria = leerBateria();
+    memoria = leerMemoria();
+    proximaBateria = ahora + 15_000;
+  }
+  if (ahora >= proximoDisco) {
+    disco = leerDisco();
+    proximoDisco = ahora + 10 * 60_000;
+  }
+  const cpu = medidorCpu.medir();
+  const procesoPesado = cpu !== null && cpu >= UMBRALES.cpuAlta ? procesoMasPesado() : null;
+  lecturaEquipo = { bateria, cpu, disco, procesoPesado, memoria };
+  const resultado = vigilante.evaluar(lecturaEquipo, ahora);
+  for (const aviso of resultado.avisos) {
+    registrar(`equipo: ${aviso.texto}`);
+    avisar({ tipo: "equipo-aviso", texto: aviso.texto, celebrar: aviso.celebrar });
+  }
+  if (resultado.animo !== animo) {
+    animo = resultado.animo;
+    avisar({ tipo: "animo", animo });
+  }
+}
+setInterval(revisarEquipo, 5000);
+revisarEquipo();
+
+/**
+ * Cada segundo: avisa lo que terminó y manda la lista si cambió. Revisa la base y no solo lo que
+ * pasó por aquí, así también aparecen los temporizadores que crea el agente por MCP.
+ */
+let ultimaLista = "";
+function revisarTemporizadores(): void {
+  for (const aviso of temporizadores.revisar(new Date())) {
+    registrar(`temporizador: ${aviso.texto}`);
+    avisar({ tipo: "temporizador-aviso", texto: aviso.texto });
+  }
+  const lista = JSON.stringify(temporizadores.activos());
+  if (lista !== ultimaLista) {
+    ultimaLista = lista;
+    avisar({ tipo: "temporizadores", lista: JSON.parse(lista) });
+  }
+}
+setInterval(revisarTemporizadores, 1000);
 let conectado = false;
 /** El último mensaje que este puente envió al agente: las propuestas deben venir de él. */
 let ultimoMensajeAlAgente: string | null = null;
@@ -330,6 +416,15 @@ async function atender(pedido: any): Promise<Extra> {
     case "memoria-olvidar-tema":
       if (typeof pedido.tema !== "string") break;
       return { datos: { olvidados: await olvidarTema(pedido.tema) } };
+    case "temporizador-cancelar":
+      if (!Number.isInteger(pedido.temporizador)) break;
+      temporizadores.cancelar({ id: pedido.temporizador });
+      revisarTemporizadores();
+      return {};
+    case "equipo-estado":
+      return { datos: { animo, lectura: lecturaEquipo } };
+    case "temporizadores-listar":
+      return { datos: temporizadores.activos() };
     case "conversacion-nueva":
       if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
       await nuevaConversacion(cliente);

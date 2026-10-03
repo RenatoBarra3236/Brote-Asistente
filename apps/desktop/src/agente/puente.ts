@@ -9,6 +9,20 @@ import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./t
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
 
+/** Un temporizador, recordatorio o pomodoro corriendo (lo manda el puente cuando cambian). */
+export interface TemporizadorActivo {
+  id: number;
+  tipo: "temporizador" | "pomodoro";
+  etiqueta: string | null;
+  fase: "estudio" | "descanso" | null;
+  ciclos: number;
+  finMs: number;
+  duracionMs: number;
+}
+
+/** El ánimo de Brote según el computador (batería baja, CPU alta). */
+export type Animo = "cansado" | "acalorado" | null;
+
 export interface EstadoConexion {
   conectado: boolean;
   detalle?: string;
@@ -18,6 +32,10 @@ type Aviso =
   | { tipo: "conexion"; conectado: boolean; detalle?: string }
   | { tipo: "evento"; marco: Marco }
   | { tipo: "propuesta"; propuesta: Propuesta }
+  | { tipo: "temporizadores"; lista: TemporizadorActivo[] }
+  | { tipo: "temporizador-aviso"; texto: string }
+  | { tipo: "equipo-aviso"; texto: string; celebrar: boolean }
+  | { tipo: "animo"; animo: Animo }
   | {
       tipo: "respuesta";
       id: string;
@@ -41,6 +59,10 @@ export class TransportePuente implements Transporte {
   private readonly oyentes = new Set<(marco: Marco) => void>();
   private readonly oyentesConexion = new Set<(estado: EstadoConexion) => void>();
   private readonly oyentesPropuesta = new Set<(propuesta: Propuesta) => void>();
+  private readonly oyentesTemporizadores = new Set<(lista: TemporizadorActivo[]) => void>();
+  private readonly oyentesAvisoTemporizador = new Set<(texto: string) => void>();
+  private readonly oyentesEquipo = new Set<(aviso: { texto: string; celebrar: boolean }) => void>();
+  private readonly oyentesAnimo = new Set<(animo: Animo) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -74,6 +96,33 @@ export class TransportePuente implements Transporte {
   escuchar(oyente: (marco: Marco) => void): () => void {
     this.oyentes.add(oyente);
     return () => this.oyentes.delete(oyente);
+  }
+
+  /** La lista de temporizadores cada vez que cambia. */
+  alCambiarTemporizadores(oyente: (lista: TemporizadorActivo[]) => void): () => void {
+    this.oyentesTemporizadores.add(oyente);
+    return () => this.oyentesTemporizadores.delete(oyente);
+  }
+
+  /** Cuando termina un temporizador o el pomodoro cambia de fase. */
+  alAvisoTemporizador(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoTemporizador.add(oyente);
+    return () => this.oyentesAvisoTemporizador.delete(oyente);
+  }
+
+  /** Avisos sobre el computador (batería baja, CPU alta, disco lleno…). */
+  alAvisoEquipo(oyente: (aviso: { texto: string; celebrar: boolean }) => void): () => void {
+    this.oyentesEquipo.add(oyente);
+    return () => this.oyentesEquipo.delete(oyente);
+  }
+
+  alCambiarAnimo(oyente: (animo: Animo) => void): () => void {
+    this.oyentesAnimo.add(oyente);
+    return () => this.oyentesAnimo.delete(oyente);
+  }
+
+  async cancelarTemporizador(id: number): Promise<void> {
+    await this.pedir({ tipo: "temporizador-cancelar", temporizador: id });
   }
 
   alProponer(oyente: (propuesta: Propuesta) => void): () => void {
@@ -141,6 +190,18 @@ export class TransportePuente implements Transporte {
       }
       case "propuesta":
         for (const oyente of this.oyentesPropuesta) oyente(aviso.propuesta);
+        return;
+      case "temporizadores":
+        for (const oyente of this.oyentesTemporizadores) oyente(aviso.lista);
+        return;
+      case "temporizador-aviso":
+        for (const oyente of this.oyentesAvisoTemporizador) oyente(aviso.texto);
+        return;
+      case "equipo-aviso":
+        for (const oyente of this.oyentesEquipo) oyente({ texto: aviso.texto, celebrar: aviso.celebrar });
+        return;
+      case "animo":
+        for (const oyente of this.oyentesAnimo) oyente(aviso.animo);
         return;
       case "conexion": {
         const estado = { conectado: aviso.conectado, detalle: aviso.detalle };

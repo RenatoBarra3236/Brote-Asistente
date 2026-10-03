@@ -10,6 +10,7 @@ on:
 
 jobs:
   compilar:
+    name: Brote para ${{ matrix.nombre }}
     strategy:
       fail-fast: false
       matrix:

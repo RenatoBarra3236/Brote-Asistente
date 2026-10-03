@@ -1,5 +1,7 @@
 # Asistente multiplataforma: prototipo
 
+> **¿Solo quieres usar Brote?** Sigue la [guía de instalación](docs/instalar.md). Lo de abajo es para desarrollar.
+
 Un personaje animado que vive en el PC, conectado a un agente de IA ([OpenClaw](https://github.com/openclaw/openclaw)), que hace tareas básicas sin IA y sigue siendo el mismo agente cuando le hablas desde el celular.
 
 ## Requisitos

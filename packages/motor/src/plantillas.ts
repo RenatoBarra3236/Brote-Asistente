@@ -12,10 +12,22 @@
 import { NOMBRES_DE_CATEGORIA } from "./categorias.ts";
 import { FORMAS_DE_PERIODO } from "./periodos.ts";
 import { normalizarConMapa } from "./texto.ts";
+import { PATRON_DURACION } from "./tiempo.ts";
 
-export type Intencion = "registrar-gasto" | "consultar-gastos" | "ultimos-gastos" | "borrar-ultimo-gasto" | "ver-memoria";
+export type Intencion =
+  | "registrar-gasto"
+  | "consultar-gastos"
+  | "ultimos-gastos"
+  | "borrar-ultimo-gasto"
+  | "ver-memoria"
+  | "pomodoro"
+  | "temporizador"
+  | "cancelar-pomodoro"
+  | "cancelar-temporizador"
+  | "consultar-temporizador"
+  | "estado-equipo";
 
-export type Ranura = "monto" | "cosa" | "periodo" | "categoria";
+export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
 
 export interface Plantilla {
   id: string;
@@ -45,6 +57,7 @@ function alternancia(formas: string[]): string {
 const RANURAS: Record<Ranura, string> = {
   monto: ".+?",
   cosa: ".+?",
+  tiempo: PATRON_DURACION,
   periodo: alternancia(Object.keys(FORMAS_DE_PERIODO)),
   categoria: alternancia(Object.keys(NOMBRES_DE_CATEGORIA)),
 };
@@ -163,6 +176,9 @@ export function coincidir(plantilla: Plantilla, original: string): Coincidencia 
   return { ranuras, originales };
 }
 
+const EQUIPO = "computador|computadora|compu|pc|notebook|mac|equipo";
+const INICIAR = "empieza|inicia|comienza|pon|ponme|activa|arranca|crea|crear";
+const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apaga|apagar|quita|quitar|borra";
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
@@ -189,4 +205,34 @@ export const PLANTILLAS_BASE: Plantilla[] = [
     patron: "[(muestrame|dime)] [lo] (que sabes|que recuerdas|lo que sabes|lo que recuerdas) de mi",
   },
   { id: "ver-memoria-corto", intencion: "ver-memoria", patron: "(tu memoria|lo que se de ti|que sabes de mi)" },
+  {
+    id: "pomodoro",
+    intencion: "pomodoro",
+    patron: `[(${INICIAR})] [un|el|mi] pomodoro [(de|por) {tiempo}] [(para|de) {cosa}]`,
+  },
+  { id: "pomodoro-tema", intencion: "pomodoro", patron: `[(${INICIAR})] [un|el|mi] pomodoro (para|de) {cosa}` },
+  {
+    id: "temporizador",
+    intencion: "temporizador",
+    patron: `[(${INICIAR})] [un] (temporizador|timer|cronometro|alarma) [de|por|en] {tiempo} [(para|de) {cosa}]`,
+  },
+  { id: "recordatorio", intencion: "temporizador", patron: "(recuerdame|avisame|recordarme) en {tiempo} [que|de|para|a] {cosa}" },
+  { id: "recordatorio-tiempo-primero", intencion: "temporizador", patron: "en {tiempo} (recuerdame|avisame) [que|de|para|a] {cosa}" },
+  { id: "cancelar-pomodoro", intencion: "cancelar-pomodoro", patron: `(${DETENER}) [el|mi] pomodoro` },
+  {
+    id: "cancelar-temporizador",
+    intencion: "cancelar-temporizador",
+    patron: `(${DETENER}) [el|los|mi|mis] (temporizador|temporizadores|timer|alarma|alarmas|recordatorio|recordatorios)`,
+  },
+  {
+    id: "consultar-temporizador",
+    intencion: "consultar-temporizador",
+    patron:
+      "cuanto (queda|falta|le queda|le falta|me queda|me falta) [(al|del|de|para el|para) (pomodoro|temporizador|timer|descanso|recordatorio)]",
+  },
+  { id: "consultar-temporizadores", intencion: "consultar-temporizador", patron: "[mis] (temporizadores|recordatorios)" },
+  { id: "estado-equipo", intencion: "estado-equipo", patron: `(como|que tal) (esta|anda|va) [el|la|mi] (${EQUIPO})` },
+  { id: "estado-equipo-corto", intencion: "estado-equipo", patron: `[el] estado (del|de la|de mi) (${EQUIPO})` },
+  { id: "bateria", intencion: "estado-equipo", patron: "cuanta bateria [(me queda|tengo|queda|tiene|hay)]" },
+  { id: "espacio", intencion: "estado-equipo", patron: "cuanto espacio (me queda|tengo|queda|hay) [(en el disco|libre)]" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

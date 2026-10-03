@@ -231,6 +231,11 @@ export class Gastos {
     return filas.map((f) => ({ id: `aprendida-${f.id}`, patron: f.patron, intencion: f.intencion, origen: "aprendida" }));
   }
 
+  /** La conexión, para otros módulos que guardan en la misma base (temporizadores). */
+  baseDeDatos(): DatabaseSync {
+    return this.db;
+  }
+
   cerrar(): void {
     this.db.close();
   }

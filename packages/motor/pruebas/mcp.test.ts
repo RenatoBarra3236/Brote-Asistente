@@ -23,7 +23,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "motor_proponer_plantilla"],
     );
   });
 
@@ -55,5 +55,15 @@ describe("servidor MCP de gastos", () => {
     assert.equal(llamar("gastos_anotar", { monto: 100, fecha: "2026-02-31" }).error, true);
     assert.equal(llamar("gastos_borrar", { id: 1 }).error, true);
     assert.equal(gastos.ultimos(10).length, 0);
+  });
+
+  it("crea, lista y cancela temporizadores para el agente", () => {
+    assert.match(llamar("temporizador_crear", { tipo: "pomodoro", etiqueta: "cálculo" }).texto, /pomodoro de 25 minutos — cálculo/);
+    assert.match(llamar("temporizador_crear", { tipo: "temporizador", minutos: 10, etiqueta: "sacar la ropa" }).texto, /temporizador de 10 minutos/);
+    assert.equal(llamar("temporizador_crear", { tipo: "temporizador" }).error, true);
+    const lista = JSON.parse(llamar("temporizador_listar", {}).texto).temporizadores;
+    assert.deepEqual(lista.map((t: any) => t.tipo).sort(), ["pomodoro", "temporizador"]);
+    assert.equal(llamar("temporizador_cancelar", { tipo: "pomodoro" }).texto, "Cancelados: 1.");
+    assert.equal(llamar("temporizador_cancelar", {}).texto, "Cancelados: 1.");
   });
 });

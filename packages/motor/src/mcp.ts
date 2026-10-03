@@ -18,6 +18,9 @@ import { CATEGORIAS, categoriaDe, type Categoria } from "./categorias.ts";
 import { Gastos, RUTA_BASE } from "./gastos.ts";
 import { Motor } from "./motor.ts";
 import { PLANTILLAS_BASE } from "./plantillas.ts";
+import { POMODORO, Temporizadores } from "./temporizadores.ts";
+import { describirDuracion, reloj } from "./tiempo.ts";
+import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
@@ -74,6 +77,52 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Resumen de gastos", readOnlyHint: true },
+  },
+  {
+    name: "temporizador_crear",
+    description:
+      "Crea un temporizador, un recordatorio (con etiqueta: «sacar la ropa») o un pomodoro de estudio. Brote lo " +
+      "muestra en la isla con cuenta regresiva y avisa al terminar. Un pomodoro alterna estudio y descanso solo " +
+      `(${POMODORO.descansoMs / 60_000} min, y ${POMODORO.descansoLargoMs / 60_000} cada ${POMODORO.bloquesHastaElLargo} bloques); solo hay uno a la vez.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        tipo: { type: "string", enum: ["temporizador", "pomodoro"] },
+        minutos: { type: "number", minimum: 0.1, maximum: 720, description: "Duración (en un pomodoro, de cada bloque de estudio; por defecto 25)" },
+        etiqueta: { type: "string", maxLength: 120, description: "Qué recordar, o qué se estudia en el pomodoro" },
+      },
+      required: ["tipo"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Crear temporizador", readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: "temporizador_listar",
+    description: "Los temporizadores, recordatorios y el pomodoro que están corriendo, con cuánto les queda.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Listar temporizadores", readOnlyHint: true },
+  },
+  {
+    name: "temporizador_cancelar",
+    description: "Cancela un temporizador por su id, o todos los de un tipo, o todos si no se indica nada.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer" },
+        tipo: { type: "string", enum: ["temporizador", "pomodoro"] },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Cancelar temporizador", readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: "equipo_estado",
+    description:
+      "El estado del computador del usuario: batería (y si está enchufado), uso de CPU, memoria RAM en uso, los " +
+      "programas que más memoria y CPU usan, y el espacio libre en disco. Úsala (en vez de comandos de terminal) si " +
+      "pregunta por su computador, si anda lento o antes de algo pesado.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Estado del computador", readOnlyHint: true },
   },
   {
     name: "motor_proponer_plantilla",
@@ -177,6 +226,58 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         cantidad,
         porCategoria: gastos.porCategoria(rango),
       });
+    }
+    case "temporizador_crear": {
+      const temporizadores = new Temporizadores(gastos);
+      const etiqueta = typeof args.etiqueta === "string" && args.etiqueta.trim() ? args.etiqueta.trim().slice(0, 120) : null;
+      if (args.tipo !== "temporizador" && args.tipo !== "pomodoro") throw new ErrorDeUso("«tipo» debe ser temporizador o pomodoro");
+      const minutos = args.minutos ?? (args.tipo === "pomodoro" ? POMODORO.estudioMs / 60_000 : undefined);
+      if (typeof minutos !== "number" || !(minutos >= 0.1 && minutos <= 720)) {
+        throw new ErrorDeUso("«minutos» debe ser un número entre 0.1 y 720");
+      }
+      const duracion = Math.round(minutos * 60_000);
+      const creado =
+        args.tipo === "pomodoro"
+          ? temporizadores.iniciarPomodoro(duracion, etiqueta, new Date())
+          : temporizadores.crear(duracion, etiqueta, new Date());
+      return `Listo (id ${creado.id}): ${args.tipo} de ${describirDuracion(duracion)}${etiqueta ? ` — ${etiqueta}` : ""}. Brote lo muestra en la isla.`;
+    }
+    case "temporizador_listar": {
+      const ahora = Date.now();
+      return JSON.stringify({
+        temporizadores: new Temporizadores(gastos).activos().map((t) => ({
+          id: t.id,
+          tipo: t.tipo,
+          etiqueta: t.etiqueta,
+          fase: t.fase,
+          bloquesDeEstudio: t.tipo === "pomodoro" ? t.ciclos : undefined,
+          queda: reloj(t.finMs - ahora),
+        })),
+      });
+    }
+    case "temporizador_cancelar": {
+      const cuantos = new Temporizadores(gastos).cancelar({
+        id: Number.isInteger(args.id) ? args.id : undefined,
+        tipo: args.tipo === "temporizador" || args.tipo === "pomodoro" ? args.tipo : undefined,
+      });
+      return cuantos === 0 ? "No había nada que cancelar." : `Cancelados: ${cuantos}.`;
+    }
+    case "equipo_estado": {
+      // La CPU se mide comparando dos muestras: se espera medio segundo entre ambas.
+      const medidor = new MedidorCpu();
+      medidor.medir();
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+      const lectura = { bateria: leerBateria(), cpu: medidor.medir(), disco: leerDisco(), procesoPesado: procesoMasPesado(), memoria: leerMemoria() };
+      const pesados = procesosPesados(6)
+        .map((p) => `${p.nombre}: ${formatearBytes(p.memoria)}${p.cpu !== null ? `, CPU ${Math.round(p.cpu)}%` : ""}`)
+        .join("; ");
+      return [
+        describirEquipo(lectura),
+        lectura.procesoPesado ? `El que más CPU usa: ${lectura.procesoPesado}` : "",
+        pesados ? `Los que más memoria usan: ${pesados}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {

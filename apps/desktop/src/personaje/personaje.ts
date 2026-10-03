@@ -7,6 +7,8 @@ import { Resorte, acercar, curvas, lerp, limitar, type Curva } from "./fisica";
 
 type Animable = "parpado" | "sx" | "sy" | "salto" | "sacudida";
 
+export type Animo = "cansado" | "acalorado" | null;
+
 interface Tramo {
   valor: number;
   ms: number;
@@ -48,6 +50,7 @@ export class Personaje {
   private cfg: ConfigEstado = ESTADOS.reposo;
 
   private valores: Record<Animable, number> = { parpado: 1, sx: 1, sy: 1, salto: 0, sacudida: 0 };
+  private animo: Animo = null;
   private animaciones = new Map<Animable, Animacion>();
 
   // Hacia dónde mira, en ángulos sobre la "esfera" del cuerpo.
@@ -69,6 +72,14 @@ export class Personaje {
   private desdeCambio = 0;
   private proximoParpadeo = 1.5;
   private etiqueta: { texto: string; hasta: number } | null = null;
+
+  /**
+   * El ánimo según el computador, independiente del estado del agente (Brote puede estar
+   * pensando y a la vez cansado): "cansado" con poca batería, "acalorado" con la CPU al máximo.
+   */
+  setAnimo(animo: Animo): void {
+    this.animo = animo;
+  }
 
   setEstado(nuevo: Estado, mostrarEtiqueta = false): void {
     if (mostrarEtiqueta) this.etiqueta = { texto: ESTADOS[nuevo].nombre, hasta: this.t + 1.6 };
@@ -190,7 +201,7 @@ export class Personaje {
     this.color = mezclar(this.color, cfg.color, 1 - Math.exp(-6 * dt));
 
     // El brote se mece solo, cae si el estado lo pide y reacciona cuando el cuerpo salta.
-    this.hoja.objetivo = cfg.caidaHoja + Math.sin(this.t * 1.3) * 0.06;
+    this.hoja.objetivo = cfg.caidaHoja + (this.animo === "cansado" ? 0.35 : 0) + Math.sin(this.t * 1.3) * 0.06;
     this.hoja.impulsar((this.valores.salto - this.saltoAnterior) * 18);
     this.saltoAnterior = this.valores.salto;
     this.hoja.avanzar(dt);
@@ -263,6 +274,7 @@ export class Personaje {
     const centroY = suelo + altura - ry;
     this.zona = { cx, cy: centroY, rx, ry, R };
     this.dibujarInsignia(ctx, cx, centroY, rx, ry, R);
+    if (this.animo === "acalorado") this.dibujarSudor(ctx, cx, centroY, rx, ry, R);
     this.dibujarParticulas(ctx, cx, centroY, R);
   }
 
@@ -363,7 +375,7 @@ export class Personaje {
     const desplazamientoX = Math.sin(this.yaw) * rx * 0.55;
     const alturaCara = -Math.sin(pitchCara) * ry;
 
-    ctx.fillStyle = "rgba(255,140,150,0.45)";
+    ctx.fillStyle = this.animo === "acalorado" ? "rgba(255,90,90,0.6)" : "rgba(255,140,150,0.45)";
     for (const lado of [-1, 1]) {
       ctx.beginPath();
       ctx.ellipse(lado * rx * 0.55 + desplazamientoX, alturaCara + ry * 0.28, R * 0.13, R * 0.075, 0, 0, Math.PI * 2);
@@ -413,7 +425,8 @@ export class Personaje {
     }
 
     const escala = forma === "abiertos" ? 1.25 : 1;
-    const apertura = forma === "concentrados" ? 0.55 : 1;
+    // Cansado (poca batería): párpados a media asta, salvo que la expresión ya los cierre.
+    const apertura = (forma === "concentrados" ? 0.55 : 1) * (this.animo === "cansado" ? 0.45 : 1);
     const alto = Math.max(h * escala * apertura * this.valores.parpado, R * 0.025);
     ctx.beginPath();
     ctx.ellipse(0, 0, (w * escala) / 2, alto / 2, 0, 0, Math.PI * 2);
@@ -462,6 +475,26 @@ export class Personaje {
         ctx.stroke();
         break;
     }
+  }
+
+  /** Dos gotitas que caen por la frente (acalorado). */
+  private dibujarSudor(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, R: number): void {
+    ctx.save();
+    ctx.fillStyle = "rgba(120,190,255,0.9)";
+    for (const [lado, desfase] of [[1, 0], [-1, 0.5]] as const) {
+      const fase = (this.t * 0.7 + desfase) % 1;
+      ctx.globalAlpha = 1 - fase;
+      const x = cx + lado * rx * 0.78;
+      const y = cy - ry * 0.45 + fase * R * 0.35;
+      const tam = R * 0.07;
+      ctx.beginPath();
+      ctx.moveTo(x, y - tam * 1.6);
+      ctx.quadraticCurveTo(x + tam, y - tam * 0.2, x + tam, y + tam * 0.3);
+      ctx.arc(x, y + tam * 0.3, tam, 0, Math.PI);
+      ctx.quadraticCurveTo(x - tam, y - tam * 0.2, x, y - tam * 1.6);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private dibujarInsignia(

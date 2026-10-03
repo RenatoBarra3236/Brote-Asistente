@@ -101,7 +101,11 @@ export class Isla {
     };
   }
 
-  dibujar(ctx: CanvasRenderingContext2D, W: number, personaje: Personaje): void {
+  /**
+   * `reloj`: un temporizador corriendo ("12:34" y su color), que se ve en el ala izquierda
+   * mientras la isla está cerrada.
+   */
+  dibujar(ctx: CanvasRenderingContext2D, W: number, personaje: Personaje, reloj?: { texto: string; color: string }): void {
     const camino = this.camino(W);
     ctx.fillStyle = "#000";
     ctx.fill(camino);
@@ -131,6 +135,15 @@ export class Isla {
       const tamano = Math.min(11, (11 * (COLUMNA - 12)) / ctx.measureText(nombre).width);
       ctx.font = `600 ${tamano.toFixed(1)}px system-ui, sans-serif`;
       ctx.fillText(nombre, xGrande, this.notchAlto + 12);
+    }
+    if (reloj && p < 0.5) {
+      ctx.globalAlpha = 1 - p * 2;
+      ctx.fillStyle = reloj.color;
+      ctx.font = "600 10px ui-monospace, 'SF Mono', Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(reloj.texto, W / 2 - this.notchAncho / 2 - (this.notchAlto * ALA) / 2, this.notchAlto / 2);
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }

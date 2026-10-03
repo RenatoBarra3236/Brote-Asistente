@@ -164,3 +164,38 @@ describe("motor que aprende", () => {
     assert.equal(c.propuesta, null);
   });
 });
+
+describe("varios permisos a la vez", () => {
+  const permiso = (id: string) => ({
+    tipo: "aprobacion" as const,
+    aprobacion: { id, kind: "plugin", titulo: "¿Ejecuto este comando?", detalle: id, decisiones: ["allow-once" as const, "deny" as const] },
+  });
+
+  test("se muestran uno tras otro, aunque se resuelvan en otro orden o venzan", () => {
+    let c = aplicar(CONVERSACION_INICIAL, { tipo: "inicio", runId: "r" });
+    c = aplicar(c, permiso("df"));
+    c = aplicar(c, permiso("uptime"));
+    c = aplicar(c, permiso("pmset"));
+    c = aplicar(c, permiso("uptime"));
+    assert.equal(c.aprobacion?.id, "df");
+    assert.deepEqual(c.aprobacionesEnEspera.map((a) => a.id), ["uptime", "pmset"]);
+    assert.equal(c.estado, "pidiendo-permiso");
+
+    c = aplicar(c, { tipo: "aprobacion-fin", id: "pmset", resultado: "expired" });
+    assert.deepEqual(c.aprobacionesEnEspera.map((a) => a.id), ["uptime"]);
+    c = aplicar(c, { tipo: "aprobacion-fin", id: "df", resultado: "allowed" });
+    assert.equal(c.aprobacion?.id, "uptime");
+    assert.equal(c.estado, "pidiendo-permiso");
+    c = aplicar(c, { tipo: "aprobacion-fin", id: "uptime", resultado: "allowed" });
+    assert.equal(c.aprobacion, null);
+    assert.equal(c.estado, "pensando");
+  });
+
+  test("al terminar el turno se vacía la cola", () => {
+    let c = aplicar(CONVERSACION_INICIAL, permiso("a"));
+    c = aplicar(c, permiso("b"));
+    c = aplicar(c, { tipo: "fin", texto: "listo" });
+    assert.equal(c.aprobacion, null);
+    assert.deepEqual(c.aprobacionesEnEspera, []);
+  });
+});

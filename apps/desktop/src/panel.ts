@@ -5,7 +5,11 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
+import type { TemporizadorActivo } from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
+
+/** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
+const AVISO_DESTACADO_MS = 12_000;
 
 /** Cuánto sigue abierta la isla después de una respuesta, para alcanzar a leerla (ms). */
 const LECTURA_MIN = 4000;
@@ -38,6 +42,11 @@ export class Panel {
   private readonly propuestaDetalle: HTMLParagraphElement;
   private readonly aprender: HTMLButtonElement;
   private readonly noAprender: HTMLButtonElement;
+  private readonly temporizadores: HTMLDivElement;
+  private readonly avisoDestacado: HTMLParagraphElement;
+  private filasTemporizador: { fin: number; tiempo: HTMLSpanElement }[] = [];
+  private avisoHasta = 0;
+  private readonly alCancelarTemporizador?: (id: number) => void;
   private readonly entrada: HTMLInputElement;
   private readonly enviar: HTMLButtonElement;
   private visible = false;
@@ -51,7 +60,11 @@ export class Panel {
    * `alAbrirMemoria`: si está, aparece el botón 🧠 que abre "Lo que sé de ti".
    * `flotante`: el panel va sobre el escritorio (sin la isla negra detrás) y lleva fondo propio.
    */
-  constructor(agente: Agente, contenedor: HTMLElement, opciones: { alAbrirMemoria?: () => void; flotante?: boolean } = {}) {
+  constructor(
+    agente: Agente,
+    contenedor: HTMLElement,
+    opciones: { alAbrirMemoria?: () => void; flotante?: boolean; alCancelarTemporizador?: (id: number) => void } = {},
+  ) {
     this.agente = agente;
     this.raiz = crear("div", opciones.flotante ? "panel flotante" : "panel");
 
@@ -113,7 +126,13 @@ export class Panel {
     botonesPropuesta.append(this.noAprender, this.aprender);
     this.propuesta.append(propuestaTitulo, this.propuestaDetalle, botonesPropuesta);
 
-    this.raiz.append(this.burbuja, this.aprobacion, this.propuesta, formulario);
+    this.alCancelarTemporizador = opciones.alCancelarTemporizador;
+    this.temporizadores = crear("div", "temporizadores");
+    this.temporizadores.hidden = true;
+    this.avisoDestacado = crear("p", "aviso-destacado");
+    this.avisoDestacado.hidden = true;
+
+    this.raiz.append(this.avisoDestacado, this.temporizadores, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -149,7 +168,56 @@ export class Panel {
   /** La isla no debe cerrarse: hay texto escrito, un permiso pendiente o una respuesta por leer. */
   retieneIsla(ahora: number): boolean {
     const c = this.agente.conversacion;
-    return this.entrada.value.trim() !== "" || c.aprobacion !== null || c.propuesta !== null || ahora < this.leerHasta;
+    return (
+      this.entrada.value.trim() !== "" ||
+      c.aprobacion !== null ||
+      c.propuesta !== null ||
+      ahora < this.leerHasta ||
+      Date.now() < this.avisoHasta
+    );
+  }
+
+  /** Una fila por temporizador corriendo, con su cuenta regresiva y un botón para cancelarlo. */
+  mostrarTemporizadores(lista: TemporizadorActivo[]): void {
+    this.filasTemporizador = [];
+    this.temporizadores.replaceChildren(
+      ...lista.map((t) => {
+        const fila = crear("div", `temporizador ${t.tipo} ${t.fase ?? ""}`);
+        const nombre =
+          t.tipo === "pomodoro"
+            ? `🍅 ${t.fase === "descanso" ? "Descanso" : "Estudio"}${t.etiqueta ? ` · ${t.etiqueta}` : ""}`
+            : `⏰ ${t.etiqueta ?? "Temporizador"}`;
+        const tiempo = crear("span", "temporizador-tiempo");
+        fila.append(crear("span", "temporizador-nombre"), tiempo);
+        fila.firstElementChild!.textContent = nombre;
+        if (this.alCancelarTemporizador) {
+          const cancelar = crear("button", "temporizador-cancelar");
+          cancelar.type = "button";
+          cancelar.textContent = "■";
+          cancelar.title = t.tipo === "pomodoro" ? "Detener el pomodoro" : "Cancelar";
+          cancelar.addEventListener("click", () => this.alCancelarTemporizador?.(t.id));
+          fila.append(cancelar);
+        }
+        this.filasTemporizador.push({ fin: t.finMs, tiempo });
+        return fila;
+      }),
+    );
+    this.temporizadores.hidden = lista.length === 0;
+    this.actualizarRelojes();
+  }
+
+  /** Avanza las cuentas regresivas (se llama en cada cuadro). */
+  actualizarRelojes(): void {
+    const ahora = Date.now();
+    for (const { fin, tiempo } of this.filasTemporizador) tiempo.textContent = cuentaRegresiva(fin - ahora);
+    if (!this.avisoDestacado.hidden && ahora > this.avisoHasta) this.avisoDestacado.hidden = true;
+  }
+
+  /** Algo que Brote quiere contar (un temporizador terminó, la batería está baja…): se destaca un rato. */
+  mostrarAviso(texto: string): void {
+    this.avisoDestacado.textContent = texto;
+    this.avisoDestacado.hidden = false;
+    this.avisoHasta = Date.now() + AVISO_DESTACADO_MS;
   }
 
   /** Alto que necesita el contenido, para que la isla crezca lo justo. */
@@ -206,7 +274,8 @@ export class Panel {
     const ap = c.aprobacion;
     this.aprobacion.hidden = !ap;
     if (ap) {
-      this.aprobacionTitulo.textContent = ap.titulo;
+      const enEspera = c.aprobacionesEnEspera.length;
+      this.aprobacionTitulo.textContent = enEspera > 0 ? `${ap.titulo} · 1 de ${enEspera + 1}` : ap.titulo;
       this.aprobacionDetalle.textContent = ap.detalle;
       this.aprobacionDetalle.hidden = !ap.detalle;
       this.permitir.disabled = ap.respondiendo || !ap.decisiones.includes("allow-once");
@@ -292,4 +361,14 @@ function pintarMarkdown(contenedor: HTMLElement, texto: string): void {
       return parrafo;
     }),
   );
+}
+
+/** "12:34" o "1:02:03". */
+export function cuentaRegresiva(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const horas = Math.floor(total / 3600);
+  const minutos = Math.floor((total % 3600) / 60);
+  const segundos = total % 60;
+  const dos = (n: number) => String(n).padStart(2, "0");
+  return horas > 0 ? `${horas}:${dos(minutos)}:${dos(segundos)}` : `${minutos}:${dos(segundos)}`;
 }

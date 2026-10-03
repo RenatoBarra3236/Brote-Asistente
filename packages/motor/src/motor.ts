@@ -7,6 +7,9 @@ import type { Gastos } from "./gastos.ts";
 import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
+import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
+import { POMODORO, type Temporizadores } from "./temporizadores.ts";
+import { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 
 export interface Resultado {
@@ -23,7 +26,13 @@ export type Accion =
   | { intencion: "consultar-gastos"; periodo: Periodo; categoria?: Categoria }
   | { intencion: "ultimos-gastos" }
   | { intencion: "borrar-ultimo-gasto" }
-  | { intencion: "ver-memoria" };
+  | { intencion: "ver-memoria" }
+  | { intencion: "pomodoro"; estudioMs: number; etiqueta: string | null }
+  | { intencion: "temporizador"; duracionMs: number; etiqueta: string | null }
+  | { intencion: "cancelar-pomodoro" }
+  | { intencion: "cancelar-temporizador" }
+  | { intencion: "consultar-temporizador" }
+  | { intencion: "estado-equipo" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -54,7 +63,21 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "ultimos-gastos":
     case "borrar-ultimo-gasto":
     case "ver-memoria":
+    case "cancelar-pomodoro":
+    case "cancelar-temporizador":
+    case "consultar-temporizador":
+    case "estado-equipo":
       return { intencion };
+    case "pomodoro": {
+      const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
+      if (estudioMs === null) return null;
+      return { intencion, estudioMs, etiqueta: originales.cosa?.trim() || null };
+    }
+    case "temporizador": {
+      const duracionMs = ranuras.tiempo === undefined ? null : leerDuracion(ranuras.tiempo);
+      if (duracionMs === null) return null;
+      return { intencion, duracionMs, etiqueta: originales.cosa?.trim() || null };
+    }
   }
 }
 
@@ -62,10 +85,23 @@ export class Motor {
   private readonly gastos: Gastos;
   private readonly plantillas: () => Plantilla[];
   private readonly reloj: () => Date;
+  private readonly temporizadores: Temporizadores | null;
+  private readonly equipo: (() => LecturaEquipo | null) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
-  constructor(gastos: Gastos, opciones: { plantillas?: Plantilla[] | (() => Plantilla[]); reloj?: () => Date } = {}) {
+  constructor(
+    gastos: Gastos,
+    opciones: {
+      plantillas?: Plantilla[] | (() => Plantilla[]);
+      reloj?: () => Date;
+      temporizadores?: Temporizadores;
+      /** La última lectura del computador (la mantiene el puente). */
+      equipo?: () => LecturaEquipo | null;
+    } = {},
+  ) {
+    this.equipo = opciones.equipo ?? null;
     this.gastos = gastos;
+    this.temporizadores = opciones.temporizadores ?? null;
     const plantillas = opciones.plantillas ?? PLANTILLAS_BASE;
     this.plantillas = typeof plantillas === "function" ? plantillas : () => plantillas;
     this.reloj = opciones.reloj ?? (() => new Date());
@@ -83,6 +119,9 @@ export class Motor {
   resolver(texto: string): Resultado | null {
     const entendido = this.entender(texto);
     if (!entendido) return null;
+    // Sin temporizadores conectados (por ejemplo, en el servidor MCP), esas frases van al agente.
+    if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
+    if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
   }
@@ -100,6 +139,48 @@ export class Motor {
       case "ver-memoria":
         // La isla abre el panel "Lo que sé de ti" al ver esta intención.
         return "Te muestro todo lo que sé de ti 🌱";
+      case "pomodoro":
+      case "temporizador":
+      case "cancelar-pomodoro":
+      case "cancelar-temporizador":
+      case "consultar-temporizador":
+        return this.temporizar(accion);
+      case "estado-equipo":
+        return describirEquipo(this.equipo!()!);
+    }
+  }
+
+  private temporizar(accion: Accion): string {
+    const temporizadores = this.temporizadores!;
+    const ahora = this.reloj();
+    switch (accion.intencion) {
+      case "pomodoro": {
+        temporizadores.iniciarPomodoro(accion.estudioMs, accion.etiqueta, ahora);
+        const tema = accion.etiqueta ? ` de ${accion.etiqueta}` : "";
+        return `🍅 Pomodoro${tema}: ${describirDuracion(accion.estudioMs)} de estudio. ¡Vamos! Te aviso cuando toque descansar 🌱`;
+      }
+      case "temporizador": {
+        temporizadores.crear(accion.duracionMs, accion.etiqueta, ahora);
+        const cuando = describirDuracion(accion.duracionMs);
+        return accion.etiqueta ? `⏰ Listo, en ${cuando} te recuerdo: ${accion.etiqueta}.` : `⏱ Temporizador de ${cuando}, corriendo.`;
+      }
+      case "cancelar-pomodoro":
+        return temporizadores.cancelar({ tipo: "pomodoro" }) > 0 ? "Listo, detuve el pomodoro. ¡Buen trabajo! 🌱" : "No tienes un pomodoro corriendo.";
+      case "cancelar-temporizador": {
+        const cuantos = temporizadores.cancelar({ tipo: "temporizador" });
+        if (cuantos === 0) return "No tienes temporizadores ni recordatorios corriendo.";
+        return cuantos === 1 ? "Listo, cancelé el temporizador." : `Listo, cancelé ${cuantos} temporizadores.`;
+      }
+      default: {
+        const activos = temporizadores.activos();
+        if (activos.length === 0) return "No tienes temporizadores corriendo.";
+        const lineas = activos.map((t) => {
+          const queda = reloj(t.finMs - ahora.getTime());
+          if (t.tipo === "pomodoro") return `• 🍅 ${t.fase === "estudio" ? "Estudio" : "Descanso"}${t.etiqueta ? ` (${t.etiqueta})` : ""}: quedan ${queda}`;
+          return `• ⏰ ${t.etiqueta ?? "Temporizador"}: quedan ${queda}`;
+        });
+        return lineas.join("\n");
+      }
     }
   }
 
@@ -142,4 +223,10 @@ export class Motor {
 /** "un café" → "café", "el almuerzo" → "almuerzo". */
 function sinArticulo(texto: string): string {
   return texto.replace(/^(un|una|unos|unas|el|la|los|las)\s+/i, "");
+}
+
+function esDeTemporizador(accion: Accion): boolean {
+  return ["pomodoro", "temporizador", "cancelar-pomodoro", "cancelar-temporizador", "consultar-temporizador"].includes(
+    accion.intencion,
+  );
 }

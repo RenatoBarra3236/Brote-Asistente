@@ -8,3 +8,6 @@ export { formatearMonto, normalizar } from "./texto.ts";
 export { deducirPlantilla, describirIntencion, mismaFrase, porcentajeSinIA, proponerPlantilla, type Propuesta, type Revision } from "./aprendizaje.ts";
 export { type PlantillaGuardada } from "./gastos.ts";
 export { interpretarCon, type Accion } from "./motor.ts";
+export { POMODORO, Temporizadores, type AvisoTemporizador, type Fase, type Temporizador, type TipoTemporizador } from "./temporizadores.ts";
+export { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
+export { MedidorCpu, UMBRALES, Vigilante, describirEquipo, formatearBytes, interpretarPs, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados, type Memoria, type Proceso, type Animo, type AvisoEquipo, type Bateria, type LecturaEquipo } from "./sistema.ts";

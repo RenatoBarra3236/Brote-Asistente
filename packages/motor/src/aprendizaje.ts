@@ -95,6 +95,18 @@ export function describirIntencion(intencion: Intencion): string {
       return "borrar el último gasto";
     case "ver-memoria":
       return "mostrar lo que sé de ti";
+    case "pomodoro":
+      return "empezar un pomodoro";
+    case "temporizador":
+      return "poner un temporizador o recordatorio";
+    case "cancelar-pomodoro":
+      return "detener el pomodoro";
+    case "cancelar-temporizador":
+      return "cancelar temporizadores";
+    case "consultar-temporizador":
+      return "ver cuánto queda";
+    case "estado-equipo":
+      return "ver cómo está el computador";
   }
 }
 

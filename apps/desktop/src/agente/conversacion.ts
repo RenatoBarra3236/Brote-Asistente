@@ -32,6 +32,11 @@ export interface Conversacion {
   terminada: boolean;
   herramienta: HerramientaEnCurso | null;
   aprobacion: AprobacionPendiente | null;
+  /**
+   * Las que llegaron mientras se mostraba otra (el agente puede pedir varias a la vez, por ejemplo
+   * tres comandos seguidos): se muestran una tras otra.
+   */
+  aprobacionesEnEspera: AprobacionPendiente[];
   error: string | null;
   /** La respuesta la dio el motor de comandos, sin IA. */
   sinIA: boolean;
@@ -57,6 +62,7 @@ export const CONVERSACION_INICIAL: Conversacion = {
   terminada: false,
   herramienta: null,
   aprobacion: null,
+  aprobacionesEnEspera: [],
   error: null,
   sinIA: false,
   propuesta: null,
@@ -102,12 +108,24 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
       if (c.herramienta?.id !== suceso.id) return c;
       return conEstado({ ...c, herramienta: null });
 
-    case "aprobacion":
-      return conEstado({ ...c, terminada: false, aprobacion: { ...suceso.aprobacion, respondiendo: false } });
+    case "aprobacion": {
+      const nueva = { ...suceso.aprobacion, respondiendo: false };
+      if (c.aprobacion && c.aprobacion.id !== nueva.id) {
+        if (c.aprobacionesEnEspera.some((a) => a.id === nueva.id)) return c;
+        return conEstado({ ...c, terminada: false, aprobacionesEnEspera: [...c.aprobacionesEnEspera, nueva] });
+      }
+      return conEstado({ ...c, terminada: false, aprobacion: nueva });
+    }
 
-    case "aprobacion-fin":
-      if (c.aprobacion?.id !== suceso.id) return c;
-      return conEstado({ ...c, aprobacion: null });
+    case "aprobacion-fin": {
+      if (c.aprobacion?.id === suceso.id) {
+        // Se respondió (o venció) la que se mostraba: pasa la siguiente de la cola.
+        const [siguiente = null, ...resto] = c.aprobacionesEnEspera;
+        return conEstado({ ...c, aprobacion: siguiente, aprobacionesEnEspera: resto });
+      }
+      const resto = c.aprobacionesEnEspera.filter((a) => a.id !== suceso.id);
+      return resto.length === c.aprobacionesEnEspera.length ? c : conEstado({ ...c, aprobacionesEnEspera: resto });
+    }
 
     case "fin":
       return {
@@ -118,6 +136,7 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
         terminada: true,
         herramienta: null,
         aprobacion: null,
+        aprobacionesEnEspera: [],
       };
 
     case "detenido":
@@ -129,11 +148,20 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
         terminada: true,
         herramienta: null,
         aprobacion: null,
+        aprobacionesEnEspera: [],
         respuesta: c.respuesta || "Ok, lo dejé ahí. ✋",
       };
 
     case "error":
-      return { ...c, estado: "error", error: suceso.mensaje, terminada: true, herramienta: null, aprobacion: null };
+      return {
+        ...c,
+        estado: "error",
+        error: suceso.mensaje,
+        terminada: true,
+        herramienta: null,
+        aprobacion: null,
+        aprobacionesEnEspera: [],
+      };
 
     case "resuelto-sin-ia":
       return {

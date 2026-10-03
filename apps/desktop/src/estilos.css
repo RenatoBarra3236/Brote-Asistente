@@ -47,6 +47,63 @@ body {
   pointer-events: auto;
 }
 
+/* Dentro del panel, `hidden` siempre oculta (aunque la clase diga `display: flex`). */
+.panel [hidden] {
+  display: none !important;
+}
+
+/* Temporizadores y pomodoro. */
+.temporizadores {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.temporizador {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.temporizador.pomodoro.estudio {
+  background: rgba(255, 99, 71, 0.16);
+}
+.temporizador.pomodoro.descanso {
+  background: rgba(98, 214, 138, 0.14);
+}
+.temporizador-nombre {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.temporizador-tiempo {
+  font: 600 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.temporizador-cancelar {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+.aviso-destacado {
+  flex: none;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255, 196, 0, 0.18);
+  color: rgb(255, 222, 130);
+  font-weight: 600;
+}
+
 .burbuja {
   flex: 0 1 auto;
   min-height: 0;

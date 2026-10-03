@@ -154,6 +154,7 @@ import {
 } from "./conexion.ts";
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
+import { migrarFunciones } from "./migrar-funciones.ts";
 import { esDeMemoria } from "./permisos.ts";
 import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE } from "./rutas.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
@@ -254,7 +255,9 @@ function renovarSuscripcion(cliente: Parameters<typeof suscribirseALaSesion>[0])
   }, 500);
 }
 
-// Lo que el usuario prendió o apagó en Configurar Brote → Funciones.
+// Lo que el usuario prendió o apagó en Configurar Brote → Funciones. Quien ya usaba el modo
+// programador antes de que existieran las funciones lo conserva (migrar-funciones.ts).
+if (migrarFunciones()) registrar("funciones: creé funciones.json con el modo programador (sus hooks ya estaban)");
 let funciones: ConfigFunciones = leerFunciones();
 let marcaDeFunciones = marcaFunciones();
 const activa = (id: IdFuncion): boolean => funciones.activas[id];

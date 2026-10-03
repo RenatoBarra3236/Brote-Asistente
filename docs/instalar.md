@@ -104,7 +104,8 @@ macOS pide permiso la primera vez que Brote necesita algo. Puedes cambiarlos des
 | "Brote quiere acceder a archivos de la carpeta Descargas" | Para avisarte cuando termina una descarga y responder "mis descargas" | Brote no ve tus descargas; lo demás funciona igual |
 | "Brote quiere controlar Spotify" / "…controlar Música" (Automatización) | Para mostrar la canción y pausar o cambiarla. Solo aparece si esa app está abierta | Brote no muestra esa música (no vuelve a preguntar hasta dentro de un rato). Se cambia en **Privacidad y seguridad → Automatización → Brote** |
 | "Brote quiere acceder a tus calendarios" | Al pulsar **Permitir acceso** en Configurar Brote: para decirte qué tienes y avisarte antes de cada clase | Brote no ve el Calendario del Mac (la dirección iCal sigue sirviendo). Se cambia en **Privacidad y seguridad → Calendarios** |
-| Lo mismo, pero a nombre de **node** u **OpenClaw** | Cuando se lo pides a la IA ("pausa la música" escrito de otra forma), la herramienta corre dentro de OpenClaw | La IA no puede ver ni controlar la música; las frases sin IA siguen funcionando |
+
+Cuando le preguntas a la IA por tu música o tu calendario, se lo pide a Brote, así que usa los mismos permisos (no hay que darlos dos veces).
 
 Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos botones: **Permitir** o **Rechazar**. Si se demora, el botón ■ lo detiene.
 

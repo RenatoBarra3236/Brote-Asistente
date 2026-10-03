@@ -5,6 +5,8 @@
 //
 //   POST /evento    (del hook)  → 200 con {} o, para un permiso respondido en la isla, { decision }
 //   GET  /sesiones  (del MCP)   → 200 con la lista de sesiones visibles
+//   POST /consulta  (del MCP)   → 200 con lo que responda `consultar` (música y calendario: el MCP
+//                                 corre dentro de OpenClaw, sin los permisos de macOS que tiene Brote)
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
@@ -18,6 +20,8 @@ export interface OpcionesServidor {
   alEvento: (datos: unknown) => Promise<object> | object;
   /** Las sesiones para el servidor MCP. */
   sesiones: () => unknown;
+  /** Una consulta del servidor MCP ({ tipo, ... }). Si no la conoce, debe lanzar un error. */
+  consultar?: (datos: unknown) => Promise<object> | object;
 }
 
 function tokenValido(pedido: IncomingMessage, token: string): boolean {
@@ -54,13 +58,21 @@ export function iniciarServidorHooks(opciones: OpcionesServidor, token = randomB
     // rechaza todo lo que traiga Origin, por si acaso.
     if (pedido.headers.origin || !tokenValido(pedido, token)) return responder(401, { error: "no autorizado" });
     if (pedido.method === "GET" && pedido.url === "/sesiones") return responder(200, { sesiones: opciones.sesiones() });
-    if (pedido.method !== "POST" || pedido.url !== "/evento") return responder(404, { error: "no existe" });
+    const esConsulta = pedido.url === "/consulta" && opciones.consultar;
+    if (pedido.method !== "POST" || (pedido.url !== "/evento" && !esConsulta)) return responder(404, { error: "no existe" });
     const cuerpo = await leerCuerpo(pedido);
     let datos: unknown;
     try {
       datos = JSON.parse(cuerpo ?? "");
     } catch {
       return responder(400, { error: "JSON inválido" });
+    }
+    if (esConsulta) {
+      try {
+        return responder(200, await opciones.consultar!(datos));
+      } catch {
+        return responder(400, { error: "consulta inválida" });
+      }
     }
     try {
       responder(200, await opciones.alEvento(datos));

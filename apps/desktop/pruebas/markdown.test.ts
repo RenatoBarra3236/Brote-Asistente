@@ -22,6 +22,18 @@ describe("markdown de la burbuja", () => {
     assert.deepEqual(analizarLinea("2 * 3 = 6"), [{ tipo: "texto", texto: "2 * 3 = 6" }]);
   });
 
+  test("los guiones bajos dentro de una palabra (nombres de archivo) no son cursiva", () => {
+    const linea = "Descargaste session10_intro_ml.pdf y mi__archivo__final.txt";
+    assert.deepEqual(analizarLinea(linea), [{ tipo: "texto", texto: linea }]);
+    assert.deepEqual(analizarLinea("Abre `apunte_v2.pdf`, _ahora_."), [
+      { tipo: "texto", texto: "Abre " },
+      { tipo: "codigo", texto: "apunte_v2.pdf" },
+      { tipo: "texto", texto: ", " },
+      { tipo: "cursiva", texto: "ahora" },
+      { tipo: "texto", texto: "." },
+    ]);
+  });
+
   test("párrafos, listas con viñeta y numeradas, y títulos", () => {
     const bloques = analizarMarkdown("# Tus gastos\nHoy:\n\n- **comida** $3.000\n- micro\n1. primero\n2. segundo\n\nListo 🌱");
     assert.deepEqual(

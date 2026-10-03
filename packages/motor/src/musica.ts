@@ -8,7 +8,7 @@
 // interpretar sus salidas es pura y tiene pruebas. Cualquier falla (sin la app, sin permiso de
 // Automatización, sin PowerShell) termina en `null`, sin errores. Lo que suena no sale del computador.
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 export type AppMusica = "Spotify" | "Music";
 export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
@@ -222,14 +222,6 @@ export function ejecutarEsperando(comando: Comando, tiempoMs = 8000): Promise<st
   });
 }
 
-function ejecutarAhora(comando: Comando, tiempoMs = 8000): string | null {
-  try {
-    return execFileSync(comando.programa, comando.args, { encoding: "utf8", timeout: tiempoMs, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-  } catch {
-    return null;
-  }
-}
-
 type Ejecutor = (comando: Comando) => Promise<string | null>;
 
 /** Qué hacer con la lista de procesos de macOS: el JXA para las apps abiertas, o nada si no hay. */
@@ -256,22 +248,6 @@ export async function leerMusica(ignorar: AppMusica[] = [], ejecutar: Ejecutor =
   return null;
 }
 
-/** Lo mismo, de forma síncrona (para el servidor MCP, que responde sin esperar promesas). */
-export function leerMusicaAhora(): LecturaMusica | null {
-  if (process.platform === "darwin") {
-    const ps = ejecutarAhora({ programa: "ps", args: ["-Ao", "comm="] });
-    const comando = ps === null ? null : lecturaMac(ps, []);
-    if (!comando) return ps === null ? null : NADA;
-    const salida = ejecutarAhora(comando);
-    return salida === null ? null : interpretarJxa(salida);
-  }
-  if (process.platform === "win32") {
-    const salida = ejecutarAhora(comandoLecturaWindows());
-    return salida === null ? null : { estado: interpretarGsmtc(salida), sinPermiso: [] };
-  }
-  return null;
-}
-
 /** El comando para pedirle algo a la app que suena (o a la que está en pausa), o `null`. */
 export function comandoControl(accion: AccionMusica, estado: EstadoMusica | null, plataforma: string = process.platform): Comando | null {
   if (!ACCIONES_MUSICA.includes(accion) || !estado) return null;
@@ -286,10 +262,4 @@ export function comandoControl(accion: AccionMusica, estado: EstadoMusica | null
 export async function controlarMusica(accion: AccionMusica, estado: EstadoMusica | null): Promise<boolean> {
   const comando = comandoControl(accion, estado);
   return comando !== null && (await ejecutarEsperando(comando)) !== null;
-}
-
-/** Lo mismo, de forma síncrona (servidor MCP). */
-export function controlarMusicaAhora(accion: AccionMusica, estado: EstadoMusica | null): boolean {
-  const comando = comandoControl(accion, estado);
-  return comando !== null && ejecutarAhora(comando) !== null;
 }

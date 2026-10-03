@@ -213,35 +213,51 @@ export function describirSesiones(sesiones: SesionClaude[]): string {
   return `⌨️ Claude Code:\n${lineas.join("\n")}`;
 }
 
-/** Para el servidor MCP: le pregunta al puente por las sesiones (o `null` si Brote no está abierto). */
-export function pedirSesiones(ruta = RUTA_CONEXION_HOOKS, limiteMs = 2000): Promise<unknown[] | null> {
+/**
+ * Para el servidor MCP: le pregunta algo al puente de Brote por el servidor local con token
+ * (servidor-hooks.ts). Devuelve la respuesta, o `null` si Brote no está abierto o no respondió.
+ * Lo que necesita permisos de macOS (música, calendario) se pide así: el MCP corre dentro de
+ * OpenClaw, que no los tiene, y el puente corre dentro de Brote, que sí.
+ */
+export function pedirAlPuente(ruta: string, cuerpo?: object, opciones: { conexion?: string; limiteMs?: number } = {}): Promise<any | null> {
   let conexion: { puerto?: unknown; token?: unknown };
   try {
-    conexion = JSON.parse(readFileSync(ruta, "utf8"));
+    conexion = JSON.parse(readFileSync(opciones.conexion ?? process.env.ASISTENTE_CONEXION_HOOKS ?? RUTA_CONEXION_HOOKS, "utf8"));
   } catch {
     return Promise.resolve(null);
   }
   if (!Number.isInteger(conexion.puerto) || typeof conexion.token !== "string") return Promise.resolve(null);
   return new Promise((listo) => {
     const pedido = request(
-      { host: "127.0.0.1", port: conexion.puerto as number, path: "/sesiones", method: "GET", headers: { authorization: `Bearer ${conexion.token}` } },
+      {
+        host: "127.0.0.1",
+        port: conexion.puerto as number,
+        path: ruta,
+        method: cuerpo ? "POST" : "GET",
+        headers: { authorization: `Bearer ${conexion.token}`, ...(cuerpo ? { "content-type": "application/json" } : {}) },
+      },
       (respuesta) => {
         let texto = "";
         respuesta.setEncoding("utf8");
         respuesta.on("data", (parte) => (texto += parte));
         respuesta.on("end", () => {
           try {
-            const datos = JSON.parse(texto);
-            listo(respuesta.statusCode === 200 && Array.isArray(datos.sesiones) ? datos.sesiones : null);
+            listo(respuesta.statusCode === 200 ? JSON.parse(texto) : null);
           } catch {
             listo(null);
           }
         });
       },
     );
-    const plazo = setTimeout(() => pedido.destroy(), limiteMs);
+    const plazo = setTimeout(() => pedido.destroy(), opciones.limiteMs ?? 2000);
     pedido.on("close", () => clearTimeout(plazo));
     pedido.on("error", () => listo(null));
-    pedido.end();
+    pedido.end(cuerpo ? JSON.stringify(cuerpo) : undefined);
   });
+}
+
+/** Las sesiones que ve el puente (o `null` si Brote no está abierto). */
+export async function pedirSesiones(ruta?: string, limiteMs = 2000): Promise<unknown[] | null> {
+  const datos = await pedirAlPuente("/sesiones", undefined, { conexion: ruta, limiteMs });
+  return Array.isArray(datos?.sesiones) ? datos.sesiones : null;
 }

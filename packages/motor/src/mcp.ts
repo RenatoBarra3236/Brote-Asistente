@@ -22,9 +22,9 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
-import { combinar, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
-import { describirSesiones, pedirSesiones, type SesionClaude } from "./programador.ts";
-import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
+import { combinar, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario } from "./calendario.ts";
+import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
+import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
@@ -245,20 +245,27 @@ function fechaHora(ms: number): string {
   return `${fechaIso(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** Las herramientas que necesitan esperar algo (descargar el iCal). */
+/** Las herramientas que necesitan esperar algo (el puente de Brote, el iCal, osascript). */
 async function usarEsperando(nombre: string, args: any): Promise<string> {
   switch (nombre) {
     case "calendario_proximos": {
       const horas = Number.isInteger(args.horas) ? Math.min(Math.max(args.horas, 1), 72) : 24;
       const ahora = Date.now();
-      const mac = leerCalendarioMacAhora(ahora);
-      const url = leerUrlIcal();
-      const ics = url ? await descargarIcal(url) : null;
-      if (!mac?.eventos && !url) {
-        return "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario" });
+      let todos: EventoCalendario[];
+      if (deBrote) {
+        if (!Array.isArray(deBrote.eventos)) return SIN_CALENDARIO;
+        todos = deBrote.eventos;
+      } else {
+        // Brote no está abierto: se lee aquí (el Calendario del Mac solo si este proceso tiene permiso).
+        const mac = await leerCalendarioMac(ahora);
+        const url = leerUrlIcal();
+        const ics = url ? await descargarIcal(url) : null;
+        if (!mac?.eventos && !url) return SIN_CALENDARIO;
+        if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
+        todos = combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null);
       }
-      if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
-      const eventos = proximos(combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null), ahora, horas);
+      const eventos = proximos(todos, ahora, horas);
       return JSON.stringify({
         ahora: fechaHora(ahora),
         eventos: eventos.map((e) => ({
@@ -270,6 +277,26 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         })),
       });
     }
+    case "musica_estado": {
+      const estado = await musicaActual();
+      return estado === undefined ? "No pude saber qué suena (en este sistema no se puede, o falta el permiso)." : describirMusica(estado);
+    }
+    case "musica_control": {
+      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
+      const accion = args.accion as AccionMusica;
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-control", accion });
+      let estado: EstadoMusica | null | undefined;
+      let hecho: boolean;
+      if (deBrote) {
+        estado = deBrote.musica ?? null;
+        hecho = deBrote.hecho === true;
+      } else {
+        estado = (await leerMusica())?.estado ?? null;
+        hecho = estado ? await controlarMusica(accion, estado) : false;
+      }
+      if (!estado) return "No hay música abierta (no abro apps de música).";
+      return hecho ? `Hecho: ${accion} en ${estado.app}.` : "No pude controlar la música.";
+    }
     case "programador_sesiones": {
       const sesiones = await pedirSesiones();
       if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
@@ -280,7 +307,18 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
   }
 }
 
-const ESPERAN = new Set(["calendario_proximos", "programador_sesiones"]);
+const ESPERAN = new Set(["calendario_proximos", "programador_sesiones", "musica_estado", "musica_control"]);
+
+const SIN_CALENDARIO =
+  "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+
+/** Lo que suena según Brote (que tiene el permiso de Automatización) o, si no está abierto, leído aquí. `undefined` si no se pudo saber. */
+async function musicaActual(): Promise<EstadoMusica | null | undefined> {
+  const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-estado" });
+  if (deBrote) return deBrote.musica ?? null;
+  const lectura = await leerMusica();
+  return lectura ? lectura.estado : undefined;
+}
 
 function usar(gastos: Gastos, nombre: string, args: any): string {
   switch (nombre) {
@@ -393,16 +431,6 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         })),
       });
     }
-    case "musica_estado": {
-      const lectura = leerMusicaAhora();
-      return lectura ? describirMusica(lectura.estado) : "No pude saber qué suena (en este sistema no se puede, o falta el permiso).";
-    }
-    case "musica_control": {
-      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
-      const estado = leerMusicaAhora()?.estado ?? null;
-      if (!estado) return "No hay música abierta (no abro apps de música).";
-      return controlarMusicaAhora(args.accion as AccionMusica, estado) ? `Hecho: ${args.accion} en ${estado.app}.` : "No pude controlar la música.";
-    }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {
         throw new ErrorDeUso("Faltan «patron», «ejemplo» o «intencion»");
@@ -419,7 +447,7 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
 
 /**
  * Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. Las
- * herramientas que esperan algo (el calendario) devuelven una promesa de la respuesta.
+ * herramientas que esperan algo (el calendario, la música, el puente) devuelven una promesa de la respuesta.
  */
 export function atender(gastos: Gastos, mensaje: any): object | null | Promise<object> {
   const { id, method, params } = mensaje ?? {};
@@ -444,7 +472,7 @@ export function atender(gastos: Gastos, mensaje: any): object | null | Promise<o
         return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
           (texto) => responder({ content: [{ type: "text", text: texto }] }),
           (error) => {
-            const motivo = error instanceof ErrorDeUso ? error.message : "No pude leer el calendario";
+            const motivo = error instanceof ErrorDeUso ? error.message : "No pude completar la consulta";
             if (!(error instanceof ErrorDeUso)) process.stderr.write(`[gastos] ${String(error)}\n`);
             return responder({ content: [{ type: "text", text: motivo }], isError: true });
           },

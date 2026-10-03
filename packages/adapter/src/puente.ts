@@ -279,7 +279,11 @@ async function alEventoClaude(datos: unknown): Promise<object> {
   });
 }
 setInterval(avisarSesiones, 30_000);
-void iniciarServidorHooks({ alEvento: alEventoClaude, sesiones: () => sesionesClaude.visibles(Date.now()) }).then(
+void iniciarServidorHooks({
+  alEvento: alEventoClaude,
+  sesiones: () => sesionesClaude.visibles(Date.now()),
+  consultar: consultarDelMcp,
+}).then(
   ({ puerto, token }) => {
     guardarConexion(puerto, token);
     registrar(`modo programador escuchando en 127.0.0.1:${puerto}`);
@@ -375,14 +379,37 @@ async function revisarMusica(): Promise<void> {
     leyendoMusica = false;
   }
 }
-async function pedirMusica(accion: AccionMusica): Promise<void> {
-  if (!(await controlarMusica(accion, musica))) registrar(`música: no pude hacer ${accion}`);
+async function pedirMusica(accion: AccionMusica): Promise<boolean> {
+  const hecho = await controlarMusica(accion, musica);
+  if (!hecho) registrar(`música: no pude hacer ${accion}`);
   // La app tarda un momento en cambiar de canción.
   setTimeout(() => void revisarMusica(), 400);
+  return hecho;
 }
 if (process.platform === "darwin" || process.platform === "win32") {
   setInterval(() => void revisarMusica(), process.platform === "win32" ? 5000 : 3000);
   void revisarMusica();
+}
+
+// Consultas del servidor MCP (por el servidor local con token): la música y el calendario se leen
+// aquí, dentro de Brote, que tiene los permisos de macOS; el MCP corre dentro de OpenClaw, sin ellos.
+async function consultarDelMcp(datos: unknown): Promise<object> {
+  const consulta = (datos ?? {}) as { tipo?: unknown; accion?: unknown };
+  switch (consulta.tipo) {
+    case "musica-estado":
+      return { musica };
+    case "musica-control": {
+      if (!ACCIONES_MUSICA.includes(consulta.accion as AccionMusica)) throw new Error("acción inválida");
+      if (!musica) return { hecho: false, musica: null };
+      const estado = musica;
+      return { hecho: await pedirMusica(consulta.accion as AccionMusica), musica: estado };
+    }
+    case "calendario":
+      await leerCalendarios();
+      return { eventos: eventosMac === null && icsTexto === null ? null : eventosCalendario() };
+    default:
+      throw new Error("consulta desconocida");
+  }
 }
 
 // Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,

@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, it } from "node:test";
+import { after, beforeEach, describe, it } from "node:test";
 import { Gastos } from "../src/gastos.ts";
 import { atender } from "../src/mcp.ts";
 
 let gastos: Gastos;
 let id = 0;
+
+// Que las pruebas nunca hablen con el Brote real del computador (podrían pausar la música).
+const CARPETA = mkdtempSync(join(tmpdir(), "mcp-puente-"));
+process.env.ASISTENTE_CONEXION_HOOKS = join(CARPETA, "hooks.json");
+after(() => rmSync(CARPETA, { recursive: true, force: true }));
 
 beforeEach(() => {
   gastos = new Gastos(":memory:");
@@ -15,6 +21,11 @@ beforeEach(() => {
 
 function llamar(name: string, args: object): { texto: string; error: boolean } {
   const respuesta = atender(gastos, { jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }) as any;
+  return { texto: respuesta.result.content[0].text, error: respuesta.result.isError === true };
+}
+
+async function llamarEsperando(name: string, args: object): Promise<{ texto: string; error: boolean }> {
+  const respuesta = (await atender(gastos, { jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } })) as any;
   return { texto: respuesta.result.content[0].text, error: respuesta.result.isError === true };
 }
 
@@ -70,12 +81,46 @@ describe("servidor MCP de gastos", () => {
     assert.equal(llamar("temporizador_cancelar", {}).texto, "Cancelados: 1.");
   });
 
-  it("la música valida la acción y, sin reproductor, no hace nada", () => {
-    assert.equal(llamar("musica_control", { accion: "subir-volumen" }).error, true);
+  it("la música valida la acción y, sin reproductor, no hace nada", async () => {
+    assert.equal((await llamarEsperando("musica_control", { accion: "subir-volumen" })).error, true);
     // En Linux (las pruebas) no hay música que leer: responde sin error.
     if (process.platform === "linux") {
-      assert.match(llamar("musica_estado", {}).texto, /No pude saber/);
-      assert.match(llamar("musica_control", { accion: "pausa" }).texto, /No hay música abierta/);
+      assert.match((await llamarEsperando("musica_estado", {})).texto, /No pude saber/);
+      assert.match((await llamarEsperando("musica_control", { accion: "pausa" })).texto, /No hay música abierta/);
+    }
+  });
+
+  it("con Brote abierto, la música y el calendario se los pide al puente (que tiene los permisos)", async () => {
+    const pedidos: any[] = [];
+    const inicio = Date.now() + 30 * 60_000;
+    const servidor = createServer((pedido, respuesta) => {
+      let texto = "";
+      pedido.on("data", (parte) => (texto += parte));
+      pedido.on("end", () => {
+        if (pedido.headers.authorization !== "Bearer secreto") return respuesta.writeHead(401).end();
+        const consulta = JSON.parse(texto);
+        pedidos.push(consulta);
+        const musica = { app: "Spotify", sonando: false, cancion: "Canción", artista: "Artista" };
+        const cuerpo =
+          consulta.tipo === "musica-estado" ? { musica }
+          : consulta.tipo === "musica-control" ? { hecho: true, musica }
+          : { eventos: [{ titulo: "Cálculo", lugar: "B-12", inicioMs: inicio, finMs: inicio + 3_600_000, todoElDia: false }] };
+        respuesta.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(cuerpo));
+      });
+    });
+    await new Promise<void>((listo) => servidor.listen(0, "127.0.0.1", listo));
+    const { port } = servidor.address() as { port: number };
+    writeFileSync(process.env.ASISTENTE_CONEXION_HOOKS!, JSON.stringify({ puerto: port, token: "secreto" }));
+    try {
+      assert.match((await llamarEsperando("musica_estado", {})).texto, /Canción/);
+      assert.equal((await llamarEsperando("musica_control", { accion: "play" })).texto, "Hecho: play en Spotify.");
+      const { eventos } = JSON.parse((await llamarEsperando("calendario_proximos", {})).texto);
+      assert.deepEqual(eventos.map((e: any) => [e.titulo, e.lugar]), [["Cálculo", "B-12"]]);
+      assert.deepEqual(pedidos.map((p) => p.tipo), ["musica-estado", "musica-control", "calendario"]);
+      assert.equal(pedidos[1].accion, "play");
+    } finally {
+      rmSync(process.env.ASISTENTE_CONEXION_HOOKS!, { force: true });
+      servidor.close();
     }
   });
 

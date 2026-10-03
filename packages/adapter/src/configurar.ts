@@ -267,14 +267,16 @@ export function revisar(): Paso[] {
 
   const servidor = config?.mcp?.servers?.gastos;
   const rutaMcp = recursos().servidor;
-  const conServidor = Array.isArray(servidor?.args) && servidor.args.includes(rutaMcp) && existsSync(rutaMcp);
+  const conServidor = Array.isArray(servidor?.args) && servidor.args.includes(rutaMcp) && existsSync(rutaMcp) && mcpAlDia();
   pasos.push({
     id: "mcp",
     titulo: "Gastos compartidos con el agente",
     estado: conServidor ? "ok" : "falta",
     detalle: conServidor
       ? "El agente lee y anota en la misma base que Brote."
-      : "Falta conectar tus gastos con el agente (servidor MCP de gastos).",
+      : existsSync(rutaMcp) && !mcpAlDia()
+        ? "Brote se actualizó: hay que pasarle al agente las herramientas nuevas (descargas, música, calendario…)."
+        : "Falta conectar tus gastos con el agente (servidor MCP de gastos).",
     accion: conServidor || !configurado ? undefined : { tipo: "automatica", etiqueta: "Conectar" },
   });
 
@@ -378,6 +380,20 @@ export async function revisarOpcionales(): Promise<Paso[]> {
     accion: { tipo: "ical", etiqueta: "Guardar", configurada: url !== null },
   });
   return pasos;
+}
+
+/**
+ * Si la copia del servidor MCP fuera de la app es la de esta versión de Brote (al actualizar la app,
+ * la copia vieja no tendría las herramientas nuevas). En desarrollo no hay copia: siempre al día.
+ */
+function mcpAlDia(): boolean {
+  return recursos().mcp.every((origen) => {
+    try {
+      return readFileSync(origen).equals(readFileSync(join(CARPETA_APP, origen.split(/[\\/]/).pop()!)));
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** Lo justo para decidir al iniciar si abrir el asistente, sin ejecutar programas (es rápido). */

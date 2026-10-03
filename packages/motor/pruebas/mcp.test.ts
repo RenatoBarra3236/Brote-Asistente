@@ -15,7 +15,9 @@ const CARPETA = mkdtempSync(join(tmpdir(), "mcp-puente-"));
 process.env.ASISTENTE_CONEXION_HOOKS = join(CARPETA, "hooks.json");
 // Y que usen sus propias funciones (todas prendidas), no las de Configurar Brote del computador.
 process.env.ASISTENTE_FUNCIONES = join(CARPETA, "funciones.json");
-writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador"].map((id) => [id, true])) }));
+// Y el plan de Claude guardado, tampoco el del computador.
+process.env.ASISTENTE_PLAN = join(CARPETA, "plan.json");
+writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan"].map((id) => [id, true])) }));
 after(() => rmSync(CARPETA, { recursive: true, force: true }));
 
 beforeEach(() => {
@@ -40,7 +42,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
     );
   });
 
@@ -142,6 +144,40 @@ describe("servidor MCP de gastos", () => {
       rmSync(process.env.ASISTENTE_CONEXION_HOOKS!, { force: true });
       servidor.close();
     }
+  });
+
+  it("claude_uso: el plan y los tokens que calcula Brote; sin Brote, solo el plan guardado", async () => {
+    const reinicia = Date.now() + 2 * 3_600_000;
+    const total = { entrada: 1000, salida: 2000, cache: 50_000, usd: 0.1234, sinPrecio: 0 };
+    const periodo = { total, brote: { ...total, usd: 0.02 }, tuyas: { ...total, usd: 0.1034 }, porModelo: [{ modelo: "claude-sonnet-5", nombre: "Sonnet 5", total }], proyectos: [{ nombre: "tarea", brote: false, total }] };
+    const servidor = createServer((pedido, respuesta) => {
+      let texto = "";
+      pedido.on("data", (parte) => (texto += parte));
+      pedido.on("end", () => {
+        assert.equal(JSON.parse(texto).tipo, "uso");
+        const plan = { sesion: { porcentaje: 23, reiniciaMs: reinicia }, semana: null, modelo: "claude-sonnet-5", actualizadoMs: Date.now() };
+        respuesta.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ plan, resumen: { hoy: periodo, semana: periodo, modelos: [], calculadoMs: 0 } }));
+      });
+    });
+    await new Promise<void>((listo) => servidor.listen(0, "127.0.0.1", listo));
+    writeFileSync(process.env.ASISTENTE_CONEXION_HOOKS!, JSON.stringify({ puerto: (servidor.address() as { port: number }).port, token: "secreto" }));
+    try {
+      const uso = JSON.parse((await llamarEsperando("claude_uso", {})).texto);
+      assert.equal(uso.plan.sesion5h.porcentajeUsado, 23);
+      assert.equal(uso.plan.semana, null);
+      assert.equal(uso.tokens.hoy.total.valorApiUsd, 0.12);
+      assert.equal(uso.tokens.ultimos7Dias.brote.valorApiUsd, 0.02);
+      assert.deepEqual(uso.tokens.hoy.proyectosQueMasGastan.map((p: any) => p.proyecto), ["tarea"]);
+    } finally {
+      rmSync(process.env.ASISTENTE_CONEXION_HOOKS!, { force: true });
+      servidor.close();
+    }
+    // Sin Brote abierto: el plan guardado (si sigue vigente) y sin tokens.
+    writeFileSync(process.env.ASISTENTE_PLAN!, JSON.stringify({ version: 1, lectura: { sesion: null, semana: { porcentaje: 41, reiniciaMs: reinicia }, modelo: null, actualizadoMs: Date.now() }, avisados: [] }));
+    const solo = JSON.parse((await llamarEsperando("claude_uso", {})).texto);
+    assert.equal(solo.plan.semana.porcentajeUsado, 41);
+    assert.equal(solo.tokens, null);
+    assert.match(solo.tokensNoDisponibles, /Brote no está abierto/);
   });
 
   it("el aula responde aunque no haya ninguna conectada", async () => {

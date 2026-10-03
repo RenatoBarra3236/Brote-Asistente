@@ -15,6 +15,7 @@ import {
 } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
+import type { EstadoUso } from "./agente/uso";
 import { Isla, type Ala } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
@@ -47,6 +48,8 @@ const ESPERA_CIERRE_MS = 800;
 
 /** Cuánto sigue a la vista una descarga terminada, con su botón "Mostrar" (ms). */
 const DESCARGA_A_LA_VISTA_MS = 60_000;
+/** Cada cuánto se piden los tokens mientras la pestaña Claude está a la vista. */
+const USO_CADA_MS = 60_000;
 
 /** Muestra una descarga en el Finder o el Explorador, o la abre si es un documento. Rust valida la ruta. */
 function mostrarDescarga(ruta: string, abrir = false): void {
@@ -208,6 +211,30 @@ async function iniciar(): Promise<void> {
         if (personaje.estado !== "listo") personaje.setEstado("reposo");
       }
     }, 500);
+
+    // Uso del plan de Claude: el puente avisa cuando llega un % nuevo (statusline) y los tokens se
+    // piden cada minuto solo mientras la pestaña Claude está a la vista. Se repinta cada 30 s para que
+    // "hace 3 min" y "se reinicia en…" no queden viejos. Al pasar 80 % y 95 %, un aviso y un saltito.
+    let uso: EstadoUso | null = null;
+    const cambiarUso = (estado: EstadoUso) => {
+      uso = estado;
+      panel.mostrarUso(estado);
+    };
+    puente.alCambiarUso(cambiarUso);
+    let ultimaConsultaUso = 0;
+    const pedirUso = () => {
+      ultimaConsultaUso = Date.now();
+      void puente.consultar<EstadoUso>({ tipo: "uso-estado" }).then(cambiarUso, () => {});
+    };
+    pedirUso();
+    setInterval(() => {
+      if (panel.usoALaVista && Date.now() - ultimaConsultaUso >= USO_CADA_MS) pedirUso();
+    }, 5000);
+    setInterval(() => uso && panel.mostrarUso(uso), 30_000);
+    puente.alAvisoPlan((texto) => {
+      panel.mostrarAviso(`📊 ${texto}`);
+      personaje.tocar();
+    });
 
     // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
     let listas: { descarga: Descarga; hasta: number }[] = [];

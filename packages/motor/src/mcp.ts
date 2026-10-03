@@ -30,6 +30,9 @@ import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./d
 import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
+import { vigente, type LecturaPlan, type VentanaPlan } from "./plan.ts";
+import { tokensDe, type ResumenPeriodo, type ResumenUso, type TotalUso } from "./uso.ts";
+import { leerPlanGuardado } from "./uso-archivo.ts";
 
 /** Lo que el usuario prendió o apagó en Configurar Brote → Funciones (se relee cuando cambia). */
 const funciones = new FuncionesVigiladas();
@@ -224,6 +227,16 @@ const HERRAMIENTAS = [
     annotations: { title: "Aula: entregas", readOnlyHint: true },
   },
   {
+    name: "claude_uso",
+    description:
+      "El uso del plan de Claude del usuario (Pro o Max): el % de su sesión de 5 h y de la semana, con la hora en que se " +
+      "reinicia cada una (llega por la statusline de Claude Code, así que puede tener unos minutos), y los tokens de hoy y " +
+      "de los últimos 7 días con su valor API en USD (lo que costaría pagando por token; el usuario no paga eso, paga su " +
+      "plan), separados entre Brote y las sesiones de Claude Code del usuario. Solo lectura.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Uso del plan de Claude", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -372,6 +385,21 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         entregas: lista.map((e) => ({ curso: e.curso, titulo: e.titulo, vence: fechaHora(e.entregaMs), entregada: e.entregada, url: e.url })),
       });
     }
+    case "claude_uso": {
+      const ahora = Date.now();
+      // Los tokens los calcula Brote (lee las transcripciones de forma incremental); sin Brote, solo el plan guardado.
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "uso" }, { limiteMs: 10_000 });
+      const plan: LecturaPlan | null = vigente(deBrote ? (deBrote.plan ?? null) : leerPlanGuardado(undefined, ahora).lectura, ahora);
+      const resumen: ResumenUso | null = deBrote?.resumen ?? null;
+      const ventana = (v: VentanaPlan | null) => (v ? { porcentajeUsado: Math.round(v.porcentaje), seReinicia: fechaHora(v.reiniciaMs) } : null);
+      return JSON.stringify({
+        ahora: fechaHora(ahora),
+        plan: plan ? { sesion5h: ventana(plan.sesion), semana: ventana(plan.semana), actualizado: fechaHora(plan.actualizadoMs) } : null,
+        ...(plan ? {} : { planNoDisponible: "Brote todavía no recibe el % del plan (llega por la statusline de Claude Code)." }),
+        tokens: resumen ? { hoy: periodoUso(resumen.hoy), ultimos7Dias: periodoUso(resumen.semana) } : null,
+        ...(resumen ? {} : { tokensNoDisponibles: "Brote no está abierto o todavía no calcula los tokens." }),
+      });
+    }
     case "programador_sesiones": {
       const sesiones = await pedirSesiones();
       if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
@@ -382,7 +410,29 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
   }
 }
 
-const ESPERAN = new Set(["aula_entregas", "calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
+/** Un total de uso para el agente: tokens por tipo y valor API redondeado a centavos. */
+function totalUso(t: TotalUso) {
+  return {
+    tokens: tokensDe(t),
+    entrada: t.entrada,
+    salida: t.salida,
+    cache: t.cache,
+    valorApiUsd: Math.round(t.usd * 100) / 100,
+    ...(t.sinPrecio > 0 ? { tokensSinPrecio: t.sinPrecio } : {}),
+  };
+}
+
+function periodoUso(p: ResumenPeriodo) {
+  return {
+    total: totalUso(p.total),
+    brote: totalUso(p.brote),
+    sesionesDelUsuario: totalUso(p.tuyas),
+    porModelo: p.porModelo.map((m) => ({ modelo: m.nombre, ...totalUso(m.total) })),
+    proyectosQueMasGastan: p.proyectos.map((x) => ({ proyecto: x.nombre, ...totalUso(x.total) })),
+  };
+}
+
+const ESPERAN = new Set(["claude_uso", "aula_entregas", "calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
 
 /** Los argumentos de `calendario_crear` → el evento, o un error de uso. */
 function leerNuevoEvento(args: any): NuevoEvento {

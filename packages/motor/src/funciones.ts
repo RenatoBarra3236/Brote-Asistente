@@ -16,6 +16,7 @@ export const IDS_FUNCIONES = [
   "descargas",
   "equipo",
   "programador",
+  "uso-del-plan",
   "memoria-local",
 ] as const;
 export type IdFuncion = (typeof IDS_FUNCIONES)[number];
@@ -90,6 +91,13 @@ export const FUNCIONES: readonly Funcion[] = [
     tarjeta: "claude",
   },
   {
+    id: "uso-del-plan",
+    nombre: "Uso del plan de Claude",
+    descripcion: "Cuánto llevas de tu sesión de 5 h y de la semana, y tus tokens con su valor API. Sin tocar tus credenciales.",
+    permiso: null,
+    tarjeta: null,
+  },
+  {
     id: "memoria-local",
     nombre: "Búsqueda por significado",
     descripcion: "Brote encuentra mejor lo que recuerda. Descarga un modelo de ~0,3 GB y funciona sin internet.",
@@ -118,8 +126,8 @@ export const PRESETS: Record<IdPreset, { nombre: string; descripcion: string; ac
   },
   programador: {
     nombre: "Programador",
-    descripcion: "Lo de estudiante sin el aula, más tus sesiones de Claude Code.",
-    activas: ["gastos", "temporizadores", "calendario", "musica", "descargas", "equipo", "programador"],
+    descripcion: "Lo de estudiante sin el aula, más tus sesiones de Claude Code y el uso de tu plan.",
+    activas: ["gastos", "temporizadores", "calendario", "musica", "descargas", "equipo", "programador", "uso-del-plan"],
   },
   todo: { nombre: "Todo", descripcion: "Todas las funciones.", activas: [...IDS_FUNCIONES] },
   minimo: { nombre: "Lo mínimo", descripcion: "Solo conversar y anotar gastos. Sin permisos de macOS.", activas: ["gastos"] },
@@ -191,6 +199,7 @@ export function funcionDeIntencion(intencion: string): IdFuncion | null {
   if (/^(ver-descargas|abrir-ultima-descarga|mostrar-ultima-descarga)$/.test(intencion)) return "descargas";
   if (intencion === "estado-equipo") return "equipo";
   if (intencion === "programador-sesiones") return "programador";
+  if (intencion.startsWith("plan-")) return "uso-del-plan";
   return null;
 }
 
@@ -204,6 +213,7 @@ export function funcionDeHerramienta(nombre: string): IdFuncion | null {
   if (nombre === "descargas_recientes") return "descargas";
   if (nombre === "equipo_estado") return "equipo";
   if (nombre === "programador_sesiones") return "programador";
+  if (nombre === "claude_uso") return "uso-del-plan";
   return null;
 }
 

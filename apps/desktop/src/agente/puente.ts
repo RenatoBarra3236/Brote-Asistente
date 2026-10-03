@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./transporte.ts";
 import type { ConfigFunciones } from "./funciones.ts";
+import type { EstadoUso } from "./uso.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -126,6 +127,8 @@ type Aviso =
   | ({ tipo: "programador" } & EstadoProgramador)
   | { tipo: "programador-reaccion"; reaccion: "termino" | "fallo"; proyecto: string }
   | ({ tipo: "funciones" } & ConfigFunciones)
+  | ({ tipo: "uso" } & EstadoUso)
+  | { tipo: "plan-aviso"; texto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -163,6 +166,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
   private readonly oyentesReaccion = new Set<(reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void>();
   private readonly oyentesFunciones = new Set<(config: ConfigFunciones) => void>();
+  private readonly oyentesUso = new Set<(estado: EstadoUso) => void>();
+  private readonly oyentesAvisoPlan = new Set<(texto: string) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -281,6 +286,18 @@ export class TransportePuente implements Transporte {
     return () => this.oyentesReaccion.delete(oyente);
   }
 
+  /** El plan de Claude y el uso por tokens, cada vez que cambian. */
+  alCambiarUso(oyente: (estado: EstadoUso) => void): () => void {
+    this.oyentesUso.add(oyente);
+    return () => this.oyentesUso.delete(oyente);
+  }
+
+  /** El aviso al pasar 80 % y 95 % de la sesión de 5 h. */
+  alAvisoPlan(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoPlan.add(oyente);
+    return () => this.oyentesAvisoPlan.delete(oyente);
+  }
+
   async decidirPermisoClaude(id: string, decision: "allow" | "deny"): Promise<void> {
     await this.pedir({ tipo: "programador-decidir", permiso: id, decision });
   }
@@ -391,6 +408,12 @@ export class TransportePuente implements Transporte {
         return;
       case "programador":
         for (const oyente of this.oyentesProgramador) oyente({ sesiones: aviso.sesiones, permisos: aviso.permisos });
+        return;
+      case "uso":
+        for (const oyente of this.oyentesUso) oyente({ plan: aviso.plan, statusline: aviso.statusline, resumen: aviso.resumen, precios: aviso.precios });
+        return;
+      case "plan-aviso":
+        for (const oyente of this.oyentesAvisoPlan) oyente(aviso.texto);
         return;
       case "programador-reaccion":
         for (const oyente of this.oyentesReaccion) oyente({ reaccion: aviso.reaccion, proyecto: aviso.proyecto });

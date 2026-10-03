@@ -70,6 +70,16 @@
 //   pedido { "tipo": "permisos-estado" }    → "datos": { descargas, automatizacion, calendarios } (lo que se sabe
 //     de los permisos de macOS por las lecturas que ya se hicieron; nunca pregunta nada nuevo)
 //
+// Uso del plan de Claude (función "uso-del-plan"):
+//   el % de la sesión de 5 h y de la semana llega por la statusline de Claude Code (statusline.ts →
+//   POST /plan) y se guarda en ~/.asistente-prototipo/plan.json (600) para que sobreviva reinicios;
+//   pasado su reinicio, cada ventana se descarta. Los tokens se leen de las transcripciones de forma
+//   incremental (uso-archivo.ts), solo cuando alguien los pide (la isla cada 60 s con la pestaña Claude
+//   a la vista, el motor o el MCP) y como mucho una vez por minuto.
+//   aviso { "tipo": "uso", "plan": { sesion, semana, modelo, actualizadoMs } | null, "statusline": true, "resumen": … | null, "precios": { fecha, fuente, modelos } }
+//   aviso { "tipo": "plan-aviso", "texto": "Llevas 80 % de tu sesión de Claude; se reinicia a las 18:40" }   una vez por ventana
+//   pedido { "tipo": "uso-estado" }   → "datos": lo mismo que el aviso "uso"
+//
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
 // `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
@@ -81,6 +91,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
 import { createInterface } from "node:readline";
 import {
   Gastos,
@@ -141,6 +152,20 @@ import {
   porcentajeSinIA,
   procesoMasPesado,
   proponerPlantilla,
+  FECHA_PRECIOS,
+  FUENTE_PRECIOS,
+  LectorUso,
+  NombresDeProyectos,
+  avisosPlan,
+  guardarPlan,
+  leerDatosPlan,
+  leerPlanGuardado,
+  limpiarAvisados,
+  precioDe,
+  resumirUso,
+  vigente,
+  type LecturaPlan,
+  type ResumenUso,
 } from "@asistente/motor";
 import {
   type Decision,
@@ -156,7 +181,9 @@ import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } f
 import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
 import { migrarFunciones } from "./migrar-funciones.ts";
 import { esDeMemoria } from "./permisos.ts";
-import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE } from "./rutas.ts";
+import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE, memoriaDeClaudeCode } from "./rutas.ts";
+import { leerSettings } from "./hooks-claude.ts";
+import { statuslineInstalada } from "./statusline-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
 
@@ -183,6 +210,7 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__musica_control",
   "mcp__gastos__calendario_proximos",
   "mcp__gastos__aula_entregas",
+  "mcp__gastos__claude_uso",
 ]);
 
 /**
@@ -280,6 +308,11 @@ const motor = new Motor(gastos, {
   // se vuelve a leer el calendario para que aparezca en la isla.
   crearEvento: (evento) => crearEvento(evento),
   aula: () => entregasAula,
+  uso: () => {
+    // Quien pregunta "¿cuánto he gastado en tokens?" recibe lo último calculado y deja pedido lo nuevo.
+    void actualizarUso();
+    return { plan: vigente(lecturaPlan, Date.now()), statusline: statuslinePuesta(), resumen: resumenUso };
+  },
   activa,
 });
 
@@ -365,6 +398,7 @@ async function alEventoClaude(datos: unknown): Promise<object> {
 setInterval(avisarSesiones, 30_000);
 void iniciarServidorHooks({
   alEvento: alEventoClaude,
+  alPlan: alPlanClaude,
   sesiones: () => (activa("programador") ? sesionesClaude.visibles(Date.now()) : []),
   consultar: consultarDelMcp,
 }).then(
@@ -567,12 +601,113 @@ function detenerMusica(): void {
   avisar({ tipo: "musica", estado: null });
 }
 
+// Uso del plan de Claude: el % llega por la statusline (nunca se leen credenciales) y los tokens se
+// leen de las transcripciones solo cuando alguien los pide, como mucho una vez por minuto.
+let planGuardado = leerPlanGuardado();
+let lecturaPlan: LecturaPlan | null = planGuardado.lectura;
+const avisadosPlan = new Set(planGuardado.avisados);
+const lectorUso = new LectorUso();
+const nombresProyectos = new NombresDeProyectos();
+/** La carpeta de ~/.claude/projects donde quedan las corridas de Brote (el workspace de OpenClaw). */
+const CARPETA_BROTE = basename(dirname(memoriaDeClaudeCode(WORKSPACE)));
+let resumenUso: ResumenUso | null = null;
+let usoCalculadoMs = 0;
+let calculandoUso: Promise<void> | null = null;
+let ultimoUso = "";
+let statusline: { puesta: boolean; hastaMs: number } = { puesta: false, hastaMs: 0 };
+
+/** Si la statusline de Brote está en la configuración de Claude Code (se mira cada 10 s como mucho). */
+function statuslinePuesta(): boolean {
+  if (Date.now() >= statusline.hastaMs) {
+    let puesta = false;
+    try {
+      puesta = statuslineInstalada(leerSettings());
+    } catch {
+      // settings.json roto: Configurar Brote lo explica.
+    }
+    statusline = { puesta, hastaMs: Date.now() + 10_000 };
+  }
+  return statusline.puesta;
+}
+
+function estadoUso() {
+  const modelos = resumenUso?.modelos ?? (lecturaPlan?.modelo ? [lecturaPlan.modelo] : []);
+  return {
+    plan: vigente(lecturaPlan, Date.now()),
+    statusline: statuslinePuesta(),
+    resumen: resumenUso,
+    // Los precios de los modelos que aparecen en el uso (`precio: null`: no está en la tabla).
+    precios: { fecha: FECHA_PRECIOS, fuente: FUENTE_PRECIOS, modelos: modelos.map((id) => ({ id, precio: precioDe(id) })) },
+  };
+}
+
+function avisarUso(): void {
+  const estado = estadoUso();
+  const texto = JSON.stringify({ ...estado, resumen: estado.resumen && { ...estado.resumen, calculadoMs: 0 } });
+  if (texto === ultimoUso) return;
+  ultimoUso = texto;
+  avisar({ tipo: "uso", ...estado });
+}
+
+/** Lo que manda la statusline de Claude Code: el % de la sesión de 5 h y de la semana. */
+function alPlanClaude(datos: unknown): void {
+  if (!activa("uso-del-plan")) return;
+  const ahora = Date.now();
+  const lectura = leerDatosPlan(datos, ahora);
+  if (!lectura) return;
+  lecturaPlan = lectura;
+  for (const texto of avisosPlan(lectura, ahora, avisadosPlan)) {
+    registrar("plan: aviso");
+    avisar({ tipo: "plan-aviso", texto });
+  }
+  planGuardado = { lectura, avisados: limpiarAvisados(avisadosPlan, ahora) };
+  try {
+    guardarPlan(planGuardado);
+  } catch (error) {
+    registrar(`plan: no pude guardar plan.json (${mensajeDe(error)})`);
+  }
+  avisarUso();
+}
+
+/** Recalcula el uso por tokens si pasó más de un minuto (o `forzar`). Si queda por leer, sigue de a poco. */
+function actualizarUso(forzar = false): Promise<void> {
+  if (!activa("uso-del-plan")) return Promise.resolve();
+  if (!forzar && resumenUso && Date.now() - usoCalculadoMs < 60_000) return Promise.resolve();
+  calculandoUso ??= (async () => {
+    try {
+      const falta = await lectorUso.actualizar();
+      const ahora = Date.now();
+      resumenUso = resumirUso(lectorUso.registros(), ahora, CARPETA_BROTE, (carpeta) => nombresProyectos.nombre(carpeta));
+      usoCalculadoMs = ahora;
+      avisarUso();
+      // La primera vez puede haber mucho que leer: se sigue en la próxima vuelta del bucle de eventos.
+      if (falta) setTimeout(() => void actualizarUso(true), 200);
+    } catch (error) {
+      registrar(`uso: no pude leer las transcripciones (${mensajeDe(error)})`);
+    }
+  })().finally(() => (calculandoUso = null));
+  return calculandoUso;
+}
+
+/** Espera el cálculo como mucho `ms` (la isla no debe quedarse esperando la primera lectura grande). */
+function esperarUso(ms: number): Promise<void> {
+  return Promise.race([actualizarUso(), esperar(ms)]);
+}
+
+function detenerUso(): void {
+  resumenUso = null;
+  usoCalculadoMs = 0;
+  ultimoUso = "";
+  avisar({ tipo: "uso", plan: null, statusline: statuslinePuesta(), resumen: null, precios: { fecha: FECHA_PRECIOS, fuente: FUENTE_PRECIOS, modelos: [] } });
+}
+
 const FUNCION_DE_CONSULTA: Record<string, IdFuncion> = {
   "musica-estado": "musica",
   "musica-control": "musica",
   calendario: "calendario",
   "calendario-crear": "calendario",
   aula: "aula",
+  uso: "uso-del-plan",
 };
 
 // Consultas del servidor MCP (por el servidor local con token): la música y el calendario se leen
@@ -605,6 +740,9 @@ async function consultarDelMcp(datos: unknown): Promise<object> {
     case "calendario":
       await leerCalendarios();
       return { eventos: eventosMac === null && icsTexto === null ? null : eventosCalendario() };
+    case "uso":
+      await esperarUso(8000);
+      return { plan: vigente(lecturaPlan, Date.now()), resumen: resumenUso };
     default:
       throw new Error("consulta desconocida");
   }
@@ -759,6 +897,13 @@ const tareas = new TareasPorFuncion({
       detener();
       detenerEquipo();
     };
+  },
+  "uso-del-plan": () => {
+    // Al prenderla: lo guardado del plan y un primer cálculo de los tokens (después, solo a pedido).
+    lecturaPlan = leerPlanGuardado().lectura;
+    avisarUso();
+    void actualizarUso(true);
+    return detenerUso;
   },
   programador: () => () => {
     for (const permiso of permisosClaude.values()) permiso.soltar({});
@@ -1027,6 +1172,10 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: estadoAula() };
     case "programador-estado":
       return { datos: estadoProgramador() };
+    case "uso-estado":
+      if (!activa("uso-del-plan")) return { datos: { plan: null, statusline: statuslinePuesta(), resumen: null, precios: { fecha: FECHA_PRECIOS, fuente: FUENTE_PRECIOS, modelos: [] } } };
+      await esperarUso(3000);
+      return { datos: estadoUso() };
     case "programador-decidir": {
       const permiso = typeof pedido.permiso === "string" ? permisosClaude.get(pedido.permiso) : undefined;
       if (pedido.decision !== "allow" && pedido.decision !== "deny") break;

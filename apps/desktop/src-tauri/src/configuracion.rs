@@ -11,7 +11,7 @@ use crate::entorno;
 /// Pasos que el script sabe aplicar (ver `aplicar` en configurar.ts).
 const PASOS: &[&str] = &[
     "openclaw", "agente", "modelo", "gateway", "identidad", "permisos", "skill", "mcp", "memoria", "calendario-mac",
-    "programador", "programador-quitar",
+    "programador", "programador-quitar", "statusline", "statusline-quitar",
 ];
 
 pub fn script(app: &AppHandle) -> std::path::PathBuf {

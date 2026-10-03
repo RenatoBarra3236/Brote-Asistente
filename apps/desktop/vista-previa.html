@@ -6,7 +6,9 @@
   Parámetros: ?pestana=brote|chat|claude|equipo (chat = la pestaña Brote con una pregunta enviada: las
   tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) ·
   ?vacia=1 (sin datos) · ?modo=flotante (la ventana de Windows) · ?ocultas=musica,descargas (tarjetas
-  ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas).
+  ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite
+  (el uso del plan de Claude en la pestaña Claude: con datos, sin datos todavía, sin la statusline instalada,
+  o cerca del límite con el aviso de 95 %).
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -68,11 +70,49 @@
               permisos: [],
             },
           };
+      // Uso del plan de Claude (pestaña Claude), como lo manda el puente.
+      const modoPlan = parametros.get("plan") ?? "con";
+      const total = (entrada, salida, cache, usd, sinPrecio = 0) => ({ entrada, salida, cache, usd, sinPrecio });
+      const periodo = (f) => ({
+        total: total(41_000 * f, 182_000 * f, 9_400_000 * f, 21.37 * f),
+        brote: total(6_000 * f, 22_000 * f, 610_000 * f, 0.82 * f),
+        tuyas: total(35_000 * f, 160_000 * f, 8_790_000 * f, 20.55 * f),
+        porModelo: [],
+        proyectos: [
+          { nombre: "Asistente-multiplataforma", brote: false, total: total(0, 0, 0, 14.2 * f) },
+          { nombre: "tarea-rust", brote: false, total: total(0, 0, 0, 6.35 * f) },
+          { nombre: "Brote", brote: true, total: total(0, 0, 0, 0.82 * f) },
+        ],
+      });
+      const precio = (nombre, entrada, escritura5m, escritura1h, lectura, salida) => ({ nombre, entrada, escritura5m, escritura1h, lectura, salida });
+      const cerca = modoPlan === "limite";
+      const uso = {
+        plan:
+          modoPlan === "sin" || modoPlan === "sin-statusline"
+            ? null
+            : {
+                sesion: { porcentaje: cerca ? 96 : 23, reiniciaMs: ahora + 2 * 3_600_000 + 10 * 60_000 },
+                semana: { porcentaje: cerca ? 78 : 41, reiniciaMs: ahora + 4 * 86_400_000 + 16 * 3_600_000 },
+                modelo: "claude-sonnet-5",
+                actualizadoMs: ahora - 3 * 60_000,
+              },
+        statusline: modoPlan !== "sin-statusline",
+        resumen: vacia ? null : { hoy: periodo(1), semana: periodo(5.2), modelos: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], calculadoMs: ahora },
+        precios: {
+          fecha: "2026-10-03",
+          fuente: "https://platform.claude.com/docs/en/about-claude/pricing",
+          modelos: [
+            { id: "claude-sonnet-5", precio: precio("Sonnet 5", 2, 2.5, 4, 0.2, 10) },
+            { id: "claude-haiku-4-5-20251001", precio: precio("Haiku 4.5", 1, 1.25, 2, 0.1, 5) },
+          ],
+        },
+      };
+
       // Configurar Brote → Funciones, como lo manda el puente.
       const lista = (nombre) => (parametros.get(nombre) ?? "").split(",").filter(Boolean);
       const funciones = {
         activas: Object.fromEntries(
-          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "memoria-local"].map((id) => [id, !lista("apagadas").includes(id)]),
+          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local"].map((id) => [id, !lista("apagadas").includes(id)]),
         ),
         tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: lista("ocultas") },
       };
@@ -145,6 +185,8 @@
                   return responder(id, { datos: datos.aula });
                 case "programador-estado":
                   return responder(id, { datos: datos.programador });
+                case "uso-estado":
+                  return responder(id, { datos: uso });
                 case "equipo-estado":
                   t += 1;
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
@@ -192,6 +234,8 @@
         },
       };
 
+      // Cerca del límite: el aviso de 95 % de la sesión, como llegaría del puente.
+      if (cerca) setTimeout(() => emitir({ tipo: "plan-aviso", texto: "Llevas 95 % de tu sesión de Claude; se reinicia a las 18:40" }), 2500);
       // Una descarga en curso, como llegaría del puente.
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.

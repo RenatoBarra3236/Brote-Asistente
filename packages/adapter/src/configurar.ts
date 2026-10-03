@@ -40,6 +40,7 @@ import {
   validarUrlServidor,
 } from "./conectores.ts";
 import { agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks, rutaSettings } from "./hooks-claude.ts";
+import { borrarOriginal, guardarOriginal, instalarStatusline, leerOriginalGuardada, quitarStatusline, statuslineInstalada } from "./statusline-claude.ts";
 import { CONFIG_OPENCLAW } from "./rutas.ts";
 
 /** La versión de OpenClaw con la que se probó Brote (ver CLAUDE.md). */
@@ -85,7 +86,8 @@ const CARPETA_APP = join(homedir(), ".asistente-prototipo", "app");
  * `mcp` son los archivos del servidor de gastos que hay que copiar fuera de la app (vacío en
  * desarrollo, donde se registra el `.ts` del repo tal cual porque importa otros módulos).
  */
-function recursos(): { mcp: string[]; servidor: string; skill: string; plantillas: string; hook: { origen: string | null; destino: string } } {
+type Copia = { origen: string | null; destino: string };
+function recursos(): { mcp: string[]; servidor: string; skill: string; plantillas: string; hook: Copia; statusline: Copia } {
   const aqui = dirname(fileURLToPath(import.meta.url));
   if (existsSync(join(aqui, "mcp.mjs"))) {
     return {
@@ -95,6 +97,7 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
       skill: join(aqui, "skill", "gastos"),
       plantillas: join(aqui, "plantillas"),
       hook: { origen: join(aqui, "hook.mjs"), destino: join(CARPETA_APP, "hook.mjs") },
+      statusline: { origen: join(aqui, "statusline.mjs"), destino: join(CARPETA_APP, "statusline.mjs") },
     };
   }
   const repo = join(aqui, "..", "..", "..");
@@ -105,6 +108,7 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
     plantillas: join(repo, "packages", "adapter", "plantillas"),
     // En desarrollo se usa el .ts del repo tal cual (Node lo corre sin compilar).
     hook: { origen: null, destino: join(repo, "packages", "adapter", "src", "hook.ts") },
+    statusline: { origen: null, destino: join(repo, "packages", "adapter", "src", "statusline.ts") },
   };
 }
 
@@ -412,6 +416,32 @@ export async function revisarOpcionales(): Promise<Paso[]> {
           },
     quitar: conHooks ? { paso: "programador-quitar", etiqueta: "Desinstalar" } : undefined,
   });
+  const conStatusline = settings !== null && statuslineInstalada(settings);
+  const ajena = settings?.statusLine !== undefined && !conStatusline;
+  pasos.push({
+    id: "statusline",
+    titulo: "Statusline de Brote (opcional)",
+    estado: conStatusline ? "ok" : "opcional",
+    detalle: errorSettings
+      ? errorSettings
+      : conStatusline
+        ? "Brote recibe el % de tu sesión de 5 h y de la semana cada vez que usas Claude Code."
+        : "Para ver cuánto llevas de tu plan de Claude, Brote necesita su statusline en Claude Code: solo reenvía el % y la hora de reinicio." +
+          (ajena ? " Ya tienes una statusline: Brote la conserva y la sigue mostrando igual." : ""),
+    accion:
+      conStatusline || errorSettings
+        ? undefined
+        : {
+            tipo: "automatica",
+            etiqueta: "Instalar",
+            requiereConsentimiento: true,
+            textoConsentimiento:
+              ` Acepto que Brote ponga su statusline en mi configuración de Claude Code (${rutaSettings()}). Se respalda el archivo, ` +
+              (ajena ? "mi statusline actual se sigue mostrando tal cual, " : "") +
+              "solo se envían el % del plan y la hora de reinicio a Brote (nunca mis credenciales ni mis mensajes), y puedo desinstalarla cuando quiera.",
+          },
+    quitar: conStatusline ? { paso: "statusline-quitar", etiqueta: "Desinstalar" } : undefined,
+  });
 
   const url = leerUrlIcal();
   let detalle = "Pega la «dirección secreta en formato iCal» de Google Calendar (Configuración → tu calendario → Integrar el calendario). Queda solo en este computador.";
@@ -611,6 +641,32 @@ export function aplicar(id: string): string {
       const respaldo = escribirSettings(quitarHooks(actual));
       return `Desinstalé los hooks de Brote; tus otros hooks quedaron igual.${respaldo ? ` Respaldo: ${respaldo}` : ""}`;
     }
+    case "statusline": {
+      const { statusline } = recursos();
+      if (statusline.origen) {
+        mkdirSync(CARPETA_APP, { recursive: true });
+        copyFileSync(statusline.origen, statusline.destino);
+      }
+      const { config: nueva, original } = instalarStatusline(leerSettings(), comandoHook(process.execPath, statusline.destino), leerOriginalGuardada());
+      // Primero la original (si escribir settings.json falla, sobra un archivo; al revés se perdería).
+      guardarOriginal(original);
+      const respaldo = escribirSettings(nueva);
+      return (
+        `Statusline instalada.${original ? " Tu statusline anterior se sigue mostrando igual." : ""} ` +
+        `${respaldo ? `Respaldé tu configuración en ${respaldo}. ` : ""}El % llega la próxima vez que Claude Code te responda.`
+      );
+    }
+    case "statusline-quitar": {
+      const actual = leerSettings();
+      if (!statuslineInstalada(actual)) {
+        borrarOriginal();
+        return "La statusline de Brote no estaba instalada.";
+      }
+      const original = leerOriginalGuardada();
+      const respaldo = escribirSettings(quitarStatusline(actual, original));
+      borrarOriginal();
+      return `Desinstalé la statusline de Brote${original ? " y dejé la tuya como estaba" : ""}.${respaldo ? ` Respaldo: ${respaldo}` : ""}`;
+    }
     case "calendario-mac": {
       const lectura = leerCalendarioMacAhora(Date.now(), true);
       if (lectura?.permiso !== 3) throw new Error("Brote no quedó con acceso al Calendario. Puedes activarlo en Privacidad y seguridad → Calendarios.");
@@ -798,7 +854,7 @@ async function ordenConectar(orden: string, args: string[]): Promise<void> {
 // ---------------------------------------------------------------- línea de comandos
 
 /** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
-const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac", "programador", "programador-quitar"];
+const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac", "programador", "programador-quitar", "statusline", "statusline-quitar"];
 
 if (import.meta.main) {
   const [orden, paso, ...resto] = process.argv.slice(2);

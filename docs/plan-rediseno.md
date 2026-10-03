@@ -22,6 +22,14 @@ las tarjetas de Inicio (en Configurar Brote → Funciones).
 
 ## 2. Uso del plan de Claude (pestaña Claude)
 
+> Hecho (ver CLAUDE.md, "Uso del plan"): función `uso-del-plan`, statusline de Brote (`statusline.ts`, con
+> consentimiento y envolviendo la que ya hubiera) que reenvía `rate_limits` al puente (`POST /plan`,
+> `plan.json`), lector incremental de las transcripciones (`uso.ts`, `uso-archivo.ts`), tabla de precios del
+> 3 de octubre de 2026 (`precios.ts`), barras, tokens y precios en la pestaña Claude, avisos de 80 % y 95 %,
+> frases sin IA y MCP `claude_uso`. Verificado en la documentación de la statusline (Claude Code 2.1.283):
+> trae `rate_limits.five_hour` / `seven_day` con `used_percentage` y `resets_at`, solo en Pro/Max y después
+> de la primera respuesta. Probado con datos armados en Linux; falta probarlo en un Mac con Claude Code real.
+
 Qué mostrar:
 - Límite de la sesión de 5 h y el semanal: barra con % usado y "se reinicia en 2 h 10 min".
 - Tokens de hoy y de la semana por modelo (entrada, salida, caché), y su **valor API** en USD.

@@ -94,6 +94,11 @@ async function iniciar(): Promise<void> {
       ? {
           alAbrirMemoria: () => void invoke("abrir_memoria"),
           alAbrirConfiguracion: () => void invoke("abrir_configuracion"),
+          alActualizarPlan: () =>
+            void puente
+              .consultar<EstadoUso>({ tipo: "plan-actualizar" })
+              .then((estado) => panel.mostrarUso(estado))
+              .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
@@ -222,13 +227,14 @@ async function iniciar(): Promise<void> {
     };
     puente.alCambiarUso(cambiarUso);
     let ultimaConsultaUso = 0;
-    const pedirUso = () => {
+    // `refrescar`: con la pestaña a la vista, el puente puede revisar el % si está viejo (consulta mínima).
+    const pedirUso = (refrescar: boolean) => {
       ultimaConsultaUso = Date.now();
-      void puente.consultar<EstadoUso>({ tipo: "uso-estado" }).then(cambiarUso, () => {});
+      void puente.consultar<EstadoUso>({ tipo: "uso-estado", refrescar }).then(cambiarUso, () => {});
     };
-    pedirUso();
+    pedirUso(false);
     setInterval(() => {
-      if (panel.usoALaVista && Date.now() - ultimaConsultaUso >= USO_CADA_MS) pedirUso();
+      if (panel.usoALaVista && Date.now() - ultimaConsultaUso >= USO_CADA_MS) pedirUso(true);
     }, 5000);
     setInterval(() => uso && panel.mostrarUso(uso), 30_000);
     puente.alAvisoPlan((texto) => {

@@ -22,6 +22,11 @@ las tarjetas de Inicio (en Configurar Brote → Funciones).
 
 ## 2. Uso del plan de Claude (pestaña Claude)
 
+> **Hecho (3 de octubre de 2026).** El % llega de tres fuentes y vale la más reciente: la statusline
+> (Claude Code interactivo), el archivo de la app de escritorio de Claude (idea de vorssaint-utils) y una
+> consulta mínima `claude -p` que lee el evento `rate_limit_event` (~585 tokens, como mucho cada 15 min y
+> solo con la pestaña Claude a la vista o el botón ↻). Detalles en CLAUDE.md. Lo de abajo es el plan original.
+
 > Hecho (ver CLAUDE.md, "Uso del plan"): función `uso-del-plan`, statusline de Brote (`statusline.ts`, con
 > consentimiento y envolviendo la que ya hubiera) que reenvía `rate_limits` al puente (`POST /plan`,
 > `plan.json`), lector incremental de las transcripciones (`uso.ts`, `uso-archivo.ts`), tabla de precios del

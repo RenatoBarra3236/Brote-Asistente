@@ -21,6 +21,6 @@ export { FUNCIONES, IDS_FUNCIONES, IDS_TARJETAS, MENSAJE_APAGADA, MENSAJE_APAGAD
 export { FuncionesVigiladas, leerFunciones, marcaFunciones, rutaFunciones } from "./funciones-archivo.ts";
 export { FECHA_PRECIOS, FUENTE_PRECIOS, PRECIOS, PRECIOS_RAPIDO, claveModelo, nombreModelo, precioDe, type Precio } from "./precios.ts";
 export { DIAS_GUARDADOS, describirUso, formatearTokens, formatearUsd, leerLineaUso, nombreDeCarpeta, reconstruirRuta, resumirUso, tokensDe, valorApi, valorDe, type RegistroUso, type ResumenPeriodo, type ResumenUso, type TokensUso, type TotalUso } from "./uso.ts";
-export { UMBRALES_PLAN, avisosPlan, colorPlan, cuandoReinicia, describirPlan, describirReinicio, faltaPara, haceCuanto, horaCorta, leerDatosPlan, limpiarAvisados, normalizarLectura, vigente, type LecturaPlan, type VentanaPlan } from "./plan.ts";
-export { LectorUso, NombresDeProyectos, RUTA_CACHE_USO, RUTA_PLAN, carpetaDeProyecto, rutaPlan, carpetaProyectosClaude, escribirPrivado, guardarPlan, leerPlanGuardado, type PlanGuardado } from "./uso-archivo.ts";
+export { DURACION_PLAN, UMBRALES_PLAN, avisosPlan, colorPlan, combinarPlan, cuandoReinicia, describirPlan, describirReinicio, faltaPara, haceCuanto, horaCorta, leerDatosPlan, leerEventoLimites, leerPlanApp, limpiarAvisados, normalizarLectura, paraMostrar, vigente, type FuentePlan, type LecturaPlan, type VentanaPlan, type VentanaVista } from "./plan.ts";
+export { LectorUso, NombresDeProyectos, PlanDeAppClaude, RUTA_CACHE_USO, RUTA_PLAN, rutaPlanApp, carpetaDeProyecto, rutaPlan, carpetaProyectosClaude, escribirPrivado, guardarPlan, leerPlanGuardado, type PlanGuardado } from "./uso-archivo.ts";
 export { type UsoClaude } from "./motor.ts";

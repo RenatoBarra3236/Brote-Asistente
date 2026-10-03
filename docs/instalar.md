@@ -113,9 +113,17 @@ Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Mod
 
 Si tienes Claude Pro o Max, Brote te muestra en la pestaña **Claude** de la isla cuánto llevas de tu **sesión de 5 horas** y de la **semana** (una barra verde, ámbar o roja con "se reinicia en 2 h 10 min"), y te avisa una vez al pasar el 80 % y el 95 % de la sesión. Debajo: tus tokens de hoy y de los últimos 7 días (entrada, salida y caché), separados entre lo que gastó Brote y tus propias sesiones de Claude Code, con los proyectos que más gastan y su **valor API**: lo que costaría pagando por token con los precios oficiales de Anthropic. **No es un cobro**: tu plan cuesta lo mismo; es solo para dimensionar cuánto usas.
 
-Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Uso del plan de Claude**, marca la casilla de su tarjeta y pulsa **Instalar**. Brote pone su "statusline" (la línea de abajo de Claude Code) en `~/.claude/settings.json`:
+Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Uso del plan de Claude**. Brote saca el % de tres lugares, sin tocar nunca tus contraseñas ni tus claves, y usa el más reciente:
 
-- Es la única forma de saber el % del plan sin tocar tus credenciales: Claude Code se lo entrega a la statusline. Brote solo se queda con el % y la hora de reinicio. Nunca lee tus contraseñas ni tus claves.
+- **La app de escritorio de Claude**, si la tienes abierta con su ícono en la barra de menú: ella misma anota tu % cada 5 a 15 minutos y Brote lo lee. No sabe la hora exacta de reinicio, así que Brote la estima ("se reinicia en ≈ 2 h").
+- **Claude Code**, si instalas la statusline de Brote (abajo): se actualiza cada vez que Claude Code te responde.
+- **Una consulta mínima** cuando las otras dos están viejas (más de 15 minutos): Brote le hace a Claude Code una pregunta cortísima solo para que le diga tus límites. Gasta unos 600 tokens (una fracción mínima de tu plan), corre solo mientras miras la pestaña Claude o cuando pulsas **↻**, y como mucho una vez cada 15 minutos.
+
+Cuando una ventana se reinicia, la barra queda en "0 % · se reinició a las 18:40" hasta la próxima lectura.
+
+Para la statusline (opcional): en la tarjeta **Uso del plan**, marca la casilla y pulsa **Instalar**. Brote la pone en `~/.claude/settings.json`:
+
+- Claude Code le entrega el % a la statusline después de cada respuesta. Brote solo se queda con el % y la hora de reinicio.
 - El % se actualiza **solo mientras usas Claude Code** (en una terminal o en la pestaña Code de la app de Claude), después de su primera respuesta. Si no lo has usado hace rato, la isla dice "actualizado hace…"; si nunca, "Abre Claude Code para ver tu plan". Lo que hace el propio Brote no lo actualiza.
 - Si no tenías statusline, en Claude Code verás abajo algo como `🌱 5 h 23 % · semana 41 % · contexto 12 %`. Si ya tenías una, **se sigue viendo igual**: Brote la conserva y la corre por dentro. Ojo: con una statusline puesta, Claude Code esconde la mayoría de las ayudas que muestra abajo.
 - Los tokens se leen de los archivos de historial que Claude Code guarda en tu computador (solo las cifras de uso, nunca el texto de las conversaciones), cada minuto mientras miras la pestaña Claude.
@@ -181,7 +189,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 | Brote dice "Eso está apagado" | Prende esa función en **Configurar Brote → Funciones** |
 | No veo una tarjeta en la isla (la música, las descargas…) | Revisa en **Configurar Brote → Funciones** que su función esté prendida y que la tarjeta esté marcada en **Tarjetas de Inicio** |
 | Brote no responde preguntas, solo gastos | Revisa que Claude Code tenga tu sesión iniciada (`claude` en una terminal) |
-| La pestaña Claude dice "Abre Claude Code para ver tu plan" | El % llega cuando Claude Code te responde (en una terminal o en la pestaña Code). Si sigue igual, revisa en **Configurar Brote → Funciones → Uso del plan** que la statusline esté instalada |
+| La pestaña Claude dice "Pulsa ↻ para revisar tu plan" | Pulsa **↻**: Brote le pregunta a Claude Code tus límites (necesita Claude Code con tu sesión iniciada). Para que se mantenga al día sin consultas, deja abierta la app de Claude con su ícono en la barra de menú o usa Claude Code con la statusline de Brote |
 | La tarjeta de Entregas dice "No pude leer tu aula" | El token venció o lo borraste: crea uno nuevo y pégalo en **Configurar Brote → Aula** |
 | Un conector dice "Guardado, pero falta autorizar" | Pulsa **Autorizar** (o pega un token nuevo, en GitHub) |
 | No sé cómo cerrarlo | 🌱 → **Salir de Brote** |

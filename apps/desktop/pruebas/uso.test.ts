@@ -24,14 +24,39 @@ describe("uso del plan en la isla", () => {
         ["Semana", 41, "verde", "se reinicia en 4 d"],
       ],
     );
-    assert.equal(actualizado, "actualizado hace 3 min");
+    assert.equal(actualizado, "actualizado hace 3 min · Claude Code");
     assert.equal(barrasPlan({ ...plan, sesion: { porcentaje: 70, reiniciaMs: AHORA + MIN } }, AHORA).barras[0].color, "ambar");
   });
 
-  test("sin datos o vencido, no hay barras (la isla dice cómo conseguirlas)", () => {
+  test("sin datos no hay barras; una ventana reiniciada queda en 0 % con la hora en que se reinició", () => {
     assert.deepEqual(barrasPlan(null, AHORA), { barras: [], actualizado: null });
-    assert.deepEqual(barrasPlan(plan, AHORA + 3 * 1440 * MIN).barras.map((b) => b.nombre), ["Semana"]);
-    assert.deepEqual(barrasPlan(plan, AHORA + 5 * 1440 * MIN).barras, []);
+    const despues = barrasPlan(plan, AHORA + 3 * 1440 * MIN).barras;
+    assert.deepEqual(despues.map((b) => [b.nombre, b.porcentaje, b.reinicia]), [
+      ["Sesión de 5 h", 0, "se reinició a las 18:40"],
+      ["Semana", 41, "se reinicia en 1 d"],
+    ]);
+    assert.deepEqual(barrasPlan(plan, AHORA + 5 * 1440 * MIN).barras.map((b) => [b.porcentaje, b.reinicia]), [
+      [0, "se reinició a las 18:40"],
+      [0, "se reinició a las 16:30"],
+    ]);
+    // Más de una semana después de reiniciarse, ya no se muestra.
+    assert.deepEqual(barrasPlan(plan, AHORA + 12 * 1440 * MIN).barras, []);
+  });
+
+  test("de la app de Claude: hora estimada con ≈, y una ventana sin empezar", () => {
+    const deApp: LecturaPlan = {
+      sesion: { porcentaje: 0, reiniciaMs: null, estimado: true },
+      semana: { porcentaje: 76, reiniciaMs: AHORA + 30 * 60 * MIN, estimado: true },
+      modelo: null,
+      actualizadoMs: AHORA - 6 * MIN,
+      fuente: "app",
+    };
+    const { barras, actualizado } = barrasPlan(deApp, AHORA);
+    assert.deepEqual(barras.map((b) => [b.porcentaje, b.reinicia]), [
+      [0, "sin usar desde el último reinicio"],
+      [76, "se reinicia en ≈ 1 d 6 h"],
+    ]);
+    assert.equal(actualizado, "actualizado hace 6 min · app de Claude");
   });
 
   test("filas de tokens: Brote y tus sesiones, con su valor API", () => {

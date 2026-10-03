@@ -93,7 +93,8 @@ export const FUNCIONES: readonly Funcion[] = [
   {
     id: "uso-del-plan",
     nombre: "Uso del plan de Claude",
-    descripcion: "Cuánto llevas de tu sesión de 5 h y de la semana, y tus tokens con su valor API. Sin tocar tus credenciales.",
+    descripcion:
+      "Cuánto llevas de tu sesión de 5 h y de la semana, y tus tokens con su valor API. Lo lee de Claude Code, de la app de Claude y, si hace falta, de una consulta mínima (~600 tokens, como mucho cada 15 min y solo con la pestaña Claude a la vista). Sin tocar tus credenciales.",
     permiso: null,
     tarjeta: null,
   },

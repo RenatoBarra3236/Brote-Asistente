@@ -71,14 +71,19 @@
 //     de los permisos de macOS por las lecturas que ya se hicieron; nunca pregunta nada nuevo)
 //
 // Uso del plan de Claude (función "uso-del-plan"):
-//   el % de la sesión de 5 h y de la semana llega por la statusline de Claude Code (statusline.ts →
-//   POST /plan) y se guarda en ~/.asistente-prototipo/plan.json (600) para que sobreviva reinicios;
-//   pasado su reinicio, cada ventana se descarta. Los tokens se leen de las transcripciones de forma
+//   el % de la sesión de 5 h y de la semana llega de tres fuentes y vale la más reciente (combinarPlan
+//   en motor/plan.ts): la statusline de Claude Code (statusline.ts → POST /plan), el archivo de la app
+//   de escritorio de Claude (se mira cada minuto si cambió) y, como respaldo, la consulta mínima
+//   (consulta-plan.ts, ~585 tokens): al pedir "uso-estado" si el dato tiene más de 15 min, y con
+//   "plan-actualizar" (el botón ↻), nunca más de una vez cada 15 min (2 min con el botón). Se guarda en
+//   ~/.asistente-prototipo/plan.json (600) para que sobreviva reinicios. Los tokens se leen de las transcripciones de forma
 //   incremental (uso-archivo.ts), solo cuando alguien los pide (la isla cada 60 s con la pestaña Claude
 //   a la vista, el motor o el MCP) y como mucho una vez por minuto.
 //   aviso { "tipo": "uso", "plan": { sesion, semana, modelo, actualizadoMs } | null, "statusline": true, "resumen": … | null, "precios": { fecha, fuente, modelos } }
 //   aviso { "tipo": "plan-aviso", "texto": "Llevas 80 % de tu sesión de Claude; se reinicia a las 18:40" }   una vez por ventana
-//   pedido { "tipo": "uso-estado" }   → "datos": lo mismo que el aviso "uso"
+//   pedido { "tipo": "uso-estado", "refrescar"?: true }   → "datos": lo mismo que el aviso "uso" (con "consultando": true
+//     mientras corre la consulta). `refrescar` solo lo manda la isla con la pestaña Claude a la vista.
+//   pedido { "tipo": "plan-actualizar" }   → "datos": lo mismo, después de revisar la app y correr la consulta mínima
 //
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
@@ -155,6 +160,8 @@ import {
   FECHA_PRECIOS,
   FUENTE_PRECIOS,
   LectorUso,
+  PlanDeAppClaude,
+  combinarPlan,
   NombresDeProyectos,
   avisosPlan,
   guardarPlan,
@@ -180,6 +187,7 @@ import {
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
 import { migrarFunciones } from "./migrar-funciones.ts";
+import { consultarPlan } from "./consulta-plan.ts";
 import { esDeMemoria } from "./permisos.ts";
 import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE, memoriaDeClaudeCode } from "./rutas.ts";
 import { leerSettings } from "./hooks-claude.ts";
@@ -633,7 +641,9 @@ function statuslinePuesta(): boolean {
 function estadoUso() {
   const modelos = resumenUso?.modelos ?? (lecturaPlan?.modelo ? [lecturaPlan.modelo] : []);
   return {
-    plan: vigente(lecturaPlan, Date.now()),
+    // Sin filtrar: la isla muestra "0 % · se reinició a las…" en vez de quitar la barra (paraMostrar).
+    plan: lecturaPlan,
+    consultando: consultandoPlan !== null,
     statusline: statuslinePuesta(),
     resumen: resumenUso,
     // Los precios de los modelos que aparecen en el uso (`precio: null`: no está en la tabla).
@@ -652,9 +662,15 @@ function avisarUso(): void {
 /** Lo que manda la statusline de Claude Code: el % de la sesión de 5 h y de la semana. */
 function alPlanClaude(datos: unknown): void {
   if (!activa("uso-del-plan")) return;
+  const lectura = leerDatosPlan(datos, Date.now());
+  if (lectura) aplicarLecturaPlan(lectura);
+}
+
+/** Junta una lectura nueva (de cualquier fuente) con la que había, avisa si toca y la guarda. */
+function aplicarLecturaPlan(nueva: LecturaPlan): void {
   const ahora = Date.now();
-  const lectura = leerDatosPlan(datos, ahora);
-  if (!lectura) return;
+  const lectura = combinarPlan(lecturaPlan, nueva);
+  if (!lectura || JSON.stringify(lectura) === JSON.stringify(lecturaPlan)) return;
   lecturaPlan = lectura;
   for (const texto of avisosPlan(lectura, ahora, avisadosPlan)) {
     registrar("plan: aviso");
@@ -668,6 +684,48 @@ function alPlanClaude(datos: unknown): void {
   }
   avisarUso();
 }
+
+// Las otras dos fuentes del % del plan: el archivo de la app de Claude y la consulta mínima.
+const planDeApp = new PlanDeAppClaude();
+const CONSULTA_CADA_MS = 15 * 60_000;
+const CONSULTA_FORZADA_CADA_MS = 2 * 60_000;
+let consultandoPlan: Promise<void> | null = null;
+let ultimaConsultaPlanMs = 0;
+
+/** Si la app de Claude anotó algo más nuevo que lo que se sabe, lo toma (solo mira la fecha del archivo). */
+function revisarPlanDeApp(): void {
+  if (!activa("uso-del-plan")) return;
+  const lectura = planDeApp.leer(Date.now());
+  if (lectura && (!lecturaPlan || lectura.actualizadoMs > lecturaPlan.actualizadoMs)) aplicarLecturaPlan(lectura);
+}
+
+/**
+ * Revisa la app de Claude y, si el dato sigue viejo (más de 15 min) o `forzar` (el botón ↻), corre la
+ * consulta mínima: como mucho una vez cada 15 min, o cada 2 min con el botón. Nunca en segundo plano:
+ * solo cuando la isla pide el uso (pestaña Claude a la vista) o el usuario lo pide.
+ */
+function refrescarPlan(forzar: boolean): Promise<void> {
+  if (!activa("uso-del-plan")) return Promise.resolve();
+  revisarPlanDeApp();
+  if (consultandoPlan) return consultandoPlan;
+  const ahora = Date.now();
+  const edad = lecturaPlan ? ahora - lecturaPlan.actualizadoMs : Infinity;
+  if (!forzar && edad < CONSULTA_CADA_MS) return Promise.resolve();
+  if (ahora - ultimaConsultaPlanMs < (forzar ? CONSULTA_FORZADA_CADA_MS : CONSULTA_CADA_MS)) return Promise.resolve();
+  ultimaConsultaPlanMs = ahora;
+  consultandoPlan = (async () => {
+    avisarUso();
+    const lectura = await consultarPlan();
+    registrar(lectura ? "plan: consulta mínima lista" : "plan: la consulta mínima no trajo los límites");
+    if (lectura) aplicarLecturaPlan(lectura);
+  })().finally(() => {
+    consultandoPlan = null;
+    avisarUso();
+  });
+  return consultandoPlan;
+}
+setInterval(revisarPlanDeApp, 60_000);
+revisarPlanDeApp();
 
 /** Recalcula el uso por tokens si pasó más de un minuto (o `forzar`). Si queda por leer, sigue de a poco. */
 function actualizarUso(forzar = false): Promise<void> {
@@ -1173,8 +1231,14 @@ async function atender(pedido: any): Promise<Extra> {
     case "programador-estado":
       return { datos: estadoProgramador() };
     case "uso-estado":
-      if (!activa("uso-del-plan")) return { datos: { plan: null, statusline: statuslinePuesta(), resumen: null, precios: { fecha: FECHA_PRECIOS, fuente: FUENTE_PRECIOS, modelos: [] } } };
+      if (!activa("uso-del-plan")) return { datos: { plan: null, consultando: false, statusline: statuslinePuesta(), resumen: null, precios: { fecha: FECHA_PRECIOS, fuente: FUENTE_PRECIOS, modelos: [] } } };
+      // Con la pestaña Claude a la vista (`refrescar`): si el % está viejo, se refresca sin esperar.
+      if (pedido.refrescar === true) void refrescarPlan(false);
       await esperarUso(3000);
+      return { datos: estadoUso() };
+    case "plan-actualizar":
+      if (!activa("uso-del-plan")) throw new Error("El uso del plan está apagado: actívalo en Configurar Brote ⚙️");
+      await refrescarPlan(true);
       return { datos: estadoUso() };
     case "programador-decidir": {
       const permiso = typeof pedido.permiso === "string" ? permisosClaude.get(pedido.permiso) : undefined;

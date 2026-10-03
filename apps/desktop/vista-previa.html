@@ -6,9 +6,10 @@
   Parámetros: ?pestana=brote|chat|claude|equipo (chat = la pestaña Brote con una pregunta enviada: las
   tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) ·
   ?vacia=1 (sin datos) · ?modo=flotante (la ventana de Windows) · ?ocultas=musica,descargas (tarjetas
-  ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite
+  ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite|app|reiniciado
   (el uso del plan de Claude en la pestaña Claude: con datos, sin datos todavía, sin la statusline instalada,
-  o cerca del límite con el aviso de 95 %).
+  cerca del límite con el aviso de 95 %, leído de la app de Claude con la hora estimada, o con la sesión de
+  5 h ya reiniciada). El botón ↻ simula la consulta mínima.
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -71,6 +72,7 @@
             },
           };
       // Uso del plan de Claude (pestaña Claude), como lo manda el puente.
+      // ?plan=con|sin|sin-statusline|limite|app|reiniciado
       const modoPlan = parametros.get("plan") ?? "con";
       const total = (entrada, salida, cache, usd, sinPrecio = 0) => ({ entrada, salida, cache, usd, sinPrecio });
       const periodo = (f) => ({
@@ -90,11 +92,28 @@
         plan:
           modoPlan === "sin" || modoPlan === "sin-statusline"
             ? null
+            : modoPlan === "app"
+            ? {
+                sesion: { porcentaje: 0, reiniciaMs: null, estimado: true },
+                semana: { porcentaje: 76, reiniciaMs: ahora + 30 * 3_600_000, estimado: true },
+                modelo: null,
+                actualizadoMs: ahora - 6 * 60_000,
+                fuente: "app",
+              }
+            : modoPlan === "reiniciado"
+            ? {
+                sesion: { porcentaje: 64, reiniciaMs: ahora - 25 * 60_000 },
+                semana: { porcentaje: 41, reiniciaMs: ahora + 4 * 86_400_000 },
+                modelo: null,
+                actualizadoMs: ahora - 3 * 3_600_000,
+                fuente: "consulta",
+              }
             : {
                 sesion: { porcentaje: cerca ? 96 : 23, reiniciaMs: ahora + 2 * 3_600_000 + 10 * 60_000 },
                 semana: { porcentaje: cerca ? 78 : 41, reiniciaMs: ahora + 4 * 86_400_000 + 16 * 3_600_000 },
                 modelo: "claude-sonnet-5",
                 actualizadoMs: ahora - 3 * 60_000,
+                fuente: "statusline",
               },
         statusline: modoPlan !== "sin-statusline",
         resumen: vacia ? null : { hoy: periodo(1), semana: periodo(5.2), modelos: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], calculadoMs: ahora },
@@ -167,7 +186,7 @@
               if (parametros.has("cerrada")) return { x: mouse.x - caja.left - caja.width / 2, y: 400 };
               // Flotante: el cursor sobre Brote (abajo a la derecha), que es lo que abre el panel.
               if (parametros.get("modo") === "flotante") return { x: caja.width / 2 - 62, y: caja.height / 2 - 50 };
-              return { x: Math.max(-200, Math.min(200, mouse.x - caja.left - caja.width / 2)), y: -caja.height / 2 + 20 };
+              return { x: Math.max(-120, Math.min(120, mouse.x - caja.left - caja.width / 2)), y: -caja.height / 2 + 20 };
             }
             case "agente_escribir": {
               const pedido = JSON.parse(args.linea);
@@ -187,6 +206,17 @@
                   return responder(id, { datos: datos.programador });
                 case "uso-estado":
                   return responder(id, { datos: uso });
+                case "plan-actualizar":
+                  // El botón ↻: la "consulta mínima" tarda unos segundos y trae el plan con su hora exacta.
+                  emitir({ tipo: "uso", ...uso, consultando: true });
+                  uso.plan = {
+                    sesion: { porcentaje: 22, reiniciaMs: Date.now() + 4 * 3_600_000 + 40 * 60_000 },
+                    semana: { porcentaje: 76, reiniciaMs: Date.now() + 27 * 3_600_000 },
+                    modelo: null,
+                    actualizadoMs: Date.now(),
+                    fuente: "consulta",
+                  };
+                  return setTimeout(() => emitir({ tipo: "respuesta", id, ok: true, datos: { ...uso, consultando: false } }), 2500);
                 case "equipo-estado":
                   t += 1;
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });

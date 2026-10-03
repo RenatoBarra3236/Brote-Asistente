@@ -48,6 +48,7 @@ describe("plan de Claude", () => {
       semana: { porcentaje: 41, reiniciaMs: 1_790_400_000_000 },
       modelo: "claude-sonnet-5",
       actualizadoMs: AHORA,
+      fuente: "statusline",
     });
     // Cada ventana puede faltar.
     assert.equal(leerDatosPlan({ rate_limits: { seven_day: ejemplo.rate_limits.seven_day } }, AHORA)?.sesion, null);
@@ -66,7 +67,7 @@ describe("plan de Claude", () => {
     assert.equal(vigente(l, despues)?.semana?.porcentaje, 41);
     assert.equal(vigente(l, new Date(2026, 9, 9).getTime()), null);
     assert.equal(normalizarLectura({ nada: 1 }), null);
-    assert.deepEqual(normalizarLectura(JSON.parse(JSON.stringify(l))), l);
+    assert.deepEqual(normalizarLectura(JSON.parse(JSON.stringify(l))), { ...l, fuente: "statusline" });
   });
 
   it("colores y formatos", () => {
@@ -125,9 +126,10 @@ describe("plan de Claude", () => {
     assert.equal(motor.resolver("cuando se reinicia mi plan")!.texto, "🔄 Tu sesión de 5 h se reinicia a las 18:40 (en 2 h 10 min); la semana, el jue a las 9:00.");
     assert.equal(motor.resolver("¿cómo va mi plan de Claude?")!.intencion, "plan-uso");
     plan = null;
-    assert.match(motor.resolver("¿cuánto llevo del plan?")!.texto, /se actualiza cuando usas Claude Code/);
+    assert.match(motor.resolver("¿cuánto llevo del plan?")!.texto, /pulsa ↻/);
+    // Sin la statusline también: el plan puede llegar de la app de Claude o de la consulta mínima.
     statusline = false;
-    assert.match(motor.resolver("¿cuánto llevo del plan?")!.texto, /instala la statusline/);
+    assert.match(motor.resolver("¿cuánto llevo del plan?")!.texto, /pulsa ↻/);
     // Con la función apagada, el motor lo dice (no va al agente).
     const apagado = new Motor(gastos, { uso: () => ({ plan, statusline, resumen: null }), activa: (f) => f !== "uso-del-plan" });
     assert.match(apagado.resolver("¿cuánto llevo del plan?")!.texto, /apagado/);

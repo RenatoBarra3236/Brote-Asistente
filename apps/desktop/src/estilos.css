@@ -952,7 +952,31 @@ button.tarjeta:hover {
 .uso-cabecera .seccion-titulo {
   padding: 0;
 }
+/* ↻ Revisar el plan ahora (gira mientras corre la consulta mínima). */
+.uso-refrescar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--texto-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.uso-refrescar:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.uso-refrescar.girando svg {
+  animation: girar 0.9s linear infinite;
+}
 .uso-actualizado {
+  margin-left: auto;
   color: var(--texto-3);
   font-size: 10.5px;
 }

@@ -2,7 +2,7 @@
 // texto, y las filas de tokens. Sin DOM, para probarlo con Node. Los cálculos y formatos vienen del
 // motor (packages/motor/src/{plan,uso,precios}.ts), los mismos que usa el puente.
 
-import { colorPlan, faltaPara, haceCuanto, vigente, type LecturaPlan } from "../../../../packages/motor/src/plan.ts";
+import { colorPlan, faltaPara, haceCuanto, horaCorta, paraMostrar, type LecturaPlan } from "../../../../packages/motor/src/plan.ts";
 import { formatearTokens, valorDe, type ResumenPeriodo, type ResumenUso, type TotalUso } from "../../../../packages/motor/src/uso.ts";
 import type { Precio } from "../../../../packages/motor/src/precios.ts";
 
@@ -13,6 +13,8 @@ export type { LecturaPlan, ResumenPeriodo, ResumenUso, TotalUso, Precio };
 /** Lo que manda el puente (aviso "uso" y pedido "uso-estado"). */
 export interface EstadoUso {
   plan: LecturaPlan | null;
+  /** Corre la consulta mínima (el botón ↻ gira). */
+  consultando?: boolean;
   /** Si la statusline de Brote está instalada en Claude Code. */
   statusline: boolean;
   resumen: ResumenUso | null;
@@ -29,25 +31,36 @@ export interface BarraPlan {
   reinicia: string;
 }
 
-/** Las barras de la sesión de 5 h y de la semana (solo las vigentes) y "actualizado hace 3 min". */
+const FUENTES: Record<string, string> = { statusline: "Claude Code", consulta: "consulta", app: "app de Claude" };
+
+/**
+ * Las barras de la sesión de 5 h y de la semana y "actualizado hace 3 min · app de Claude". Una ventana
+ * que ya se reinició se muestra en 0 % ("se reinició a las 18:40") hasta la próxima lectura; una hora
+ * de reinicio estimada (de la app de Claude) lleva "≈".
+ */
 export function barrasPlan(plan: LecturaPlan | null, ahoraMs: number): { barras: BarraPlan[]; actualizado: string | null } {
-  const l = vigente(plan, ahoraMs);
-  if (!l) return { barras: [], actualizado: null };
+  const vista = paraMostrar(plan, ahoraMs);
+  if (!plan || !vista) return { barras: [], actualizado: null };
   const barras: BarraPlan[] = [];
   for (const [nombre, v] of [
-    ["Sesión de 5 h", l.sesion],
-    ["Semana", l.semana],
+    ["Sesión de 5 h", vista.sesion],
+    ["Semana", vista.semana],
   ] as const) {
     if (!v) continue;
-    barras.push({
-      nombre,
-      porcentaje: Math.round(v.porcentaje),
-      fraccion: v.porcentaje / 100,
-      color: colorPlan(v.porcentaje),
-      reinicia: `se reinicia en ${faltaPara(v.reiniciaMs, ahoraMs)}`,
-    });
+    const casi = v.estimado ? "≈ " : "";
+    const reinicia = v.reiniciada
+      ? v.reiniciaMs !== null
+        ? `se reinició ${v.estimado ? "cerca de las" : "a las"} ${horaCorta(v.reiniciaMs)}`
+        : "ya se reinició"
+      : v.reiniciaMs !== null
+        ? `se reinicia en ${casi}${faltaPara(v.reiniciaMs, ahoraMs)}`
+        : v.porcentaje === 0
+          ? "sin usar desde el último reinicio"
+          : "";
+    barras.push({ nombre, porcentaje: Math.round(v.porcentaje), fraccion: v.porcentaje / 100, color: colorPlan(v.porcentaje), reinicia });
   }
-  return { barras, actualizado: `actualizado ${haceCuanto(l.actualizadoMs, ahoraMs)}` };
+  const fuente = FUENTES[plan.fuente ?? "statusline"];
+  return { barras, actualizado: `actualizado ${haceCuanto(plan.actualizadoMs, ahoraMs)}${fuente ? ` · ${fuente}` : ""}` };
 }
 
 /** Las filas de la tabla de tokens: [nombre, Brote, tus sesiones]. */

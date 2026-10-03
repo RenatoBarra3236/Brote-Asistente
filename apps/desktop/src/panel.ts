@@ -67,6 +67,8 @@ export interface Zona {
 interface Opciones {
   alAbrirMemoria?: () => void;
   alAbrirConfiguracion?: () => void;
+  /** El botón ↻ del uso del plan: revisa la app de Claude y corre la consulta mínima. */
+  alActualizarPlan?: () => void;
   flotante?: boolean;
   alCancelarTemporizador?: (id: number) => void;
   alMostrarDescarga?: (ruta: string) => void;
@@ -147,6 +149,7 @@ export class Panel {
   private permisosVistos = new Set<string>();
   private readonly usoPlan: HTMLDivElement;
   private readonly usoActualizado: HTMLSpanElement;
+  private readonly usoRefrescar: HTMLButtonElement;
   private readonly usoBarras: HTMLDivElement;
   private readonly usoSinPlan: HTMLDivElement;
   private readonly usoTokens: HTMLDivElement;
@@ -304,7 +307,13 @@ export class Panel {
     const usoTitulo = crear("div", "seccion-titulo");
     usoTitulo.textContent = "Uso del plan";
     this.usoActualizado = crear("span", "uso-actualizado");
-    cabeceraUso.append(usoTitulo, this.usoActualizado);
+    this.usoRefrescar = botonIcono("uso-refrescar", "refrescar", "Revisar el plan ahora (gasta unos 600 tokens si no hay un dato reciente)");
+    this.usoRefrescar.addEventListener("click", () => {
+      this.usoRefrescar.classList.add("girando");
+      this.opciones.alActualizarPlan?.();
+    });
+    this.usoRefrescar.hidden = !opciones.alActualizarPlan;
+    cabeceraUso.append(usoTitulo, this.usoActualizado, this.usoRefrescar);
     this.usoBarras = crear("div", "uso-barras");
     this.usoSinPlan = crear("div", "uso-sin-plan");
     this.usoTokens = crear("div", "uso-tokens");
@@ -599,6 +608,7 @@ export class Panel {
     const ahora = Date.now();
     const { barras, actualizado } = barrasPlan(estado?.plan ?? null, ahora);
     this.usoActualizado.textContent = actualizado ?? "";
+    this.usoRefrescar.classList.toggle("girando", estado?.consultando === true);
     this.usoBarras.replaceChildren(
       ...barras.map((b) => {
         const fila = metrica(b.nombre, `${b.porcentaje} %`, b.fraccion, b.color);
@@ -613,13 +623,10 @@ export class Panel {
     const sinPlan: HTMLElement[] = [];
     if (barras.length === 0) {
       const texto = crear("p", "uso-plan-texto");
-      texto.textContent = estado?.statusline === false ? "Para ver tu plan, instala la statusline de Brote en Claude Code." : "Abre Claude Code para ver tu plan.";
+      texto.textContent = estado?.consultando
+        ? "Revisando tu plan…"
+        : "Pulsa ↻ para revisar tu plan. Se mantiene al día solo si usas Claude Code o tienes abierta la app de Claude con su ícono en la barra de menú.";
       sinPlan.push(texto);
-      if (estado?.statusline === false && this.opciones.alAbrirConfiguracion) {
-        const ir = boton("boton boton-fila", "Configurar Brote");
-        ir.addEventListener("click", () => this.opciones.alAbrirConfiguracion?.());
-        sinPlan.push(ir);
-      }
     }
     this.usoSinPlan.replaceChildren(...sinPlan);
     this.usoSinPlan.hidden = sinPlan.length === 0;

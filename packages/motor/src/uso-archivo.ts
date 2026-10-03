@@ -9,12 +9,12 @@
 //   - Cada vuelta lee como mucho `presupuesto` bytes y cede el turno entre trozos (el puente sigue
 //     atendiendo mientras tanto); lo que falte se lee en la próxima.
 
-import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, sep } from "node:path";
 import { DIAS_GUARDADOS, leerLineaUso, nombreDeCarpeta, reconstruirRuta, type RegistroUso } from "./uso.ts";
-import { limpiarAvisados, normalizarLectura, vigente, type LecturaPlan } from "./plan.ts";
+import { leerPlanApp, limpiarAvisados, normalizarLectura, vigente, type LecturaPlan } from "./plan.ts";
 
 const CARPETA_DATOS = join(homedir(), ".asistente-prototipo");
 export const RUTA_CACHE_USO = join(CARPETA_DATOS, "uso-cache.json");
@@ -280,4 +280,51 @@ export function leerPlanGuardado(ruta = rutaPlan(), ahoraMs = Date.now()): PlanG
 
 export function guardarPlan(plan: PlanGuardado, ruta = rutaPlan()): void {
   escribirPrivado(ruta, JSON.stringify({ version: 1, lectura: plan.lectura, avisados: plan.avisados }));
+}
+
+// ---------------------------------------------------------------- plan de la app de Claude
+
+/**
+ * El archivo donde la app de escritorio de Claude guarda el % del plan cada 5 a 15 min mientras su
+ * ícono está en la barra de menú (ver `leerPlanApp`). En macOS, verificado; en Windows es la ruta
+ * equivalente, sin verificar (si no existe, no se usa). `ASISTENTE_PLAN_APP` la cambia en las pruebas.
+ */
+export function rutaPlanApp(): string | null {
+  if (process.env.ASISTENTE_PLAN_APP) return process.env.ASISTENTE_PLAN_APP;
+  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", "Claude", "plan-usage-history.json");
+  if (process.platform === "win32" && process.env.APPDATA) return join(process.env.APPDATA, "Claude", "plan-usage-history.json");
+  return null;
+}
+
+/** La última lectura del archivo de la app de Claude, releído solo cuando cambia (se mira su fecha). */
+export class PlanDeAppClaude {
+  private marca = -1;
+  private lectura: LecturaPlan | null = null;
+  private readonly ruta: () => string | null;
+
+  constructor(ruta: () => string | null = rutaPlanApp) {
+    this.ruta = ruta;
+  }
+
+  leer(ahoraMs = Date.now()): LecturaPlan | null {
+    const ruta = this.ruta();
+    if (!ruta) return null;
+    let marca: number;
+    try {
+      marca = statSync(ruta).mtimeMs;
+    } catch {
+      this.marca = -1;
+      this.lectura = null;
+      return null;
+    }
+    if (marca !== this.marca) {
+      this.marca = marca;
+      try {
+        this.lectura = leerPlanApp(readFileSync(ruta, "utf8"), ahoraMs);
+      } catch {
+        this.lectura = null;
+      }
+    }
+    return this.lectura;
+  }
 }

@@ -171,7 +171,8 @@ export function filasPermisos(activas: Record<IdFuncion, boolean>, lectura: Lect
 
 /**
  * Las funciones prendidas a las que les falta configurar algo dentro de su tarjeta (el calendario sin
- * ninguna fuente, el aula sin campus, el modo programador sin hooks, la búsqueda sin su modelo).
+ * ninguna fuente, el aula sin campus, el modo programador sin hooks, el uso del plan sin la statusline,
+ * la búsqueda sin su modelo).
  */
 export function funcionesSinConfigurar(activas: Record<IdFuncion, boolean>, pasos: readonly Paso[]): Funcion[] {
   const listo = (id: string) => pasos.find((p) => p.id === id)?.estado === "ok";
@@ -179,6 +180,7 @@ export function funcionesSinConfigurar(activas: Record<IdFuncion, boolean>, paso
     calendario: !listo("calendario-mac") && !listo("calendario-ical"),
     aula: !listo("aula"),
     programador: !listo("programador"),
+    "uso-del-plan": !listo("statusline"),
     "memoria-local": !listo("memoria-local"),
   };
   return FUNCIONES.filter((f) => activas[f.id] && falta[f.id] === true);

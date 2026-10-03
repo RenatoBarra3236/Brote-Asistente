@@ -1,6 +1,6 @@
 // "Qué quieres que haga Brote": presets y una tarjeta con interruptor por función, que dice en una
 // línea qué hace y qué permiso de macOS pide. Lo que pide datos (iCal, aula) o consentimiento (modo
-// programador) se configura dentro de su tarjeta al prenderla. Debajo, el orden y la visibilidad de
+// programador, statusline del uso del plan) se configura dentro de su tarjeta al prenderla. Debajo, el orden y la visibilidad de
 // las tarjetas de Inicio en la isla. Todo va a funciones.json (Rust lo valida y lo guarda).
 
 import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
@@ -38,6 +38,12 @@ function configuracionDe(funcion: Funcion, activa: boolean): HTMLElement[] {
     // Apagado con los hooks instalados: se ofrece quitarlos (si no, Claude Code los sigue llamando).
     if (!activa && hooks?.estado === "ok") partes.push(subpaso(hooks, "Los hooks siguen instalados en Claude Code"));
     if (activa) partes.push(subpaso(hooks, hooks?.estado === "ok" ? "Hooks instalados" : "Falta instalar los hooks en Claude Code"));
+  }
+  if (funcion.id === "uso-del-plan") {
+    const statusline = paso("statusline");
+    // Apagado con la statusline instalada: se ofrece quitarla (Claude Code la sigue corriendo).
+    if (!activa && statusline?.estado === "ok") partes.push(subpaso(statusline, "La statusline sigue instalada en Claude Code"));
+    if (activa) partes.push(subpaso(statusline, statusline?.estado === "ok" ? "Statusline instalada" : "Falta instalar la statusline en Claude Code"));
   }
   if (!activa) return partes.filter((p): p is HTMLElement => p !== null);
   switch (funcion.id) {

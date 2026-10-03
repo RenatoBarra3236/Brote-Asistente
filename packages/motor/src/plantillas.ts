@@ -41,7 +41,10 @@ export type Intencion =
   | "calendario-crear-manana"
   | "programador-sesiones"
   | "aula-entregas"
-  | "aula-semana";
+  | "aula-semana"
+  | "plan-uso"
+  | "plan-reinicio"
+  | "plan-tokens";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
@@ -209,10 +212,19 @@ const ACTIVIDADES = "clases|clase|pruebas|prueba|reuniones|reunion|eventos|event
 const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
 const MUSICA = "musica|cancion|tema|spotify";
 const ENTREGABLES = "entregas|tareas|trabajos|informes";
+const PLAN = "plan|limite|limites";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
 export const PLANTILLAS_BASE: Plantilla[] = [
+  // El plan de Claude va antes que los gastos: "¿cuánto llevo del plan?" no es una consulta de gastos.
+  { id: "plan-uso", intencion: "plan-uso", patron: `(cuanto|que) (llevo|he usado|uso|he gastado|gaste|me queda|queda) (del|de mi|de) (${PLAN}) [de claude]` },
+  { id: "plan-uso-como", intencion: "plan-uso", patron: `como (va|esta|anda|voy con) (mi|el) (${PLAN}) [de claude]` },
+  { id: "plan-uso-corto", intencion: "plan-uso", patron: `[(muestrame|ver|dame)] [mi|el] (uso del plan|uso de claude|${PLAN} de claude)` },
+  { id: "plan-reinicio", intencion: "plan-reinicio", patron: `(cuando|a que hora) se (reinicia|resetea|renueva|reinician|resetean|renuevan) (mi|el|los) (${PLAN}|uso) [de claude]` },
+  { id: "plan-tokens", intencion: "plan-tokens", patron: "cuanto (he gastado|gaste|llevo gastado|llevo|he usado|uso|gasto) en tokens [de claude]" },
+  { id: "plan-tokens-cuantos", intencion: "plan-tokens", patron: "cuantos tokens (he gastado|gaste|llevo|he usado|uso|gasto) [hoy|esta semana]" },
+  { id: "plan-tokens-corto", intencion: "plan-tokens", patron: "[(muestrame|ver|dame)] [mi|el] (gasto|uso) (en|de) tokens" },
   { id: "gasto-verbo", intencion: "registrar-gasto", patron: `(${VERBO_GASTO}) {monto} (en|de|por|para) {cosa}` },
   {
     id: "gasto-anota",

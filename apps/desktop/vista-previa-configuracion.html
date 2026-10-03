@@ -43,6 +43,7 @@
         memoria: escenario !== "nuevo",
         "memoria-local": escenario === "listo",
         programador: false,
+        statusline: false,
         calendarioMac: escenario === "permiso" ? 2 : escenario === "listo" ? 3 : 0,
         ical: escenario === "listo",
         aula: escenario !== "nuevo",
@@ -51,7 +52,7 @@
             ? null
             : JSON.stringify({
                 version: 1,
-                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "memoria-local": false },
+                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false },
                 tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: [] },
               }),
       };
@@ -131,6 +132,25 @@
                 }),
           },
           {
+            id: "statusline",
+            titulo: "Statusline de Brote (opcional)",
+            estado: sim.statusline ? "ok" : "opcional",
+            detalle: sim.statusline
+              ? "Brote recibe el % de tu sesión de 5 h y de la semana cada vez que usas Claude Code."
+              : "Para ver cuánto llevas de tu plan de Claude, Brote necesita su statusline en Claude Code: solo reenvía el % y la hora de reinicio.",
+            ...(sim.statusline
+              ? { quitar: { paso: "statusline-quitar", etiqueta: "Desinstalar" } }
+              : {
+                  accion: {
+                    tipo: "automatica",
+                    etiqueta: "Instalar",
+                    requiereConsentimiento: true,
+                    textoConsentimiento:
+                      " Acepto que Brote ponga su statusline en mi configuración de Claude Code (~/.claude/settings.json). Se respalda el archivo, solo se envían el % del plan y la hora de reinicio a Brote (nunca mis credenciales ni mis mensajes), y puedo desinstalarla cuando quiera.",
+                  },
+                }),
+          },
+          {
             id: "calendario-ical",
             titulo: "Calendario por dirección iCal (opcional)",
             estado: sim.ical ? "ok" : "opcional",
@@ -164,11 +184,14 @@
         programador: "Modo programador instalado.",
         "programador-quitar": "Desinstalé los hooks de Brote; tus otros hooks quedaron igual.",
         "calendario-mac": "Listo: Brote ve tu calendario 📅",
+        statusline: "Statusline instalada. El % llega la próxima vez que Claude Code te responda.",
+        "statusline-quitar": "Desinstalé la statusline de Brote.",
       };
       function aplicar(id) {
         if (id === "agente") sim.agente = sim.modelo = true;
         else if (id === "programador") sim.programador = true;
         else if (id === "programador-quitar") sim.programador = false;
+        else if (id === "statusline-quitar") sim.statusline = false;
         else if (id === "calendario-mac") sim.calendarioMac = 3;
         else sim[id] = true;
         return { ok: true, detalle: OK[id] ?? "Listo." };

@@ -923,7 +923,7 @@ button.tarjeta:hover {
   color: var(--texto);
 }
 
-/* ---------- Claude: títulos de sección y el espacio reservado del uso del plan ---------- */
+/* ---------- Claude: títulos de sección y el uso del plan ---------- */
 
 .seccion-titulo {
   padding: 0 2px;
@@ -937,13 +937,158 @@ button.tarjeta:hover {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  gap: 7px;
+  padding: 9px 10px;
   border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+}
+.uso-cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.uso-cabecera .seccion-titulo {
+  padding: 0;
+}
+/* ↻ Revisar el plan ahora (gira mientras corre la consulta mínima). */
+.uso-refrescar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--texto-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.uso-refrescar:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.uso-refrescar.girando svg {
+  animation: girar 0.9s linear infinite;
+}
+.uso-actualizado {
+  margin-left: auto;
+  color: var(--texto-3);
+  font-size: 10.5px;
+}
+.uso-barras {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.uso-reinicia {
+  margin-left: 8px;
+  color: var(--texto-3);
+  font-size: 10.5px;
+  order: 1;
+}
+.uso-barras .metrica-valor {
+  order: 2;
+  margin-left: 8px;
+}
+.uso-barras .avance {
+  order: 3;
+}
+.uso-sin-plan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .uso-plan-texto {
   margin: 0;
+  color: var(--texto-2);
+  font-size: 11.5px;
+}
+.uso-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--linea);
+}
+.uso-selector {
+  display: flex;
+  gap: 4px;
+}
+.uso-periodo {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--texto-3);
+  font: 600 11px var(--sans);
+  cursor: pointer;
+}
+.uso-periodo:hover {
+  color: var(--texto);
+}
+.uso-periodo.elegido {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--texto);
+}
+.uso-tabla {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) auto auto;
+  align-items: baseline;
+  column-gap: 14px;
+  row-gap: 2px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.uso-tabla.precios {
+  grid-template-columns: minmax(70px, 1fr) auto auto auto;
+  column-gap: 10px;
+}
+.uso-col {
+  color: var(--texto-3);
+  font-size: 10px;
+  text-align: right;
+}
+.uso-col:first-child {
+  text-align: left;
+}
+.uso-fila {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--texto-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.uso-dato {
+  font: 600 11px var(--mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.uso-nota {
+  margin: 0;
+  color: var(--texto-3);
+  font-size: 10.5px;
+}
+.uso-precios {
+  padding-top: 6px;
+  border-top: 1px solid var(--linea);
+}
+.uso-precios[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.uso-precios-titulo {
+  color: var(--texto-2);
   font-size: 11px;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.uso-precios-titulo:hover {
+  color: var(--texto);
 }

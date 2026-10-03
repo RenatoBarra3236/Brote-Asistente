@@ -68,7 +68,7 @@ La función **Búsqueda por significado** es opcional: hace que Brote encuentre 
 
 ## 4. Usar Brote
 
-- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega. Arriba hay tres pestañas: **Brote** (lo que pasa ahora y la conversación: mientras te responde, las tarjetas se encogen a una fila de píldoras como "🍅 18:20 · 📅 en 25 min"; tócalas para verlas de nuevo), **Claude** (tus sesiones de Claude Code, si usas el modo programador) y **Equipo** (batería, CPU, memoria y disco).
+- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega. Arriba hay tres pestañas: **Brote** (lo que pasa ahora y la conversación: mientras te responde, las tarjetas se encogen a una fila de píldoras como "🍅 18:20 · 📅 en 25 min"; tócalas para verlas de nuevo), **Claude** (cuánto llevas de tu plan de Claude, si prendes el **uso del plan**, y tus sesiones de Claude Code, si usas el modo programador) y **Equipo** (batería, CPU, memoria y disco).
 - **Windows:** Brote vive en la esquina inferior derecha. Pasa el cursor por encima y aparece el panel. Puedes arrastrarlo a donde quieras.
 
 Prueba decirle:
@@ -95,6 +95,7 @@ Prueba decirle:
 | `¿qué entregas tengo?` · `¿qué tengo que entregar esta semana?` | Tus entregas de Canvas o Moodle, sin IA ⚡. La isla muestra la próxima ("📄 Laboratorio 4 · mañana 23:59") y Brote te avisa 24 horas y 2 horas antes. Hay que conectar el aula primero (abajo) |
 | `¿qué tareas tengo en Todoist?` · `busca mis apuntes de cálculo en Notion` | Lo responde la IA usando tus **conectores** (abajo). Leer no te pregunta; agregar, cambiar o borrar algo siempre te pide permiso en la isla ("Todoist · Agregar tareas") |
 | `¿qué está haciendo Claude?` · `¿cómo va Claude Code?` | Si programas con Claude Code y activaste el **modo programador** (abajo): tus sesiones en vivo, sin IA ⚡ |
+| `¿cuánto llevo del plan?` · `¿cuándo se reinicia mi plan?` · `¿cuánto he gastado en tokens?` | Con el **uso del plan** prendido (abajo): el % de tu sesión de 5 horas y de la semana, cuándo se reinicia cada una, y tus tokens de hoy y de los últimos 7 días con su "valor API", sin IA ⚡ |
 
 ### Modo programador (opcional)
 
@@ -105,8 +106,28 @@ Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Mod
 - Antes guarda una copia del archivo (`settings.json.brote-<fecha>.bak`) y no toca tus otros hooks.
 - No lee tus credenciales ni el texto de tus mensajes: solo qué herramienta usa Claude y sobre qué archivo o comando.
 - Las sesiones que usa el propio Brote (OpenClaw) no aparecen ahí: ya las ves en la isla.
-- El uso de tu plan no se muestra (Claude Code no lo entrega por los hooks).
+- El uso de tu plan no llega por los hooks: para eso está la función **Uso del plan de Claude** (abajo).
 - Para quitarlo: la misma tarjeta → **Desinstalar**. Si solo apagas la función, los hooks siguen instalados (Brote los ignora) y la tarjeta te ofrece desinstalarlos.
+
+### Uso del plan de Claude (opcional)
+
+Si tienes Claude Pro o Max, Brote te muestra en la pestaña **Claude** de la isla cuánto llevas de tu **sesión de 5 horas** y de la **semana** (una barra verde, ámbar o roja con "se reinicia en 2 h 10 min"), y te avisa una vez al pasar el 80 % y el 95 % de la sesión. Debajo: tus tokens de hoy y de los últimos 7 días (entrada, salida y caché), separados entre lo que gastó Brote y tus propias sesiones de Claude Code, con los proyectos que más gastan y su **valor API**: lo que costaría pagando por token con los precios oficiales de Anthropic. **No es un cobro**: tu plan cuesta lo mismo; es solo para dimensionar cuánto usas.
+
+Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Uso del plan de Claude**. Brote saca el % de tres lugares, sin tocar nunca tus contraseñas ni tus claves, y usa el más reciente:
+
+- **La app de escritorio de Claude**, si la tienes abierta con su ícono en la barra de menú: ella misma anota tu % cada 5 a 15 minutos y Brote lo lee. No sabe la hora exacta de reinicio, así que Brote la estima ("se reinicia en ≈ 2 h").
+- **Claude Code**, si instalas la statusline de Brote (abajo): se actualiza cada vez que Claude Code te responde.
+- **Una consulta mínima** cuando las otras dos están viejas (más de 15 minutos): Brote le hace a Claude Code una pregunta cortísima solo para que le diga tus límites. Gasta unos 600 tokens (una fracción mínima de tu plan), corre solo mientras miras la pestaña Claude o cuando pulsas **↻**, y como mucho una vez cada 15 minutos.
+
+Cuando una ventana se reinicia, la barra queda en "0 % · se reinició a las 18:40" hasta la próxima lectura.
+
+Para la statusline (opcional): en la tarjeta **Uso del plan**, marca la casilla y pulsa **Instalar**. Brote la pone en `~/.claude/settings.json`:
+
+- Claude Code le entrega el % a la statusline después de cada respuesta. Brote solo se queda con el % y la hora de reinicio.
+- El % se actualiza **solo mientras usas Claude Code** (en una terminal o en la pestaña Code de la app de Claude), después de su primera respuesta. Si no lo has usado hace rato, la isla dice "actualizado hace…"; si nunca, "Abre Claude Code para ver tu plan". Lo que hace el propio Brote no lo actualiza.
+- Si no tenías statusline, en Claude Code verás abajo algo como `🌱 5 h 23 % · semana 41 % · contexto 12 %`. Si ya tenías una, **se sigue viendo igual**: Brote la conserva y la corre por dentro. Ojo: con una statusline puesta, Claude Code esconde la mayoría de las ayudas que muestra abajo.
+- Los tokens se leen de los archivos de historial que Claude Code guarda en tu computador (solo las cifras de uso, nunca el texto de las conversaciones), cada minuto mientras miras la pestaña Claude.
+- Antes de cambiar la configuración guarda una copia (`settings.json.brote-<fecha>.bak`). Para quitarla: la misma tarjeta → **Desinstalar**, y tu statusline queda exactamente como estaba.
 
 ### Conectar tu calendario (opcional)
 
@@ -155,6 +176,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 - Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
 - Los nombres de tus descargas, lo que escuchas y tus eventos no salen del computador; solo los ve la IA si le preguntas por ellos. La dirección iCal se usa solo para descargar tu calendario directo de Google.
 - Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code.
+- El uso del plan (el % y tus tokens) se calcula en tu computador con lo que Claude Code ya guarda ahí; Brote no se conecta a tu cuenta para eso.
 - El token del aula y la autorización de cada conector quedan solo en tu computador; Brote nunca los muestra ni los anota en registros. Un conector ve lo que le pidas a Brote que haga con él.
 - En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
 
@@ -167,6 +189,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 | Brote dice "Eso está apagado" | Prende esa función en **Configurar Brote → Funciones** |
 | No veo una tarjeta en la isla (la música, las descargas…) | Revisa en **Configurar Brote → Funciones** que su función esté prendida y que la tarjeta esté marcada en **Tarjetas de Inicio** |
 | Brote no responde preguntas, solo gastos | Revisa que Claude Code tenga tu sesión iniciada (`claude` en una terminal) |
+| La pestaña Claude dice "Pulsa ↻ para revisar tu plan" | Pulsa **↻**: Brote le pregunta a Claude Code tus límites (necesita Claude Code con tu sesión iniciada). Para que se mantenga al día sin consultas, deja abierta la app de Claude con su ícono en la barra de menú o usa Claude Code con la statusline de Brote |
 | La tarjeta de Entregas dice "No pude leer tu aula" | El token venció o lo borraste: crea uno nuevo y pégalo en **Configurar Brote → Aula** |
 | Un conector dice "Guardado, pero falta autorizar" | Pulsa **Autorizar** (o pega un token nuevo, en GitHub) |
 | No sé cómo cerrarlo | 🌱 → **Salir de Brote** |
@@ -174,4 +197,5 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 ## Desinstalar
 
 1. 🌱 → **Salir de Brote**, y borra la app (Mac: de Aplicaciones; Windows: desde "Agregar o quitar programas").
-2. Si también quieres borrar tus datos: la carpeta `.asistente-prototipo` de tu carpeta personal. OpenClaw se desinstala aparte (`npm uninstall -g openclaw`).
+2. Si instalaste el modo programador o la statusline del uso del plan, desinstálalos antes en **Configurar Brote → Funciones** (si no, Claude Code los sigue llamando; no hacen nada sin Brote, pero tu statusline anterior no vuelve sola).
+3. Si también quieres borrar tus datos: la carpeta `.asistente-prototipo` de tu carpeta personal. OpenClaw se desinstala aparte (`npm uninstall -g openclaw`).

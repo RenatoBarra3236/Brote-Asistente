@@ -7,6 +7,7 @@
 //   GET  /sesiones  (del MCP)   → 200 con la lista de sesiones visibles
 //   POST /consulta  (del MCP)   → 200 con lo que responda `consultar` (música y calendario: el MCP
 //                                 corre dentro de OpenClaw, sin los permisos de macOS que tiene Brote)
+//   POST /plan      (de la statusline, statusline.ts) → 200 con {}: el % del plan de Claude
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
@@ -22,6 +23,8 @@ export interface OpcionesServidor {
   sesiones: () => unknown;
   /** Una consulta del servidor MCP ({ tipo, ... }). Si no la conoce, debe lanzar un error. */
   consultar?: (datos: unknown) => Promise<object> | object;
+  /** Lo que manda la statusline de Claude Code ({ rate_limits, modelo }). */
+  alPlan?: (datos: unknown) => void;
 }
 
 function tokenValido(pedido: IncomingMessage, token: string): boolean {
@@ -59,13 +62,22 @@ export function iniciarServidorHooks(opciones: OpcionesServidor, token = randomB
     if (pedido.headers.origin || !tokenValido(pedido, token)) return responder(401, { error: "no autorizado" });
     if (pedido.method === "GET" && pedido.url === "/sesiones") return responder(200, { sesiones: opciones.sesiones() });
     const esConsulta = pedido.url === "/consulta" && opciones.consultar;
-    if (pedido.method !== "POST" || (pedido.url !== "/evento" && !esConsulta)) return responder(404, { error: "no existe" });
+    const esPlan = pedido.url === "/plan" && opciones.alPlan;
+    if (pedido.method !== "POST" || (pedido.url !== "/evento" && !esConsulta && !esPlan)) return responder(404, { error: "no existe" });
     const cuerpo = await leerCuerpo(pedido);
     let datos: unknown;
     try {
       datos = JSON.parse(cuerpo ?? "");
     } catch {
       return responder(400, { error: "JSON inválido" });
+    }
+    if (esPlan) {
+      try {
+        opciones.alPlan!(datos);
+      } catch {
+        // La statusline no espera nada: solo se descarta.
+      }
+      return responder(200, {});
     }
     if (esConsulta) {
       try {

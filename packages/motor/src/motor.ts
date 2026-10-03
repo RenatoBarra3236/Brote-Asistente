@@ -17,6 +17,8 @@ import { POMODORO, type Temporizadores } from "./temporizadores.ts";
 import { UNIDADES, describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
+import { describirPlan, describirReinicio, type LecturaPlan } from "./plan.ts";
+import { describirUso, type ResumenUso } from "./uso.ts";
 
 export interface Resultado {
   intencion: Intencion;
@@ -53,7 +55,8 @@ export type Accion =
       cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean };
     }
   | { intencion: "programador-sesiones" }
-  | { intencion: "aula-entregas" | "aula-semana" };
+  | { intencion: "aula-entregas" | "aula-semana" }
+  | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -102,6 +105,9 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "programador-sesiones":
     case "aula-entregas":
     case "aula-semana":
+    case "plan-uso":
+    case "plan-reinicio":
+    case "plan-tokens":
       return { intencion };
     case "calendario-crear":
     case "calendario-crear-manana": {
@@ -140,6 +146,7 @@ export class Motor {
   private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
   private readonly aula: (() => Entrega[] | null) | null;
   private readonly activa: (funcion: IdFuncion) => boolean;
+  private readonly uso: (() => UsoClaude) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -164,8 +171,11 @@ export class Motor {
       aula?: () => Entrega[] | null;
       /** Si una función está prendida (Configurar Brote → Funciones). Sin esto, todas lo están. */
       activa?: (funcion: IdFuncion) => boolean;
+      /** El plan de Claude y el uso por tokens (lo mantiene el puente). */
+      uso?: () => UsoClaude;
     } = {},
   ) {
+    this.uso = opciones.uso ?? null;
     this.activa = opciones.activa ?? (() => true);
     this.aula = opciones.aula ?? null;
     this.crearEvento = opciones.crearEvento ?? null;
@@ -205,6 +215,18 @@ export class Motor {
     if (accion.intencion === "programador-sesiones") {
       if (!this.sesionesClaude) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
+    }
+    if (accion.intencion === "plan-uso" || accion.intencion === "plan-reinicio" || accion.intencion === "plan-tokens") {
+      if (!this.uso) return null;
+      const { plan, statusline, resumen } = this.uso();
+      const ahora = this.reloj().getTime();
+      const texto =
+        accion.intencion === "plan-tokens"
+          ? describirUso(resumen)
+          : accion.intencion === "plan-uso"
+            ? describirPlan(plan, ahora, statusline)
+            : describirReinicio(plan, ahora, statusline);
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto };
     }
     if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {
       if (!this.aula) return null;
@@ -398,6 +420,15 @@ const ACCION_DE: Partial<Record<Intencion, AccionMusica>> = {
   "musica-siguiente": "siguiente",
   "musica-anterior": "anterior",
 };
+
+/** Lo que el motor sabe del uso de Claude. */
+export interface UsoClaude {
+  plan: LecturaPlan | null;
+  /** Si la statusline de Brote está instalada (sin ella, el % no llega nunca). */
+  statusline: boolean;
+  /** El uso por tokens (`null` si todavía no se calculó). */
+  resumen: ResumenUso | null;
+}
 
 export interface Musica {
   estado: () => EstadoMusica | null;

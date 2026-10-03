@@ -73,7 +73,7 @@ describe("al terminar el asistente", () => {
   it("avisa las funciones prendidas a las que les falta configurar algo", async () => {
     const { funcionesSinConfigurar } = await import("../src/agente/preparacion.ts");
     const activas = { ...activasDePreset("todo") };
-    const pasos: Paso[] = [ok("calendario-ical"), { ...ok("aula"), estado: "opcional" }, { ...ok("programador"), estado: "opcional" }, ok("memoria-local")];
+    const pasos: Paso[] = [ok("calendario-ical"), { ...ok("aula"), estado: "opcional" }, { ...ok("programador"), estado: "opcional" }, ok("memoria-local"), ok("statusline")];
     assert.deepEqual(funcionesSinConfigurar(activas, pasos).map((f) => f.id), ["aula", "programador"]);
     assert.deepEqual(funcionesSinConfigurar({ ...activas, aula: false, programador: false }, pasos), []);
   });

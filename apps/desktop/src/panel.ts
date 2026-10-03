@@ -4,8 +4,8 @@
 //           descargas, Claude Code) y la conversación. Al conversar, la respuesta (y los permisos o
 //           propuestas) ocupa el espacio y las tarjetas se encogen a una fila de píldoras; al terminar
 //           la lectura, vuelven.
-//   Claude  el uso del plan (lo hará otra etapa: hoy es un espacio reservado) y las sesiones de
-//           Claude Code del usuario (modo programador) con sus pasos y permisos
+//   Claude  el uso del plan (sesión de 5 h y semana, tokens de hoy y 7 días con su valor API, precios)
+//           y las sesiones de Claude Code del usuario (modo programador) con sus pasos y permisos
 //   Equipo  batería, CPU, memoria y disco
 //
 // Las pestañas van en la fila del notch (a sus costados) y el contenido a la derecha de Brote,
@@ -32,6 +32,7 @@ import type {
 } from "./agente/puente";
 import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
+import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
 import { icono, type NombreIcono } from "./iconos";
 
 export { cuentaRegresiva } from "./agente/formato";
@@ -66,6 +67,8 @@ export interface Zona {
 interface Opciones {
   alAbrirMemoria?: () => void;
   alAbrirConfiguracion?: () => void;
+  /** El botón ↻ del uso del plan: revisa la app de Claude y corre la consulta mínima. */
+  alActualizarPlan?: () => void;
   flotante?: boolean;
   alCancelarTemporizador?: (id: number) => void;
   alMostrarDescarga?: (ruta: string) => void;
@@ -144,6 +147,16 @@ export class Panel {
   private hayPermisoClaude = false;
   private hayActividadClaude = false;
   private permisosVistos = new Set<string>();
+  private readonly usoPlan: HTMLDivElement;
+  private readonly usoActualizado: HTMLSpanElement;
+  private readonly usoRefrescar: HTMLButtonElement;
+  private readonly usoBarras: HTMLDivElement;
+  private readonly usoSinPlan: HTMLDivElement;
+  private readonly usoTokens: HTMLDivElement;
+  private readonly usoPrecios: HTMLDetailsElement;
+  private readonly tituloSesiones: HTMLDivElement;
+  private estadoUso: EstadoUso | null = null;
+  private periodoUso: "hoy" | "semana" = "hoy";
 
   // Equipo
   private readonly metricas: HTMLDivElement;
@@ -287,20 +300,34 @@ export class Panel {
 
     // --- Claude ---
     const codigo = crear("div", "vista vista-claude");
-    // Espacio reservado para el uso del plan de Claude (otra etapa: aún no hay datos que mostrar).
-    const usoPlan = crear("div", "uso-plan");
+    // Uso del plan: el % de la sesión de 5 h y de la semana (llega por la statusline de Claude Code),
+    // los tokens de hoy y de 7 días con su valor API, y los precios plegados.
+    this.usoPlan = crear("div", "uso-plan");
+    const cabeceraUso = crear("div", "uso-cabecera");
     const usoTitulo = crear("div", "seccion-titulo");
     usoTitulo.textContent = "Uso del plan";
-    const usoTexto = crear("p", "uso-plan-texto");
-    usoTexto.textContent = "Próximamente: cuánto llevas de tu plan de Claude y cuándo se reinicia.";
-    usoPlan.append(usoTitulo, usoTexto);
+    this.usoActualizado = crear("span", "uso-actualizado");
+    this.usoRefrescar = botonIcono("uso-refrescar", "refrescar", "Revisar el plan ahora (gasta unos 600 tokens si no hay un dato reciente)");
+    this.usoRefrescar.addEventListener("click", () => {
+      this.usoRefrescar.classList.add("girando");
+      this.opciones.alActualizarPlan?.();
+    });
+    this.usoRefrescar.hidden = !opciones.alActualizarPlan;
+    cabeceraUso.append(usoTitulo, this.usoActualizado, this.usoRefrescar);
+    this.usoBarras = crear("div", "uso-barras");
+    this.usoSinPlan = crear("div", "uso-sin-plan");
+    this.usoTokens = crear("div", "uso-tokens");
+    this.usoPrecios = crear("details", "uso-precios");
+    this.usoPlan.append(cabeceraUso, this.usoBarras, this.usoSinPlan, this.usoTokens, this.usoPrecios);
+    this.usoPlan.hidden = true;
     const tituloSesiones = crear("div", "seccion-titulo");
     tituloSesiones.textContent = "Sesiones";
+    this.tituloSesiones = tituloSesiones;
     this.permisosClaude = crear("div", "grupo-tarjetas");
     this.sesiones = crear("div", "grupo-tarjetas");
     this.codigoVacio = crear("p", "vacia-texto");
     this.codigoVacio.textContent = "No hay sesiones de Claude Code abiertas. Abre una con «claude» en una terminal o en la pestaña Code.";
-    codigo.append(usoPlan, tituloSesiones, this.permisosClaude, this.sesiones, this.codigoVacio);
+    codigo.append(this.usoPlan, tituloSesiones, this.permisosClaude, this.sesiones, this.codigoVacio);
 
     // --- Equipo ---
     const equipo = crear("div", "vista vista-equipo");
@@ -570,6 +597,119 @@ export class Panel {
     this.actualizarInicio();
   }
 
+  /**
+   * El uso del plan de Claude: dos barras (sesión de 5 h y semana) con su % y cuándo se reinician; sin
+   * datos, cómo conseguirlos. Debajo, los tokens de hoy o de 7 días (Brote y tus sesiones) con su valor
+   * API, lo que más gasta y los precios de los modelos usados, plegados. Se repinta solo cada tanto
+   * (main.ts) para que "hace 3 min" no quede viejo.
+   */
+  mostrarUso(estado: EstadoUso | null): void {
+    this.estadoUso = estado;
+    const ahora = Date.now();
+    const { barras, actualizado } = barrasPlan(estado?.plan ?? null, ahora);
+    this.usoActualizado.textContent = actualizado ?? "";
+    this.usoRefrescar.classList.toggle("girando", estado?.consultando === true);
+    this.usoBarras.replaceChildren(
+      ...barras.map((b) => {
+        const fila = metrica(b.nombre, `${b.porcentaje} %`, b.fraccion, b.color);
+        const nota = crear("span", "uso-reinicia");
+        nota.textContent = b.reinicia;
+        fila.insertBefore(nota, fila.querySelector(".avance"));
+        return fila;
+      }),
+    );
+    this.usoBarras.hidden = barras.length === 0;
+    // Sin datos del plan: cómo conseguirlos (y, sin la statusline, el camino a Configurar Brote).
+    const sinPlan: HTMLElement[] = [];
+    if (barras.length === 0) {
+      const texto = crear("p", "uso-plan-texto");
+      texto.textContent = estado?.consultando
+        ? "Revisando tu plan…"
+        : "Pulsa ↻ para revisar tu plan. Se mantiene al día solo si usas Claude Code o tienes abierta la app de Claude con su ícono en la barra de menú.";
+      sinPlan.push(texto);
+    }
+    this.usoSinPlan.replaceChildren(...sinPlan);
+    this.usoSinPlan.hidden = sinPlan.length === 0;
+    this.pintarTokens();
+    this.pintarPrecios();
+  }
+
+  private pintarTokens(): void {
+    const resumen = this.estadoUso?.resumen;
+    this.usoTokens.hidden = !resumen;
+    if (!resumen) return;
+    const selector = crear("div", "uso-selector");
+    for (const [id, texto] of [
+      ["hoy", "Hoy"],
+      ["semana", "7 días"],
+    ] as const) {
+      const b = boton(`uso-periodo${this.periodoUso === id ? " elegido" : ""}`, texto);
+      b.setAttribute("aria-pressed", String(this.periodoUso === id));
+      b.addEventListener("click", () => {
+        this.periodoUso = id;
+        this.pintarTokens();
+      });
+      selector.append(b);
+    }
+    const periodo = resumen[this.periodoUso];
+    const tabla = crear("div", "uso-tabla");
+    for (const celda of ["", "Brote", "Tus sesiones"]) {
+      const c = crear("span", "uso-col");
+      c.textContent = celda;
+      tabla.append(c);
+    }
+    for (const fila of filasTokens(periodo)) {
+      fila.forEach((dato, i) => {
+        const c = crear("span", i === 0 ? "uso-fila" : "uso-dato");
+        c.textContent = dato;
+        tabla.append(c);
+      });
+    }
+    const partes: HTMLElement[] = [selector, tabla];
+    if (periodo.proyectos.length > 0) {
+      const mas = crear("p", "uso-nota");
+      mas.textContent = `Lo que más gasta: ${periodo.proyectos.map((p) => p.nombre).join(" · ")}`;
+      partes.push(mas);
+    }
+    this.usoTokens.replaceChildren(...partes);
+  }
+
+  private pintarPrecios(): void {
+    const precios = this.estadoUso?.precios;
+    const modelos = precios?.modelos ?? [];
+    this.usoPrecios.hidden = modelos.length === 0;
+    if (modelos.length === 0) return;
+    const abierto = this.usoPrecios.open;
+    const resumen = crear("summary", "uso-precios-titulo");
+    resumen.textContent = "Precios por millón de tokens";
+    const tabla = crear("div", "uso-tabla precios");
+    for (const celda of ["Modelo", "Entrada", "Salida", "Caché (escr. / lect.)"]) {
+      const c = crear("span", "uso-col");
+      c.textContent = celda;
+      tabla.append(c);
+    }
+    for (const { id, precio } of modelos) {
+      const datos = precio
+        ? [precio.nombre, precioCorto(precio.entrada), precioCorto(precio.salida), `${precioCorto(precio.escritura5m)} / ${precioCorto(precio.lectura)}`]
+        : [id, "—", "—", "sin precio"];
+      datos.forEach((dato, i) => {
+        const c = crear("span", i === 0 ? "uso-fila" : "uso-dato");
+        c.textContent = dato;
+        tabla.append(c);
+      });
+    }
+    const nota = crear("p", "uso-nota");
+    const [a, m, d] = (precios?.fecha ?? "").split("-");
+    nota.textContent = `USD, precios oficiales de Anthropic al ${Number(d)}/${Number(m)}/${a}. El valor API es lo que costaría pagando por token: tu plan no te cobra eso.`;
+    this.usoPrecios.replaceChildren(resumen, tabla, nota);
+    this.usoPrecios.open = abierto;
+  }
+
+  /** Si la pestaña Claude está a la vista (main pide el uso solo entonces). */
+  get usoALaVista(): boolean {
+    return this.visible && this.pestana === "claude" && !this.usoPlan.hidden;
+  }
+
   /** La tarjeta de la música, o nada si no hay un reproductor abierto. */
   mostrarMusica(estado: EstadoMusica | null): void {
     this.conDatos.musica = estado !== null;
@@ -774,9 +914,15 @@ export class Panel {
     this.pildoras.hidden = !this.compacto || lista.length === 0;
   }
 
-  /** Claude se ve con el modo programador prendido (o si hay sesiones); Equipo, con las reacciones al computador. */
+  /** Claude se ve con el modo programador o el uso del plan prendidos (o si hay sesiones); Equipo, con las reacciones al computador. */
   private actualizarPestanas(): void {
-    this.botonesPestana.get("claude")!.hidden = !this.funciones.activas.programador && !this.hayActividadClaude;
+    const { programador, "uso-del-plan": uso } = this.funciones.activas;
+    this.botonesPestana.get("claude")!.hidden = !programador && !uso && !this.hayActividadClaude;
+    this.usoPlan.hidden = !uso;
+    // Con solo el uso del plan prendido, las sesiones no se muestran (salvo que haya alguna).
+    const sinSesiones = !programador && !this.hayActividadClaude;
+    this.tituloSesiones.hidden = sinSesiones;
+    this.codigoVacio.hidden = sinSesiones || this.hayActividadClaude;
     this.botonesPestana.get("equipo")!.hidden = !this.funciones.activas.equipo;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }

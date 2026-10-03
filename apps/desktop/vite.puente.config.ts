@@ -17,6 +17,7 @@ export default defineConfig({
         mcp: "../../packages/motor/src/mcp.ts",
         configurar: "../../packages/adapter/src/configurar.ts",
         hook: "../../packages/adapter/src/hook.ts",
+        statusline: "../../packages/adapter/src/statusline.ts",
       },
       output: { format: "es", entryFileNames: "[name].mjs", chunkFileNames: "comun-[name].mjs" },
     },

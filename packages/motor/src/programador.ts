@@ -2,8 +2,8 @@
 // OpenClaw, que ya se ven en la isla). Los datos llegan por los hooks oficiales de Claude Code: un
 // script pequeño (packages/adapter/src/hook.ts) resume cada evento y se lo pasa al puente por
 // localhost. Aquí está la lógica pura: interpretar los eventos, llevar el estado de cada sesión y
-// describirlo. Nunca se leen credenciales de Claude; el uso del plan no llega por los hooks, así
-// que no se muestra.
+// describirlo. Nunca se leen credenciales de Claude; el uso del plan no llega por los hooks (lo trae
+// la statusline de Brote: plan.ts y uso.ts).
 
 import { readFileSync } from "node:fs";
 import { request } from "node:http";

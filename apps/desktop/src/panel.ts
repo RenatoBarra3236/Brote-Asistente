@@ -5,7 +5,15 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
-import type { TemporizadorActivo } from "./agente/puente";
+import type {
+  AccionMusica,
+  Descarga,
+  DescargaEnCurso,
+  EstadoCalendario,
+  EstadoMusica,
+  EstadoProgramador,
+  TemporizadorActivo,
+} from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
@@ -44,6 +52,16 @@ export class Panel {
   private readonly noAprender: HTMLButtonElement;
   private readonly temporizadores: HTMLDivElement;
   private readonly avisoDestacado: HTMLParagraphElement;
+  private readonly descargas: HTMLDivElement;
+  private readonly alMostrarDescarga?: (ruta: string) => void;
+  private readonly calendario: HTMLDivElement;
+  private readonly sesiones: HTMLDivElement;
+  private readonly permisosClaude: HTMLDivElement;
+  private readonly alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
+  private hayPermisoClaude = false;
+  private readonly musica: HTMLDivElement;
+  private readonly musicaTitulo: HTMLSpanElement;
+  private readonly musicaPlay: HTMLButtonElement;
   private filasTemporizador: { fin: number; tiempo: HTMLSpanElement }[] = [];
   private avisoHasta = 0;
   private readonly alCancelarTemporizador?: (id: number) => void;
@@ -63,7 +81,14 @@ export class Panel {
   constructor(
     agente: Agente,
     contenedor: HTMLElement,
-    opciones: { alAbrirMemoria?: () => void; flotante?: boolean; alCancelarTemporizador?: (id: number) => void } = {},
+    opciones: {
+      alAbrirMemoria?: () => void;
+      flotante?: boolean;
+      alCancelarTemporizador?: (id: number) => void;
+      alMostrarDescarga?: (ruta: string) => void;
+      alControlarMusica?: (accion: AccionMusica) => void;
+      alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
+    } = {},
   ) {
     this.agente = agente;
     this.raiz = crear("div", opciones.flotante ? "panel flotante" : "panel");
@@ -131,8 +156,44 @@ export class Panel {
     this.temporizadores.hidden = true;
     this.avisoDestacado = crear("p", "aviso-destacado");
     this.avisoDestacado.hidden = true;
+    this.alMostrarDescarga = opciones.alMostrarDescarga;
+    this.descargas = crear("div", "filas descargas");
+    this.descargas.hidden = true;
 
-    this.raiz.append(this.avisoDestacado, this.temporizadores, this.burbuja, this.aprobacion, this.propuesta, formulario);
+    // La píldora de la música: "♪ canción — artista" con ⏮ ⏯ ⏭.
+    this.musica = crear("div", "fila musica");
+    this.musica.hidden = true;
+    this.musicaTitulo = crear("span", "fila-nombre");
+    const boton = (texto: string, titulo: string, accion: AccionMusica) => {
+      const b = crear("button", "boton-musica");
+      b.type = "button";
+      b.textContent = texto;
+      b.title = titulo;
+      b.setAttribute("aria-label", titulo);
+      b.addEventListener("click", () => opciones.alControlarMusica?.(accion));
+      return b;
+    };
+    this.musicaPlay = boton("⏯", "Play / pausa", "play-pausa");
+    this.musica.append(this.musicaTitulo);
+    if (opciones.alControlarMusica) {
+      this.musica.append(boton("⏮", "Canción anterior", "anterior"), this.musicaPlay, boton("⏭", "Siguiente canción", "siguiente"));
+    }
+
+    this.calendario = crear("div", "fila calendario");
+    this.calendario.hidden = true;
+
+    this.alDecidirPermisoClaude = opciones.alDecidirPermisoClaude;
+    this.sesiones = crear("div", "filas sesiones");
+    this.sesiones.hidden = true;
+    this.permisosClaude = crear("div", "filas permisos-claude");
+    this.permisosClaude.hidden = true;
+
+    // Las filas de estado (temporizadores, calendario, música, descargas, sesiones) se encogen y hacen
+    // scroll si no caben: el aviso, los permisos y el campo de texto siempre quedan a la vista.
+    const estado = crear("div", "estado");
+    estado.append(this.temporizadores, this.calendario, this.musica, this.descargas, this.sesiones);
+
+    this.raiz.append(this.avisoDestacado, this.permisosClaude, estado, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -171,6 +232,7 @@ export class Panel {
     return (
       this.entrada.value.trim() !== "" ||
       c.aprobacion !== null ||
+      this.hayPermisoClaude ||
       c.propuesta !== null ||
       ahora < this.leerHasta ||
       Date.now() < this.avisoHasta
@@ -204,6 +266,122 @@ export class Panel {
     );
     this.temporizadores.hidden = lista.length === 0;
     this.actualizarRelojes();
+  }
+
+  /**
+   * Las descargas en curso ("📥 Descargando apunte.pdf…") y las que terminaron hace poco ("Lista ✓",
+   * con un botón para mostrarla en el Finder o el Explorador).
+   */
+  mostrarDescargas(enCurso: DescargaEnCurso[], listas: Descarga[]): void {
+    const filas = [
+      ...enCurso.map((d) => {
+        const fila = crear("div", "fila descarga en-curso");
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `📥 Descargando ${d.nombre ?? "un archivo"}…`;
+        const tamano = crear("span", "fila-dato");
+        tamano.textContent = tamanoCorto(d.tamano);
+        fila.append(nombre, tamano);
+        return fila;
+      }),
+      ...listas.map((d) => {
+        const fila = crear("div", "fila descarga lista");
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `📥 ${d.nombre}`;
+        nombre.title = d.nombre;
+        const lista = crear("span", "fila-dato");
+        lista.textContent = "Lista ✓";
+        fila.append(nombre, lista);
+        if (this.alMostrarDescarga) {
+          const mostrar = crear("button", "boton boton-fila");
+          mostrar.type = "button";
+          mostrar.textContent = "Mostrar";
+          mostrar.title = navigator.userAgent.includes("Windows") ? "Mostrar en el Explorador" : "Mostrar en el Finder";
+          mostrar.addEventListener("click", () => this.alMostrarDescarga?.(d.ruta));
+          fila.append(mostrar);
+        }
+        return fila;
+      }),
+    ];
+    this.descargas.replaceChildren(...filas);
+    this.descargas.hidden = filas.length === 0;
+  }
+
+  /** "📅 Cálculo en 25 min": el próximo evento del calendario (solo si es dentro de las próximas 12 h). */
+  mostrarCalendario(estado: EstadoCalendario): void {
+    const proximo = estado.proximo;
+    const visible = proximo !== null && estado.etiqueta !== null && proximo.inicioMs - Date.now() < 12 * 3_600_000;
+    this.calendario.hidden = !visible;
+    if (!visible) return;
+    this.calendario.textContent = `📅 ${estado.etiqueta}`;
+    this.calendario.title = proximo.lugar ? `${proximo.titulo} · ${proximo.lugar}` : proximo.titulo;
+    this.calendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
+  }
+
+  /**
+   * Modo programador: una fila por sesión de Claude Code ("⌨️ tarea-rust · Editando lib.rs…", como
+   * mucho tres) y, arriba, los permisos que piden, con Permitir y Rechazar.
+   */
+  mostrarProgramador(estado: EstadoProgramador): void {
+    const sesiones = estado.sesiones.slice(0, 3);
+    this.sesiones.replaceChildren(
+      ...sesiones.map((s) => {
+        const fila = crear("div", `fila sesion ${s.estado}`);
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `⌨️ ${s.proyecto}`;
+        const actividad = crear("span", "fila-actividad");
+        actividad.textContent = s.actividad;
+        fila.title = `${s.proyecto}: ${s.actividad}`;
+        fila.append(nombre, actividad);
+        return fila;
+      }),
+    );
+    this.sesiones.hidden = sesiones.length === 0;
+
+    this.hayPermisoClaude = estado.permisos.length > 0;
+    this.permisosClaude.replaceChildren(
+      ...estado.permisos.map((p) => {
+        const caja = crear("div", "aprobacion permiso-claude");
+        const titulo = crear("p", "aprobacion-titulo");
+        titulo.textContent = `Claude Code · ${p.titulo}`;
+        const detalle = crear("code", "aprobacion-detalle");
+        detalle.textContent = p.detalle;
+        detalle.hidden = !p.detalle;
+        const botones = crear("div", "aprobacion-botones");
+        const rechazar = crear("button", "boton");
+        rechazar.type = "button";
+        rechazar.textContent = "Rechazar";
+        const permitir = crear("button", "boton boton-primario");
+        permitir.type = "button";
+        permitir.textContent = "Permitir";
+        for (const [boton, decision] of [[rechazar, "deny"], [permitir, "allow"]] as const) {
+          boton.addEventListener("click", () => {
+            rechazar.disabled = permitir.disabled = true;
+            this.alDecidirPermisoClaude?.(p.id, decision);
+          });
+        }
+        botones.append(rechazar, permitir);
+        caja.append(titulo, detalle, botones);
+        return caja;
+      }),
+    );
+    this.permisosClaude.hidden = estado.permisos.length === 0 || !this.alDecidirPermisoClaude;
+  }
+
+  /** La píldora de la música, o nada si no hay un reproductor abierto. */
+  mostrarMusica(estado: EstadoMusica | null): void {
+    this.musica.hidden = !estado;
+    if (!estado) return;
+    const titulo = estado.cancion ? (estado.artista ? `${estado.cancion} — ${estado.artista}` : estado.cancion) : estado.app;
+    this.musicaTitulo.textContent = `${estado.sonando ? "♪" : "⏸"} ${titulo}`;
+    this.musicaTitulo.title = `${titulo} (${estado.app})`;
+    this.musica.classList.toggle("sonando", estado.sonando);
+    this.musicaPlay.textContent = estado.sonando ? "⏸" : "▶";
+    this.musicaPlay.title = estado.sonando ? "Pausa" : "Play";
+  }
+
+  /** Mantiene la isla abierta un rato (por ejemplo, al terminar una descarga). */
+  retener(ms = AVISO_DESTACADO_MS): void {
+    this.avisoHasta = Math.max(this.avisoHasta, Date.now() + ms);
   }
 
   /** Avanza las cuentas regresivas (se llama en cada cuadro). */
@@ -361,6 +539,13 @@ function pintarMarkdown(contenedor: HTMLElement, texto: string): void {
       return parrafo;
     }),
   );
+}
+
+/** "830 KB", "12 MB", "1,2 GB": el tamaño de una descarga en curso. */
+function tamanoCorto(bytes: number): string {
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1).replace(".", ",")} GB`;
 }
 
 /** "12:34" o "1:02:03". */

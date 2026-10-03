@@ -22,6 +22,10 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
+import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
+import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
+import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
+import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
 const VERSION_PROTOCOLO = "2025-06-18";
@@ -125,6 +129,79 @@ const HERRAMIENTAS = [
     annotations: { title: "Estado del computador", readOnlyHint: true },
   },
   {
+    name: "descargas_recientes",
+    description:
+      "Las últimas descargas terminadas del usuario (su carpeta de Descargas): nombre, tamaño y fecha, de la más " +
+      "nueva a la más vieja. Úsala si pregunta qué descargó o por un archivo que acaba de bajar. No abre ni lee los archivos.",
+    inputSchema: {
+      type: "object",
+      properties: { limite: { type: "integer", minimum: 1, maximum: 30, default: 10 } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Descargas recientes", readOnlyHint: true },
+  },
+  {
+    name: "musica_estado",
+    description:
+      "Qué música está sonando en el computador del usuario (canción, artista, app y si está en pausa). En macOS mira " +
+      "Spotify y Música solo si ya están abiertos; en Windows, el reproductor que use los controles de medios.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Música: qué suena", readOnlyHint: true },
+  },
+  {
+    name: "musica_control",
+    description:
+      "Controla la música que ya está abierta: play, pausa, play-pausa, siguiente o anterior. Nunca abre una app de " +
+      "música; si no hay ninguna abierta, no hace nada. Úsala, por ejemplo, para pausar la música al empezar un pomodoro si el usuario lo pide.",
+    inputSchema: {
+      type: "object",
+      properties: { accion: { type: "string", enum: ACCIONES_MUSICA } },
+      required: ["accion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Música: controlar", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  {
+    name: "calendario_proximos",
+    description:
+      "Los eventos del calendario del usuario en las próximas horas (por defecto 24, máximo 72): título, lugar, inicio y " +
+      "fin en su hora local, y si es de día completo. Lee el Calendario del Mac y/o la dirección iCal que configuró en Brote. " +
+      "Úsala para planificar su estudio alrededor de sus clases o si pregunta qué tiene.",
+    inputSchema: {
+      type: "object",
+      properties: { horas: { type: "integer", minimum: 1, maximum: 72, default: 24 } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Calendario: próximos eventos", readOnlyHint: true },
+  },
+  {
+    name: "calendario_crear",
+    description:
+      "Crea un evento en el Calendario del Mac del usuario (en su calendario por defecto, que puede estar sincronizado " +
+      "con iCloud o Google). Úsala SIEMPRE en vez de osascript u otros comandos de terminal. La hora es la local del " +
+      "usuario. En Windows o sin permiso de Calendario no se puede: ofrécele un recordatorio con temporizador_crear.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        titulo: { type: "string", minLength: 1, maxLength: 200 },
+        inicio: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$", description: "Inicio en hora local: AAAA-MM-DD HH:MM" },
+        minutos: { type: "integer", minimum: 1, maximum: 1440, default: 60, description: "Duración" },
+        lugar: { type: "string", maxLength: 200 },
+      },
+      required: ["titulo", "inicio"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Calendario: crear evento", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  {
+    name: "programador_sesiones",
+    description:
+      "Las sesiones de Claude Code que el usuario tiene abiertas en su computador (no la tuya): proyecto y qué está " +
+      "haciendo cada una (\"Editando lib.rs…\", \"Esperando tu respuesta\"). Solo funciona si instaló el modo programador de Brote.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Sesiones de Claude Code", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -179,6 +256,114 @@ function leerRango(args: any, porDefecto: Rango | undefined): Rango | undefined 
     desde: desde ?? new Date(0),
     hasta: hasta ? new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate() + 1) : new Date(8.64e15),
   };
+}
+
+/** "2026-10-05 08:30" en la hora local del usuario. */
+function fechaHora(ms: number): string {
+  const d = new Date(ms);
+  return `${fechaIso(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Las herramientas que necesitan esperar algo (el puente de Brote, el iCal, osascript). */
+async function usarEsperando(nombre: string, args: any): Promise<string> {
+  switch (nombre) {
+    case "calendario_proximos": {
+      const horas = Number.isInteger(args.horas) ? Math.min(Math.max(args.horas, 1), 72) : 24;
+      const ahora = Date.now();
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario" });
+      let todos: EventoCalendario[];
+      if (deBrote) {
+        if (!Array.isArray(deBrote.eventos)) return SIN_CALENDARIO;
+        todos = deBrote.eventos;
+      } else {
+        // Brote no está abierto: se lee aquí (el Calendario del Mac solo si este proceso tiene permiso).
+        const mac = await leerCalendarioMac(ahora);
+        const url = leerUrlIcal();
+        const ics = url ? await descargarIcal(url) : null;
+        if (!mac?.eventos && !url) return SIN_CALENDARIO;
+        if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
+        todos = combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null);
+      }
+      const eventos = proximos(todos, ahora, horas);
+      return JSON.stringify({
+        ahora: fechaHora(ahora),
+        eventos: eventos.map((e) => ({
+          titulo: e.titulo,
+          lugar: e.lugar,
+          inicio: e.todoElDia ? fechaIso(new Date(e.inicioMs)) : fechaHora(e.inicioMs),
+          fin: e.todoElDia ? null : fechaHora(e.finMs),
+          todoElDia: e.todoElDia,
+        })),
+      });
+    }
+    case "calendario_crear": {
+      const evento = leerNuevoEvento(args);
+      // Lo crea Brote, que tiene el permiso de Calendario; si no está abierto, se intenta aquí.
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario-crear", evento }, { limiteMs: 20_000 });
+      const resultado: ResultadoCreacion = deBrote?.resultado ?? crearEventoMacAhora(evento);
+      const texto = describirCreacion(evento, resultado, Date.now());
+      if (!resultado.ok) throw new ErrorDeUso(texto);
+      return texto;
+    }
+    case "musica_estado": {
+      const estado = await musicaActual();
+      return estado === undefined ? "No pude saber qué suena (en este sistema no se puede, o falta el permiso)." : describirMusica(estado);
+    }
+    case "musica_control": {
+      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
+      const accion = args.accion as AccionMusica;
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-control", accion });
+      let estado: EstadoMusica | null | undefined;
+      let hecho: boolean;
+      if (deBrote) {
+        estado = deBrote.musica ?? null;
+        hecho = deBrote.hecho === true;
+      } else {
+        estado = (await leerMusica())?.estado ?? null;
+        hecho = estado ? await controlarMusica(accion, estado) : false;
+      }
+      if (!estado) return "No hay música abierta (no abro apps de música).";
+      return hecho ? `Hecho: ${accion} en ${estado.app}.` : "No pude controlar la música.";
+    }
+    case "programador_sesiones": {
+      const sesiones = await pedirSesiones();
+      if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
+      return describirSesiones(sesiones as SesionClaude[]);
+    }
+    default:
+      throw new ErrorDeUso(`Herramienta desconocida: ${nombre}`);
+  }
+}
+
+const ESPERAN = new Set(["calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
+
+/** Los argumentos de `calendario_crear` → el evento, o un error de uso. */
+function leerNuevoEvento(args: any): NuevoEvento {
+  const partes = typeof args.inicio === "string" ? args.inicio.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/) : null;
+  const inicio = partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]), Number(partes[4]), Number(partes[5])) : null;
+  if (!inicio || inicio.getMonth() !== Number(partes![2]) - 1 || inicio.getHours() !== Number(partes![4])) {
+    throw new ErrorDeUso("«inicio» debe ser una fecha y hora válidas: AAAA-MM-DD HH:MM");
+  }
+  if (typeof args.titulo !== "string" || !args.titulo.trim()) throw new ErrorDeUso("Falta «titulo»");
+  const minutos = Number.isInteger(args.minutos) ? args.minutos : 60;
+  if (minutos < 1 || minutos > 1440) throw new ErrorDeUso("«minutos» debe estar entre 1 y 1440");
+  return {
+    titulo: args.titulo.trim().slice(0, 200),
+    lugar: typeof args.lugar === "string" && args.lugar.trim() ? args.lugar.trim().slice(0, 200) : null,
+    inicioMs: inicio.getTime(),
+    finMs: inicio.getTime() + minutos * 60_000,
+  };
+}
+
+const SIN_CALENDARIO =
+  "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+
+/** Lo que suena según Brote (que tiene el permiso de Automatización) o, si no está abierto, leído aquí. `undefined` si no se pudo saber. */
+async function musicaActual(): Promise<EstadoMusica | null | undefined> {
+  const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-estado" });
+  if (deBrote) return deBrote.musica ?? null;
+  const lectura = await leerMusica();
+  return lectura ? lectura.estado : undefined;
 }
 
 function usar(gastos: Gastos, nombre: string, args: any): string {
@@ -279,6 +464,19 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         .filter(Boolean)
         .join("\n");
     }
+    case "descargas_recientes": {
+      const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 30) : 10;
+      const listado = listarCarpeta(carpetaDescargas());
+      if (!listado) return "No pude leer la carpeta de Descargas.";
+      return JSON.stringify({
+        descargas: recientes(listado, carpetaDescargas(), limite).map((d) => ({
+          nombre: d.nombre,
+          tamano: formatearTamano(d.tamano),
+          bytes: d.tamano,
+          fecha: new Date(d.fechaMs).toISOString(),
+        })),
+      });
+    }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {
         throw new ErrorDeUso("Faltan «patron», «ejemplo» o «intencion»");
@@ -293,8 +491,11 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
   }
 }
 
-/** Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. */
-export function atender(gastos: Gastos, mensaje: any): object | null {
+/**
+ * Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. Las
+ * herramientas que esperan algo (el calendario, la música, el puente) devuelven una promesa de la respuesta.
+ */
+export function atender(gastos: Gastos, mensaje: any): object | null | Promise<object> {
   const { id, method, params } = mensaje ?? {};
   if (id === undefined || id === null) return null;
   const responder = (result: object) => ({ jsonrpc: "2.0", id, result });
@@ -313,6 +514,16 @@ export function atender(gastos: Gastos, mensaje: any): object | null {
     case "tools/list":
       return responder({ tools: HERRAMIENTAS });
     case "tools/call":
+      if (ESPERAN.has(String(params?.name))) {
+        return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
+          (texto) => responder({ content: [{ type: "text", text: texto }] }),
+          (error) => {
+            const motivo = error instanceof ErrorDeUso ? error.message : "No pude completar la consulta";
+            if (!(error instanceof ErrorDeUso)) process.stderr.write(`[gastos] ${String(error)}\n`);
+            return responder({ content: [{ type: "text", text: motivo }], isError: true });
+          },
+        );
+      }
       try {
         const texto = usar(gastos, String(params?.name), params?.arguments ?? {});
         return responder({ content: [{ type: "text", text: texto }] });
@@ -338,8 +549,9 @@ if (import.meta.main) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON inválido" } })}\n`);
       return;
     }
-    const respuesta = atender(gastos, mensaje);
-    if (respuesta) process.stdout.write(`${JSON.stringify(respuesta)}\n`);
+    void Promise.resolve(atender(gastos, mensaje)).then((respuesta) => {
+      if (respuesta) process.stdout.write(`${JSON.stringify(respuesta)}\n`);
+    });
   });
   entrada.on("close", () => {
     gastos.cerrar();

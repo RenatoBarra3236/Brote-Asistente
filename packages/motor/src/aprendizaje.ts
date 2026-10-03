@@ -107,6 +107,33 @@ export function describirIntencion(intencion: Intencion): string {
       return "ver cuánto queda";
     case "estado-equipo":
       return "ver cómo está el computador";
+    case "ver-descargas":
+      return "mostrar tus descargas";
+    case "abrir-ultima-descarga":
+      return "abrir la última descarga";
+    case "mostrar-ultima-descarga":
+      return "mostrar la última descarga";
+    case "musica-pausa":
+      return "pausar la música";
+    case "musica-play":
+      return "darle play a la música";
+    case "musica-siguiente":
+      return "pasar a la siguiente canción";
+    case "musica-anterior":
+      return "volver a la canción anterior";
+    case "musica-estado":
+      return "decirte qué está sonando";
+    case "calendario-hoy":
+      return "mostrar lo que tienes hoy";
+    case "calendario-manana":
+      return "mostrar lo que tienes mañana";
+    case "calendario-proximo":
+      return "decirte qué viene en tu calendario";
+    case "calendario-crear":
+    case "calendario-crear-manana":
+      return "crear un evento en tu calendario";
+    case "programador-sesiones":
+      return "mostrar tus sesiones de Claude Code";
   }
 }
 

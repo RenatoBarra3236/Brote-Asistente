@@ -16,6 +16,7 @@ export default defineConfig({
         puente: "../../packages/adapter/src/puente.ts",
         mcp: "../../packages/motor/src/mcp.ts",
         configurar: "../../packages/adapter/src/configurar.ts",
+        hook: "../../packages/adapter/src/hook.ts",
       },
       output: { format: "es", entryFileNames: "[name].mjs", chunkFileNames: "comun-[name].mjs" },
     },

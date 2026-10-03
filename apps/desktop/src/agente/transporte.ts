@@ -19,7 +19,7 @@ export type Decision = "allow-once" | "allow-always" | "deny";
 
 /** Con `local`, el motor de comandos resolvió el mensaje sin IA y no llegó al agente. */
 export interface ResultadoEnvio {
-  local?: { texto: string; intencion: string };
+  local?: { texto: string; intencion: string; datos?: unknown };
 }
 
 /** Una plantilla que propuso el agente para resolver frases como esta sin IA (paso 7). */

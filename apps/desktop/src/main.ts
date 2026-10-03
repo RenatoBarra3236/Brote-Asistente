@@ -2,7 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
-import { TransportePuente, type TemporizadorActivo } from "./agente/puente";
+import {
+  TransportePuente,
+  type Descarga,
+  type DescargaEnCurso,
+  type EstadoCalendario,
+  type EstadoMusica,
+  type EstadoProgramador,
+  type TemporizadorActivo,
+} from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
@@ -34,6 +42,14 @@ const personaje = new Personaje();
 /** Modo flotante: cuánto sigue abierto el panel después de que el cursor se va (ms). */
 const ESPERA_CIERRE_MS = 800;
 
+/** Cuánto sigue a la vista una descarga terminada, con su botón "Mostrar" (ms). */
+const DESCARGA_A_LA_VISTA_MS = 60_000;
+
+/** Muestra una descarga en el Finder o el Explorador, o la abre si es un documento. Rust valida la ruta. */
+function mostrarDescarga(ruta: string, abrir = false): void {
+  invoke("mostrar_descarga", { ruta, abrir }).catch((error) => console.error(`No pude mostrar la descarga: ${error}`));
+}
+
 /** Cuánto dura la cara de error antes de volver al reposo; el mensaje sigue en la burbuja (ms). */
 const DURACION_ERROR = 6000;
 
@@ -49,8 +65,13 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
   await puente.iniciar();
   // "¿Qué sabes de mí?" lo resuelve el motor sin IA y abre la ventana "Lo que sé de ti".
   const agente = new Agente(puente, {
-    alResolverSinIA: (intencion) => {
+    alResolverSinIA: (intencion, datos) => {
       if (intencion === "ver-memoria") void invoke("abrir_memoria");
+      // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
+      const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
+      if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
+        mostrarDescarga(descarga.ruta, descarga.abrir === true);
+      }
     },
   });
   return { agente, puente };
@@ -67,6 +88,10 @@ async function iniciar(): Promise<void> {
       ? {
           alAbrirMemoria: () => void invoke("abrir_memoria"),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
+          alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
+          alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
+          alDecidirPermisoClaude: (id, decision) =>
+            void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
       : {}),
   });
@@ -74,6 +99,12 @@ async function iniciar(): Promise<void> {
   // Temporizadores y pomodoro: la lista viene del puente cada vez que cambia (y al iniciar, por
   // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
   let temporizadores: TemporizadorActivo[] = [];
+  let descargasEnCurso: DescargaEnCurso[] = [];
+  let musica: EstadoMusica | null = null;
+  let proximoEvento: EstadoCalendario["proximo"] = null;
+  let programador: EstadoProgramador = { sesiones: [], permisos: [] };
+  /** Si el estado actual de Brote lo puso el modo programador (y no su propio agente). */
+  let porProgramador = false;
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
@@ -94,6 +125,79 @@ async function iniciar(): Promise<void> {
       .consultar<{ animo: "cansado" | "acalorado" | null }>({ tipo: "equipo-estado" })
       .then(({ animo }) => personaje.setAnimo(animo), () => {});
     void puente.consultar<TemporizadorActivo[]>({ tipo: "temporizadores-listar" }).then(mostrarTemporizadores, () => {});
+
+    // Música: la píldora con sus botones y Brote se balancea mientras suena.
+    const cambiarMusica = (estado: EstadoMusica | null) => {
+      musica = estado;
+      panel.mostrarMusica(estado);
+      personaje.setMusica(estado?.sonando === true);
+    };
+    puente.alCambiarMusica(cambiarMusica);
+    void puente.consultar<EstadoMusica | null>({ tipo: "musica-estado" }).then(cambiarMusica, () => {});
+
+    // Calendario: el próximo evento y un aviso 10 min antes (Brote da un saltito para llamar la atención).
+    const cambiarCalendario = (estado: EstadoCalendario) => {
+      proximoEvento = estado.proximo;
+      panel.mostrarCalendario(estado);
+    };
+    puente.alCambiarCalendario(cambiarCalendario);
+    void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
+    puente.alAvisoCalendario((texto) => {
+      panel.mostrarAviso(texto);
+      personaje.tocar();
+    });
+
+    // Modo programador: las sesiones de Claude Code del usuario. Brote trabaja mientras ellas
+    // trabajan (si no está ocupado con su propio agente) y celebra cuando una termina.
+    const cambiarProgramador = (estado: EstadoProgramador) => {
+      programador = estado;
+      panel.mostrarProgramador(estado);
+    };
+    puente.alCambiarProgramador(cambiarProgramador);
+    void puente.consultar<EstadoProgramador>({ tipo: "programador-estado" }).then(cambiarProgramador, () => {});
+    puente.alReaccionProgramador(({ reaccion, proyecto }) => {
+      porProgramador = false;
+      if (reaccion === "termino") {
+        if (agente.conversacion.estado === "reposo") personaje.setEstado("listo");
+        panel.mostrarAviso(`✅ Claude Code terminó${proyecto ? ` en ${proyecto}` : ""}`);
+      } else {
+        personaje.tocar();
+        panel.mostrarAviso(`⚠️ Claude Code se detuvo por un error${proyecto ? ` en ${proyecto}` : ""}`);
+      }
+    });
+    setInterval(() => {
+      if (agente.conversacion.estado !== "reposo") return;
+      const trabajando = programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando");
+      const deseado = programador.permisos.length > 0 ? "pidiendo-permiso" : trabajando ? "trabajando" : null;
+      if (deseado && (personaje.estado === "reposo" || porProgramador) && personaje.estado !== deseado) {
+        personaje.setEstado(deseado);
+        porProgramador = true;
+      } else if (!deseado && porProgramador) {
+        porProgramador = false;
+        if (personaje.estado !== "listo") personaje.setEstado("reposo");
+      }
+    }, 500);
+
+    // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
+    let listas: { descarga: Descarga; hasta: number }[] = [];
+    const pintarDescargas = () => {
+      const ahora = Date.now();
+      listas = listas.filter((l) => l.hasta > ahora);
+      panel.mostrarDescargas(descargasEnCurso, listas.map((l) => l.descarga));
+    };
+    puente.alCambiarDescargas((enCurso) => {
+      descargasEnCurso = enCurso;
+      pintarDescargas();
+    });
+    puente.alDescargaLista((descarga) => {
+      listas = [{ descarga, hasta: Date.now() + DESCARGA_A_LA_VISTA_MS }, ...listas.filter((l) => l.descarga.ruta !== descarga.ruta)].slice(0, 3);
+      pintarDescargas();
+      panel.retener();
+      personaje.setEstado("listo");
+    });
+    setInterval(() => {
+      if (listas.some((l) => l.hasta <= Date.now())) pintarDescargas();
+    }, 5000);
   }
   if (puente) {
     panel.mostrarConexion(puente.estadoConexion);
@@ -105,6 +209,7 @@ async function iniciar(): Promise<void> {
   agente.alCambiar((c) => {
     if (c.estado === estadoAgente) return;
     estadoAgente = c.estado;
+    porProgramador = false;
     personaje.setEstado(c.estado);
     clearTimeout(temporizadorError);
     if (c.estado === "error") {
@@ -125,6 +230,7 @@ async function iniciar(): Promise<void> {
   ajustarTamano();
   window.addEventListener("resize", ajustarTamano);
 
+  let probandoMusica = false;
   window.addEventListener("keydown", (evento) => {
     if (evento.metaKey && evento.key.toLowerCase() === "q") {
       void invoke("salir");
@@ -137,6 +243,8 @@ async function iniciar(): Promise<void> {
     // 7, 8 y 9 prueban el ánimo según el computador (cansado, acalorado, normal).
     const animo = ({ "7": "cansado", "8": "acalorado", "9": null } as const)[evento.key as "7" | "8" | "9"];
     if (animo !== undefined) personaje.setAnimo(animo);
+    // 0 prueba el balanceo con música.
+    if (evento.key === "0") personaje.setMusica((probandoMusica = !probandoMusica));
   });
 
   // Un clic toca al personaje. En modo flotante, si el mouse se mueve con el botón
@@ -195,7 +303,13 @@ async function iniciar(): Promise<void> {
 
     personaje.actualizar(dt);
     panel.actualizarRelojes();
-    const reloj = relojPrincipal(temporizadores);
+    // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador, una descarga o la música.
+    const reloj =
+      relojPrincipal(temporizadores) ??
+      (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
+      relojCalendario(proximoEvento) ??
+      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null) ??
+      (programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando") ? { texto: "⌨", color: "rgb(122, 178, 255)" } : null);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {
@@ -225,6 +339,14 @@ async function iniciar(): Promise<void> {
     }
   }
   requestAnimationFrame(cuadro);
+}
+
+/** Con un evento en menos de una hora, el ala muestra cuánto falta: "📅25m". */
+function relojCalendario(evento: EstadoCalendario["proximo"]): { texto: string; color: string } | null {
+  if (!evento) return null;
+  const minutos = Math.ceil((evento.inicioMs - Date.now()) / 60_000);
+  if (minutos > 60 || evento.finMs < Date.now()) return null;
+  return { texto: minutos > 0 ? `📅${minutos}m` : "📅", color: "rgb(150, 195, 255)" };
 }
 
 /** El temporizador que se muestra con la isla cerrada: el pomodoro primero, si no el que termina antes. */

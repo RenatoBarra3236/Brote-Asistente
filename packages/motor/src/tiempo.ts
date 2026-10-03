@@ -98,3 +98,23 @@ export const PATRON_DURACION = [
   `${NUMERO} horas? y (?:media|${NUMERO} (?:minutos?|mins?))`,
   `${NUMERO}(?: ${UNIDAD})?`,
 ].join("|");
+
+/**
+ * Una hora del día como la dice un estudiante: "15", "15:30", "3 pm", "3 de la tarde", "9.15 hrs",
+ * "mediodia". Recibe texto normalizado; devuelve `null` si no es una hora válida.
+ */
+export function leerHora(entrada: string): { horas: number; minutos: number } | null {
+  const texto = entrada.trim().replace(/\s+/g, " ");
+  if (texto === "mediodia" || texto === "medio dia") return { horas: 12, minutos: 0 };
+  const m = texto.match(/^(\d{1,2})(?:[:.](\d{2}))? ?(am|pm|hrs|horas|h)?(?: de la (manana|tarde|noche))?$/);
+  if (!m) return null;
+  let horas = Number(m[1]);
+  const minutos = Number(m[2] ?? 0);
+  const tarde = m[3] === "pm" || m[4] === "tarde" || m[4] === "noche";
+  if (tarde && horas < 12) horas += 12;
+  if ((m[3] === "am" || m[4] === "manana") && horas === 12) horas = 0;
+  return horas <= 23 && minutos <= 59 ? { horas, minutos } : null;
+}
+
+/** La expresión regular de una hora, para la ranura {hora} de las plantillas. */
+export const PATRON_HORA = "mediodia|medio dia|\\d{1,2}(?:[:.]\\d{2})?(?: ?(?:am|pm|hrs|horas|h))?(?: de la (?:manana|tarde|noche))?";

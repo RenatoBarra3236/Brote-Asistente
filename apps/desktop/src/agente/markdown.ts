@@ -16,10 +16,13 @@ export type Bloque =
 const VINETA = /^\s*[-*•]\s+(.*)$/;
 const NUMERO = /^\s*\d+[.)]\s+(.*)$/;
 
-/** Los fragmentos de una línea: **negrita**, *cursiva* o _cursiva_, `código`. */
+/**
+ * Los fragmentos de una línea: **negrita**, *cursiva* o _cursiva_, `código`. Con guion bajo solo
+ * cuenta al borde de una palabra (como en Markdown): "session10_intro_ml.pdf" queda tal cual.
+ */
 export function analizarLinea(linea: string): Fragmento[] {
   const fragmentos: Fragmento[] = [];
-  const marcas = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_/g;
+  const marcas = /`([^`]+)`|\*\*([^*]+)\*\*|(?<![\p{L}\p{N}])__([^_]+)__(?![\p{L}\p{N}])|\*([^*\s][^*]*)\*|(?<![\p{L}\p{N}_])_([^_\s][^_]*)_(?![\p{L}\p{N}_])/gu;
   let desde = 0;
   for (const marca of linea.matchAll(marcas)) {
     if (marca.index > desde) fragmentos.push({ tipo: "texto", texto: linea.slice(desde, marca.index) });

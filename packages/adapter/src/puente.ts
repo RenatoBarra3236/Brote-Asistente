@@ -35,19 +35,69 @@
 //   aviso { "tipo": "equipo-aviso", "texto": "…", "celebrar": false }     batería baja, CPU alta, disco lleno…
 //   pedido { "tipo": "equipo-estado" }                                      → "datos": { animo, lectura }
 //
+// Descargas (carpeta de descargas, con fs.watch y una revisión cada 4 s por si el aviso no llega):
+//   aviso { "tipo": "descargas", "enCurso": [{ id, nombre, tamano }] }      cuando cambia
+//   aviso { "tipo": "descarga-lista", "descarga": { nombre, ruta, tamano, fechaMs } }
+//   pedido { "tipo": "descargas-listar" }                                   → "datos": las últimas 10
+//   Mostrar o abrir un archivo lo hace Rust (`mostrar_descarga`), que valida que esté en Descargas.
+//
+// Música (Spotify y Música en macOS, solo si ya están abiertos; controles de medios en Windows):
+//   aviso { "tipo": "musica", "estado": { app, sonando, cancion, artista } | null }   cuando cambia
+//   pedido { "tipo": "musica-control", "accion": "play-pausa" | "play" | "pausa" | "siguiente" | "anterior" }
+//
+// Calendario (Calendario del Mac con EventKit y/o la dirección iCal de ~/.asistente-prototipo/calendario.json):
+//   aviso { "tipo": "calendario", "proximo": { titulo, lugar, inicioMs, finMs } | null, "etiqueta": "Cálculo en 25 min" }
+//   aviso { "tipo": "calendario-aviso", "texto": "📅 En 10 min: Cálculo…" }
+//   pedido { "tipo": "calendario-estado" }   → "datos": { proximo, etiqueta }
+//
+// Modo programador (sesiones de Claude Code del usuario, por sus hooks; servidor-hooks.ts):
+//   aviso { "tipo": "programador", "sesiones": [...], "permisos": [{ id, proyecto, titulo, detalle }] }   cuando cambian
+//   aviso { "tipo": "programador-reaccion", "reaccion": "termino" | "fallo", "proyecto": "…" }
+//   pedido { "tipo": "programador-decidir", "permiso": "…", "decision": "allow" | "deny" }
+//   pedido { "tipo": "programador-estado" }   → "datos": { sesiones, permisos }
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
 // Al cerrarse la entrada (la app terminó), el puente se desconecta y sale.
 
+import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import {
   Gastos,
   Motor,
   PLANTILLAS_BASE,
   MedidorCpu,
+  ACCIONES_MUSICA,
+  SesionesClaude,
+  describirHerramienta,
+  esDeOpenClaw,
+  leerEventoHook,
+  AvisadorCalendario,
+  combinar,
+  descargarIcal,
+  etiquetaProximo,
+  eventosDeIcal,
+  leerCalendarioMac,
+  crearEventoMacAhora,
+  type NuevoEvento,
+  type ResultadoCreacion,
+  leerUrlIcal,
+  marcaConfigCalendario,
+  proximoEvento,
+  type EventoCalendario,
   RUTA_BASE,
+  SeguidorDescargas,
+  controlarMusica,
+  leerMusica,
+  type AccionMusica,
+  type AppMusica,
+  type EstadoMusica,
   Temporizadores,
+  carpetaDescargas,
+  listarCarpeta,
+  recientes,
+  vigilarCarpeta,
   UMBRALES,
   Vigilante,
   type Animo,
@@ -74,6 +124,8 @@ import {
 } from "./conexion.ts";
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { esDeMemoria } from "./permisos.ts";
+import { CARPETA_OPENCLAW, WORKSPACE } from "./rutas.ts";
+import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
 const IGNORADOS = new Set(["tick", "health", "presence", "heartbeat", "cron"]);
@@ -92,6 +144,11 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__temporizador_listar",
   "mcp__gastos__temporizador_cancelar",
   "mcp__gastos__equipo_estado",
+  "mcp__gastos__descargas_recientes",
+  // Play, pausa y cambiar de canción son inofensivos (y nunca abren una app).
+  "mcp__gastos__musica_estado",
+  "mcp__gastos__musica_control",
+  "mcp__gastos__calendario_proximos",
 ]);
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
@@ -149,7 +206,270 @@ const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
   equipo: () => lecturaEquipo,
+  descargas: () => {
+    const listado = listarCarpeta(CARPETA_DESCARGAS);
+    return listado ? recientes(listado, CARPETA_DESCARGAS) : null;
+  },
+  musica: { estado: () => musica, controlar: (accion) => void pedirMusica(accion) },
+  calendario: () => (eventosMac === null && icsTexto === null ? null : eventosCalendario()),
+  sesionesClaude: () => sesionesClaude.visibles(Date.now()),
+  // Crear un evento es un pedido del usuario y tarda menos de un segundo: se hace al tiro y después
+  // se vuelve a leer el calendario para que aparezca en la isla.
+  crearEvento: (evento) => crearEvento(evento),
 });
+
+/** Crea un evento en el Calendario del Mac (para el motor y para el MCP) y vuelve a leer el calendario. */
+function crearEvento(evento: NuevoEvento): ResultadoCreacion {
+  const resultado = crearEventoMacAhora(evento);
+  registrar(resultado.ok ? "calendario: evento creado" : `calendario: no pude crear el evento (${resultado.motivo}${resultado.detalle ? `: ${resultado.detalle}` : ""})`);
+  if (resultado.ok) {
+    proximaLecturaMac = 0;
+    void revisarCalendario();
+  }
+  return resultado;
+}
+
+// Modo programador: las sesiones de Claude Code del usuario llegan por sus hooks (hook.ts) a un
+// servidor local con token. Las de OpenClaw (que corren en su carpeta) se ignoran. Un permiso se
+// muestra en la isla y el hook espera la respuesta; si el usuario contesta en la terminal (llega otro
+// evento de esa sesión) o nadie contesta en 45 s, se suelta sin decisión y todo sigue como siempre.
+const sesionesClaude = new SesionesClaude();
+const CARPETAS_OPENCLAW = [CARPETA_OPENCLAW, WORKSPACE];
+const ESPERA_PERMISO_CLAUDE_MS = 45_000;
+interface PermisoClaude {
+  id: string;
+  sesion: string;
+  proyecto: string;
+  titulo: string;
+  detalle: string;
+  soltar: (respuesta: object) => void;
+}
+const permisosClaude = new Map<string, PermisoClaude>();
+let ultimasSesiones = "";
+function estadoProgramador() {
+  return {
+    sesiones: sesionesClaude.visibles(Date.now()),
+    permisos: [...permisosClaude.values()].map(({ id, proyecto, titulo, detalle }) => ({ id, proyecto, titulo, detalle })),
+  };
+}
+function avisarSesiones(): void {
+  const estado = estadoProgramador();
+  const texto = JSON.stringify(estado);
+  if (texto === ultimasSesiones) return;
+  ultimasSesiones = texto;
+  avisar({ tipo: "programador", ...estado });
+}
+function soltarPermisos(sesion: string): void {
+  for (const permiso of permisosClaude.values()) if (permiso.sesion === sesion) permiso.soltar({});
+}
+async function alEventoClaude(datos: unknown): Promise<object> {
+  const evento = leerEventoHook(datos);
+  if (!evento || esDeOpenClaw(evento.cwd, CARPETAS_OPENCLAW)) return {};
+  // Otro evento de la sesión (no la notificación del mismo permiso) = el permiso ya se respondió.
+  if (evento.evento !== "PermissionRequest" && evento.evento !== "Notification") soltarPermisos(evento.sesion);
+  const reaccion = sesionesClaude.aplicar(evento, Date.now());
+  if (reaccion) avisar({ tipo: "programador-reaccion", reaccion, proyecto: sesionesClaude.visibles(Date.now()).find((s) => s.id === evento.sesion)?.proyecto ?? "" });
+  if (evento.evento !== "PermissionRequest" || !evento.interactiva) {
+    avisarSesiones();
+    return {};
+  }
+  const proyecto = sesionesClaude.visibles(Date.now()).find((s) => s.id === evento.sesion)?.proyecto ?? "Claude Code";
+  return new Promise((listo) => {
+    const id = randomUUID();
+    const plazo = setTimeout(() => permiso.soltar({}), ESPERA_PERMISO_CLAUDE_MS);
+    const permiso: PermisoClaude = {
+      id,
+      sesion: evento.sesion,
+      proyecto,
+      titulo: `${proyecto}: ${describirHerramienta(evento.herramienta, evento.entrada).replace(/…$/, "")}`,
+      detalle: evento.entrada?.comando ?? evento.entrada?.archivo ?? evento.entrada?.url ?? evento.herramienta ?? "",
+      soltar: (respuesta) => {
+        clearTimeout(plazo);
+        if (!permisosClaude.delete(id)) return;
+        listo(respuesta);
+        avisarSesiones();
+      },
+    };
+    permisosClaude.set(id, permiso);
+    registrar(`claude code pide permiso (${evento.herramienta ?? "?"})`);
+    avisarSesiones();
+  });
+}
+setInterval(avisarSesiones, 30_000);
+void iniciarServidorHooks({
+  alEvento: alEventoClaude,
+  sesiones: () => sesionesClaude.visibles(Date.now()),
+  consultar: consultarDelMcp,
+}).then(
+  ({ puerto, token }) => {
+    guardarConexion(puerto, token);
+    registrar(`modo programador escuchando en 127.0.0.1:${puerto}`);
+  },
+  (error) => registrar(`no pude abrir el servidor del modo programador: ${mensajeDe(error)}`),
+);
+
+// Calendario: el del Mac se lee cada 5 min (nunca pide permiso aquí: eso es en "Configurar
+// Brote"); el iCal cada 15 min, o al tiro si cambió la configuración. Cada 30 s se revisa si toca
+// avisar (10 min antes) y si cambió lo próximo. La dirección iCal es secreta: nunca se registra.
+let eventosMac: EventoCalendario[] | null = null;
+let icsTexto: string | null = null;
+let proximaLecturaMac = 0;
+let proximaLecturaIcal = 0;
+let marcaIcal = -1;
+let leyendoCalendario = false;
+let ultimoEstadoMac = "";
+let ultimoProximo = "";
+const avisadorCalendario = new AvisadorCalendario();
+function eventosCalendario(): EventoCalendario[] {
+  return combinar(eventosMac, icsTexto ? eventosDeIcal(icsTexto, Date.now()) : null);
+}
+async function leerCalendarios(): Promise<void> {
+  if (leyendoCalendario) return;
+  leyendoCalendario = true;
+  try {
+    const ahora = Date.now();
+    if (process.platform === "darwin" && ahora >= proximaLecturaMac) {
+      proximaLecturaMac = ahora + 5 * 60_000;
+      const lectura = await leerCalendarioMac(ahora);
+      eventosMac = lectura?.permiso === 3 ? lectura.eventos : null;
+      // Para depurar en el Mac: por qué no se ven los eventos (nunca se registran los eventos mismos).
+      const estado = lectura === null ? "osascript falló" : lectura.error ? `error: ${lectura.error}` : `permiso ${lectura.permiso}`;
+      if (estado !== ultimoEstadoMac) {
+        ultimoEstadoMac = estado;
+        registrar(`calendario del Mac: ${estado}${lectura?.eventos ? ` (${lectura.eventos.length} eventos)` : ""}`);
+      }
+    }
+    const marca = marcaConfigCalendario();
+    if (marca !== marcaIcal || ahora >= proximaLecturaIcal) {
+      marcaIcal = marca;
+      proximaLecturaIcal = ahora + 15 * 60_000;
+      const url = leerUrlIcal();
+      if (!url) icsTexto = null;
+      else {
+        const texto = await descargarIcal(url);
+        if (texto) icsTexto = texto;
+        else registrar("calendario: no pude descargar el iCal");
+      }
+    }
+  } finally {
+    leyendoCalendario = false;
+  }
+}
+function estadoCalendario(): { proximo: EventoCalendario | null; etiqueta: string | null } {
+  const ahora = Date.now();
+  const proximo = proximoEvento(eventosCalendario(), ahora);
+  return { proximo, etiqueta: proximo ? etiquetaProximo(proximo, ahora) : null };
+}
+async function revisarCalendario(): Promise<void> {
+  await leerCalendarios();
+  const eventos = eventosCalendario();
+  for (const texto of avisadorCalendario.revisar(eventos, Date.now())) {
+    registrar("calendario: aviso");
+    avisar({ tipo: "calendario-aviso", texto });
+  }
+  const estado = estadoCalendario();
+  const texto = JSON.stringify(estado);
+  if (texto !== ultimoProximo) {
+    ultimoProximo = texto;
+    avisar({ tipo: "calendario", ...estado });
+  }
+}
+setInterval(() => void revisarCalendario(), 30_000);
+void revisarCalendario();
+
+// Música: se revisa cada 3 s (5 en Windows, donde PowerShell tarda más en partir), una lectura a la
+// vez. Si el usuario negó el permiso de Automatización para una app, no se le pregunta de nuevo
+// hasta dentro de 30 min.
+let musica: EstadoMusica | null = null;
+let leyendoMusica = false;
+const sinPermisoHasta = new Map<AppMusica, number>();
+async function revisarMusica(): Promise<void> {
+  if (leyendoMusica) return;
+  leyendoMusica = true;
+  try {
+    const ahora = Date.now();
+    const ignorar = [...sinPermisoHasta].filter(([, hasta]) => hasta > ahora).map(([app]) => app);
+    const lectura = await leerMusica(ignorar);
+    for (const app of lectura?.sinPermiso ?? []) {
+      registrar(`música: sin permiso para ${app}`);
+      sinPermisoHasta.set(app, ahora + 30 * 60_000);
+    }
+    const estado = lectura?.estado ?? null;
+    if (JSON.stringify(estado) !== JSON.stringify(musica)) {
+      musica = estado;
+      avisar({ tipo: "musica", estado });
+    }
+  } finally {
+    leyendoMusica = false;
+  }
+}
+async function pedirMusica(accion: AccionMusica): Promise<boolean> {
+  const hecho = await controlarMusica(accion, musica);
+  if (!hecho) registrar(`música: no pude hacer ${accion}`);
+  // La app tarda un momento en cambiar de canción.
+  setTimeout(() => void revisarMusica(), 400);
+  return hecho;
+}
+if (process.platform === "darwin" || process.platform === "win32") {
+  setInterval(() => void revisarMusica(), process.platform === "win32" ? 5000 : 3000);
+  void revisarMusica();
+}
+
+// Consultas del servidor MCP (por el servidor local con token): la música y el calendario se leen
+// aquí, dentro de Brote, que tiene los permisos de macOS; el MCP corre dentro de OpenClaw, sin ellos.
+async function consultarDelMcp(datos: unknown): Promise<object> {
+  const consulta = (datos ?? {}) as { tipo?: unknown; accion?: unknown };
+  switch (consulta.tipo) {
+    case "musica-estado":
+      return { musica };
+    case "musica-control": {
+      if (!ACCIONES_MUSICA.includes(consulta.accion as AccionMusica)) throw new Error("acción inválida");
+      if (!musica) return { hecho: false, musica: null };
+      const estado = musica;
+      return { hecho: await pedirMusica(consulta.accion as AccionMusica), musica: estado };
+    }
+    case "calendario-crear": {
+      const e = (datos as { evento?: Record<string, unknown> }).evento ?? {};
+      const lugar = e.lugar === null || e.lugar === undefined ? null : e.lugar;
+      if (typeof e.titulo !== "string" || typeof e.inicioMs !== "number" || typeof e.finMs !== "number" || (lugar !== null && typeof lugar !== "string")) {
+        throw new Error("evento inválido");
+      }
+      return { resultado: crearEvento({ titulo: e.titulo, lugar, inicioMs: e.inicioMs, finMs: e.finMs }) };
+    }
+    case "calendario":
+      await leerCalendarios();
+      return { eventos: eventosMac === null && icsTexto === null ? null : eventosCalendario() };
+    default:
+      throw new Error("consulta desconocida");
+  }
+}
+
+// Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,
+// porque fs.watch no siempre avisa (carpetas en la nube, algunos sistemas de archivos).
+const CARPETA_DESCARGAS = carpetaDescargas();
+const seguidorDescargas = new SeguidorDescargas();
+let ultimasEnCurso = "";
+let revisionDescargas: ReturnType<typeof setTimeout> | undefined;
+function revisarDescargas(): void {
+  const listado = listarCarpeta(CARPETA_DESCARGAS);
+  if (!listado) return;
+  const { enCurso, listas } = seguidorDescargas.revisar(listado, CARPETA_DESCARGAS);
+  const texto = JSON.stringify(enCurso);
+  if (texto !== ultimasEnCurso) {
+    ultimasEnCurso = texto;
+    avisar({ tipo: "descargas", enCurso });
+  }
+  for (const descarga of listas) {
+    registrar("descarga lista");
+    avisar({ tipo: "descarga-lista", descarga });
+  }
+}
+vigilarCarpeta(CARPETA_DESCARGAS, () => {
+  clearTimeout(revisionDescargas);
+  revisionDescargas = setTimeout(revisarDescargas, 300);
+});
+setInterval(revisarDescargas, 4000);
+revisarDescargas();
 
 // Brote reacciona al computador. La CPU se mide cada 5 s; la batería cada 15 s y el disco cada
 // 10 min (cuestan más y cambian lento). El programa culpable solo se busca con la CPU alta.
@@ -355,7 +675,7 @@ const cliente = (() => {
 })();
 
 /** Lo que se agrega a la respuesta: con `local`, el motor resolvió el pedido sin IA. */
-type Extra = { local?: { texto: string; intencion: string }; mensaje?: string; datos?: unknown };
+type Extra = { local?: { texto: string; intencion: string; datos?: unknown }; mensaje?: string; datos?: unknown };
 
 async function atender(pedido: any): Promise<Extra> {
   if (pedido?.tipo === "enviar" && typeof pedido.texto === "string" && pedido.texto.trim()) {
@@ -364,7 +684,7 @@ async function atender(pedido: any): Promise<Extra> {
     if (resuelto) {
       gastos.registrarUso("motor", resuelto.intencion, new Date());
       registrar(`resuelto sin IA (${resuelto.plantilla})`);
-      return { local: { texto: resuelto.texto, intencion: resuelto.intencion } };
+      return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
     if (!conectado) throw new Error("OpenClaw no está conectado; sin él solo funcionan los comandos de gastos");
     ultimoMensajeAlAgente = texto;
@@ -423,6 +743,29 @@ async function atender(pedido: any): Promise<Extra> {
       return {};
     case "equipo-estado":
       return { datos: { animo, lectura: lecturaEquipo } };
+    case "musica-control":
+      if (!ACCIONES_MUSICA.includes(pedido.accion)) break;
+      if (!musica) throw new Error("No hay música abierta");
+      await pedirMusica(pedido.accion);
+      return {};
+    case "musica-estado":
+      return { datos: musica };
+    case "calendario-estado":
+      return { datos: estadoCalendario() };
+    case "programador-estado":
+      return { datos: estadoProgramador() };
+    case "programador-decidir": {
+      const permiso = typeof pedido.permiso === "string" ? permisosClaude.get(pedido.permiso) : undefined;
+      if (pedido.decision !== "allow" && pedido.decision !== "deny") break;
+      if (!permiso) throw new Error("Ese permiso ya se respondió en la terminal");
+      registrar(`permiso de claude code: ${pedido.decision}`);
+      permiso.soltar({ decision: pedido.decision });
+      return {};
+    }
+    case "descargas-listar": {
+      const listado = listarCarpeta(CARPETA_DESCARGAS);
+      return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };
+    }
     case "temporizadores-listar":
       return { datos: temporizadores.activos() };
     case "conversacion-nueva":

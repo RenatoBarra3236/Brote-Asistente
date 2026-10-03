@@ -12,7 +12,7 @@
 import { NOMBRES_DE_CATEGORIA } from "./categorias.ts";
 import { FORMAS_DE_PERIODO } from "./periodos.ts";
 import { normalizarConMapa } from "./texto.ts";
-import { PATRON_DURACION } from "./tiempo.ts";
+import { PATRON_DURACION, PATRON_HORA } from "./tiempo.ts";
 
 export type Intencion =
   | "registrar-gasto"
@@ -25,9 +25,23 @@ export type Intencion =
   | "cancelar-pomodoro"
   | "cancelar-temporizador"
   | "consultar-temporizador"
-  | "estado-equipo";
+  | "estado-equipo"
+  | "ver-descargas"
+  | "abrir-ultima-descarga"
+  | "mostrar-ultima-descarga"
+  | "musica-pausa"
+  | "musica-play"
+  | "musica-siguiente"
+  | "musica-anterior"
+  | "musica-estado"
+  | "calendario-hoy"
+  | "calendario-manana"
+  | "calendario-proximo"
+  | "calendario-crear"
+  | "calendario-crear-manana"
+  | "programador-sesiones";
 
-export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
+export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
 export interface Plantilla {
   id: string;
@@ -58,6 +72,7 @@ const RANURAS: Record<Ranura, string> = {
   monto: ".+?",
   cosa: ".+?",
   tiempo: PATRON_DURACION,
+  hora: PATRON_HORA,
   periodo: alternancia(Object.keys(FORMAS_DE_PERIODO)),
   categoria: alternancia(Object.keys(NOMBRES_DE_CATEGORIA)),
 };
@@ -180,6 +195,17 @@ const EQUIPO = "computador|computadora|compu|pc|notebook|mac|equipo";
 const INICIAR = "empieza|inicia|comienza|pon|ponme|activa|arranca|crea|crear";
 const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apaga|apagar|quita|quitar|borra";
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
+const ABRIR = "abre|abreme|abrir|abri";
+const MOSTRAR = "muestrame|muestra|mostrar|ensename|donde esta|donde quedo";
+const CLAUDE = "claude|claude code|mis claude|las sesiones de claude|mis sesiones";
+const CREAR = "pon|ponme|crea|creame|agrega|agregame|anota|anotame|agenda|agendame";
+const EVENTO = "evento|reunion|cita|clase|prueba|actividad";
+const NOMBRADO = "de|para|llamado|llamada|que diga|sobre";
+const AGENDAR = "agenda|agendame|anota en el calendario|anota en mi calendario|pon en el calendario|pon en mi calendario";
+const AGENDA = "agenda|calendario|horario";
+const ACTIVIDADES = "clases|clase|pruebas|prueba|reuniones|reunion|eventos|evento|ayudantias|ayudantia";
+const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
+const MUSICA = "musica|cancion|tema|spotify";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
@@ -214,7 +240,7 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   {
     id: "temporizador",
     intencion: "temporizador",
-    patron: `[(${INICIAR})] [un] (temporizador|timer|cronometro|alarma) [de|por|en] {tiempo} [(para|de) {cosa}]`,
+    patron: `[(${INICIAR})] [un|una] (temporizador|timer|cronometro|alarma) [de|por|en] {tiempo} [(para|de) {cosa}]`,
   },
   { id: "recordatorio", intencion: "temporizador", patron: "(recuerdame|avisame|recordarme) en {tiempo} [que|de|para|a] {cosa}" },
   { id: "recordatorio-tiempo-primero", intencion: "temporizador", patron: "en {tiempo} (recuerdame|avisame) [que|de|para|a] {cosa}" },
@@ -235,4 +261,42 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "estado-equipo-corto", intencion: "estado-equipo", patron: `[el] estado (del|de la|de mi) (${EQUIPO})` },
   { id: "bateria", intencion: "estado-equipo", patron: "cuanta bateria [(me queda|tengo|queda|tiene|hay)]" },
   { id: "espacio", intencion: "estado-equipo", patron: "cuanto espacio (me queda|tengo|queda|hay) [(en el disco|libre)]" },
+  { id: "descargas", intencion: "ver-descargas", patron: "[(muestrame|ver|dame|cuales son|revisa)] [mis|las] [ultimas] descargas" },
+  { id: "descargas-que", intencion: "ver-descargas", patron: "(que|lo que) (descargue|he descargado|baje|he bajado) [(hoy|ultimamente|recien)]" },
+  { id: "abrir-descarga", intencion: "abrir-ultima-descarga", patron: `(${ABRIR}) [la|mi] ultima descarga` },
+  { id: "abrir-descarga-ultimo", intencion: "abrir-ultima-descarga", patron: `(${ABRIR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
+  { id: "mostrar-descarga", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) [la|mi] ultima descarga [en el (finder|explorador)]` },
+  { id: "mostrar-descarga-ultimo", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
+  { id: "musica-pausa", intencion: "musica-pausa", patron: `(pausa|pausar|pon pausa a|ponle pausa a|${DETENER}) [la|el] (${MUSICA})` },
+  { id: "musica-play", intencion: "musica-play", patron: `(pon|ponme|reanuda|reanudar|sigue con|continua|play|dale play a|vuelve a poner) [la|el] (${MUSICA})` },
+  { id: "musica-play-corto", intencion: "musica-play", patron: "(play|dale play)" },
+  { id: "musica-pausa-corto", intencion: "musica-pausa", patron: "(pausa|pon pausa)" },
+  { id: "musica-siguiente", intencion: "musica-siguiente", patron: "[(pon|ponme|dale|pasa a)] [la] (siguiente|proxima|otra) (cancion|tema)" },
+  { id: "musica-siguiente-corto", intencion: "musica-siguiente", patron: "(pon|ponme|dale|pasa a) [la] (siguiente|proxima)" },
+  { id: "musica-siguiente-verbo", intencion: "musica-siguiente", patron: "(pasa|salta|cambia|adelanta) [la|el|de] (cancion|tema)" },
+  { id: "musica-anterior", intencion: "musica-anterior", patron: "[(pon|ponme|dale|vuelve a)] [la|el] (cancion|tema) anterior" },
+  { id: "musica-anterior-corto", intencion: "musica-anterior", patron: "(pon|ponme|dale|vuelve a) [la] anterior" },
+  { id: "musica-estado", intencion: "musica-estado", patron: "(que|cual) (cancion|tema|musica) (esta sonando|suena|es esta|es|estoy escuchando)" },
+  { id: "musica-estado-corto", intencion: "musica-estado", patron: "(que|quien) (esta sonando|suena|canta)" },
+  { id: "calendario-hoy", intencion: "calendario-hoy", patron: "(que|que cosas) tengo [para] hoy [dia]" },
+  { id: "calendario-hoy-agenda", intencion: "calendario-hoy", patron: `[(muestrame|ver|dame)] [mi|el] (${AGENDA}) [(de|para)] hoy` },
+  { id: "calendario-hoy-tengo", intencion: "calendario-hoy", patron: `tengo (algo|${ACTIVIDADES}) hoy` },
+  { id: "calendario-hoy-que", intencion: "calendario-hoy", patron: `(que|cuales) (${ACTIVIDADES}) tengo hoy` },
+  { id: "calendario-manana", intencion: "calendario-manana", patron: "(que|que cosas) tengo [para] manana" },
+  { id: "calendario-manana-agenda", intencion: "calendario-manana", patron: `[(muestrame|ver|dame)] [mi|el] (${AGENDA}) [(de|para)] manana` },
+  { id: "calendario-manana-tengo", intencion: "calendario-manana", patron: `tengo (algo|${ACTIVIDADES}) manana` },
+  { id: "calendario-manana-que", intencion: "calendario-manana", patron: `(que|cuales) (${ACTIVIDADES}) tengo manana` },
+  // Crear eventos. "mañana a las" va antes que "a las" (si no, «mañana» quedaría en el título).
+  { id: "evento-en", intencion: "calendario-crear", patron: `(${CREAR}) [un|una] (${EVENTO}) en {tiempo} [(${NOMBRADO}) {cosa}]` },
+  { id: "evento-de-en", intencion: "calendario-crear", patron: `(${CREAR}) [un|una] (${EVENTO}) (${NOMBRADO}) {cosa} en {tiempo}` },
+  { id: "evento-agenda-en", intencion: "calendario-crear", patron: `(${AGENDAR}) {cosa} en {tiempo}` },
+  { id: "evento-manana", intencion: "calendario-crear-manana", patron: `(${CREAR}) [un|una] (${EVENTO}) [(${NOMBRADO}) {cosa}] manana a las {hora}` },
+  { id: "evento-agenda-manana", intencion: "calendario-crear-manana", patron: `(${AGENDAR}) {cosa} manana a las {hora}` },
+  { id: "evento-hora", intencion: "calendario-crear", patron: `(${CREAR}) [un|una] (${EVENTO}) [(${NOMBRADO}) {cosa}] [hoy] a las {hora}` },
+  { id: "evento-agenda-hora", intencion: "calendario-crear", patron: `(${AGENDAR}) {cosa} [hoy] a las {hora}` },
+  { id: "calendario-proximo", intencion: "calendario-proximo", patron: `[(cual es|cuando es|a que hora es|donde es)] [mi|la] (proxima|siguiente) (${ACTIVIDAD})` },
+  { id: "calendario-proximo-que", intencion: "calendario-proximo", patron: "que (viene|sigue|tengo) ahora" },
+  { id: "programador-que-hace", intencion: "programador-sesiones", patron: `(que|en que) (esta haciendo|hace|anda|esta) (${CLAUDE})` },
+  { id: "programador-como-va", intencion: "programador-sesiones", patron: `como (va|van|anda|andan) (${CLAUDE})` },
+  { id: "programador-sesiones", intencion: "programador-sesiones", patron: `[(muestrame|ver)] [mis] sesiones de (${CLAUDE})` },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

@@ -7,9 +7,13 @@ import type { Gastos } from "./gastos.ts";
 import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
+import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
+import { describirCreacion, describirDia, describirProximo, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
+import { describirSesiones, type SesionClaude } from "./programador.ts";
+import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
-import { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
+import { UNIDADES, describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 
 export interface Resultado {
@@ -18,6 +22,8 @@ export interface Resultado {
   plantilla: string;
   /** La respuesta para mostrar en la burbuja. */
   texto: string;
+  /** Lo que la isla necesita para terminar el pedido (por ejemplo, qué descarga abrir). */
+  datos?: unknown;
 }
 
 /** Lo que el motor entendió de una frase, antes de hacer nada. */
@@ -32,7 +38,19 @@ export type Accion =
   | { intencion: "cancelar-pomodoro" }
   | { intencion: "cancelar-temporizador" }
   | { intencion: "consultar-temporizador" }
-  | { intencion: "estado-equipo" };
+  | { intencion: "estado-equipo" }
+  | { intencion: "ver-descargas" }
+  | { intencion: "abrir-ultima-descarga" }
+  | { intencion: "mostrar-ultima-descarga" }
+  | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" }
+  | { intencion: "calendario-hoy" | "calendario-manana" | "calendario-proximo" }
+  | {
+      intencion: "calendario-crear" | "calendario-crear-manana";
+      titulo: string;
+      /** Dentro de cuánto ("en 12 minutos") o a qué hora ("a las 15:30"). */
+      cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean };
+    }
+  | { intencion: "programador-sesiones" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -67,7 +85,30 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "cancelar-temporizador":
     case "consultar-temporizador":
     case "estado-equipo":
+    case "ver-descargas":
+    case "abrir-ultima-descarga":
+    case "mostrar-ultima-descarga":
+    case "musica-pausa":
+    case "musica-play":
+    case "musica-siguiente":
+    case "musica-anterior":
+    case "musica-estado":
+    case "calendario-hoy":
+    case "calendario-manana":
+    case "calendario-proximo":
+    case "programador-sesiones":
       return { intencion };
+    case "calendario-crear":
+    case "calendario-crear-manana": {
+      const titulo = originales.cosa ? sinArticulo(originales.cosa.trim()).slice(0, 200) || "Evento" : "Evento";
+      if (ranuras.tiempo !== undefined) {
+        const enMs = leerDuracion(ranuras.tiempo);
+        return enMs === null ? null : { intencion, titulo: capitalizar(titulo), cuando: { enMs } };
+      }
+      const hora = ranuras.hora === undefined ? null : leerHora(ranuras.hora);
+      if (!hora) return null;
+      return { intencion, titulo: capitalizar(titulo), cuando: { ...hora, manana: intencion === "calendario-crear-manana" } };
+    }
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
       if (estudioMs === null) return null;
@@ -87,6 +128,11 @@ export class Motor {
   private readonly reloj: () => Date;
   private readonly temporizadores: Temporizadores | null;
   private readonly equipo: (() => LecturaEquipo | null) | null;
+  private readonly descargas: (() => Descarga[] | null) | null;
+  private readonly musica: Musica | null;
+  private readonly calendario: (() => EventoCalendario[] | null) | null;
+  private readonly sesionesClaude: (() => SesionClaude[]) | null;
+  private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -97,8 +143,23 @@ export class Motor {
       temporizadores?: Temporizadores;
       /** La última lectura del computador (la mantiene el puente). */
       equipo?: () => LecturaEquipo | null;
+      /** Las últimas descargas, de la más nueva a la más vieja (`null` si no se pudo leer la carpeta). */
+      descargas?: () => Descarga[] | null;
+      /** Lo que suena y cómo pedirle algo (lo mantiene el puente). */
+      musica?: Musica;
+      /** Los eventos de hoy a pasado mañana (`null` si no hay calendario configurado o sin permiso). */
+      calendario?: () => EventoCalendario[] | null;
+      /** Las sesiones de Claude Code que se ven por los hooks (modo programador). */
+      sesionesClaude?: () => SesionClaude[];
+      /** Crea un evento en el Calendario del Mac (lo hace el puente con EventKit). */
+      crearEvento?: (evento: NuevoEvento) => ResultadoCreacion;
     } = {},
   ) {
+    this.crearEvento = opciones.crearEvento ?? null;
+    this.sesionesClaude = opciones.sesionesClaude ?? null;
+    this.calendario = opciones.calendario ?? null;
+    this.musica = opciones.musica ?? null;
+    this.descargas = opciones.descargas ?? null;
     this.equipo = opciones.equipo ?? null;
     this.gastos = gastos;
     this.temporizadores = opciones.temporizadores ?? null;
@@ -123,7 +184,88 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (accion.intencion === "programador-sesiones") {
+      if (!this.sesionesClaude) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
+    }
+    if (accion.intencion === "calendario-crear" || accion.intencion === "calendario-crear-manana") {
+      if (!this.crearEvento) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agendar(accion) };
+    }
+    if (accion.intencion.startsWith("calendario-")) {
+      if (!this.calendario) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agenda(accion.intencion) };
+    }
+    if (accion.intencion.startsWith("musica-")) {
+      if (!this.musica) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.tocar(accion.intencion) };
+    }
+    if (esDeDescargas(accion)) {
+      const lista = this.descargas?.();
+      if (!lista) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, ...this.descargar(accion.intencion, lista) };
+    }
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  /**
+   * "Pon un evento en 12 minutos", "agenda estudiar cálculo mañana a las 10". Dura una hora. Si no se
+   * puede crear en el Calendario (sin permiso, fuera del Mac), deja un recordatorio para esa hora.
+   */
+  private agendar(accion: Extract<Accion, { intencion: "calendario-crear" | "calendario-crear-manana" }>): string {
+    const ahora = this.reloj();
+    let inicioMs: number;
+    if ("enMs" in accion.cuando) {
+      inicioMs = ahora.getTime() + accion.cuando.enMs;
+    } else {
+      const { horas, minutos, manana } = accion.cuando;
+      const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + (manana ? 1 : 0), horas, minutos);
+      // "A las 9" cuando ya pasaron las 9: es mañana.
+      if (!manana && fecha.getTime() < ahora.getTime() - UNIDADES.MINUTO) fecha.setDate(fecha.getDate() + 1);
+      inicioMs = fecha.getTime();
+    }
+    const evento: NuevoEvento = { titulo: accion.titulo, lugar: null, inicioMs, finMs: inicioMs + UNIDADES.HORA };
+    const resultado = this.crearEvento!(evento);
+    const texto = describirCreacion(evento, resultado, ahora.getTime());
+    const faltan = inicioMs - ahora.getTime();
+    if (resultado.ok || resultado.motivo === "invalido" || !this.temporizadores || faltan <= 0 || faltan > 12 * UNIDADES.HORA) return texto;
+    this.temporizadores.crear(faltan, accion.titulo, ahora);
+    return `${texto} Mientras, te dejé un recordatorio ⏰ para esa hora.`;
+  }
+
+  /** "¿Qué tengo hoy?", "¿qué tengo mañana?", "mi próxima clase". */
+  private agenda(intencion: Intencion): string {
+    const eventos = this.calendario!();
+    if (!eventos) {
+      return "📅 Todavía no veo tu calendario. Conéctalo en 🌱 → Configurar Brote (el Calendario del Mac o la dirección iCal de Google Calendar).";
+    }
+    const ahora = this.reloj().getTime();
+    if (intencion === "calendario-proximo") return describirProximo(eventos, ahora);
+    return describirDia(eventos, ahora, intencion === "calendario-hoy" ? 0 : 1);
+  }
+
+  /** "Pausa la música", "siguiente canción", "¿qué está sonando?". Nunca abre una app de música. */
+  private tocar(intencion: Intencion): string {
+    const musica = this.musica!;
+    const estado = musica.estado();
+    if (intencion === "musica-estado") return describirMusica(estado);
+    const accion = ACCION_DE[intencion]!;
+    if (estado) musica.controlar(accion);
+    return respuestaControl(accion, estado);
+  }
+
+  /** "Mis descargas" y "abre la última descarga". Abrir o mostrar lo hace la isla (Rust valida la ruta). */
+  private descargar(intencion: Intencion, lista: Descarga[]): { texto: string; datos?: unknown } {
+    if (intencion === "ver-descargas") return { texto: describirDescargas(lista.slice(0, 5), this.reloj().getTime()) };
+    const ultima = lista[0];
+    if (!ultima) return { texto: "No encontré descargas en tu carpeta de Descargas." };
+    const abrir = intencion === "abrir-ultima-descarga" && sePuedeAbrir(ultima.nombre);
+    const texto = abrir
+      ? `📂 Abro ${ultima.nombre}.`
+      : intencion === "abrir-ultima-descarga"
+        ? `📂 ${ultima.nombre} es un programa o un archivo que no abro solo: te lo muestro en ${explorador()}.`
+        : `📂 Te muestro ${ultima.nombre} en ${explorador()}.`;
+    return { texto, datos: { ruta: ultima.ruta, abrir } };
   }
 
   private ejecutar(accion: Accion): string {
@@ -147,6 +289,8 @@ export class Motor {
         return this.temporizar(accion);
       case "estado-equipo":
         return describirEquipo(this.equipo!()!);
+      default:
+        throw new Error(`El motor no ejecuta «${accion.intencion}» aquí`);
     }
   }
 
@@ -223,6 +367,22 @@ export class Motor {
 /** "un café" → "café", "el almuerzo" → "almuerzo". */
 function sinArticulo(texto: string): string {
   return texto.replace(/^(un|una|unos|unas|el|la|los|las)\s+/i, "");
+}
+
+const ACCION_DE: Partial<Record<Intencion, AccionMusica>> = {
+  "musica-pausa": "pausa",
+  "musica-play": "play",
+  "musica-siguiente": "siguiente",
+  "musica-anterior": "anterior",
+};
+
+export interface Musica {
+  estado: () => EstadoMusica | null;
+  controlar: (accion: AccionMusica) => void;
+}
+
+function esDeDescargas(accion: Accion): boolean {
+  return ["ver-descargas", "abrir-ultima-descarga", "mostrar-ultima-descarga"].includes(accion.intencion);
 }
 
 function esDeTemporizador(accion: Accion): boolean {

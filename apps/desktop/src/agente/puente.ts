@@ -20,6 +20,59 @@ export interface TemporizadorActivo {
   duracionMs: number;
 }
 
+/** Una descarga terminada en la carpeta de descargas. */
+export interface Descarga {
+  nombre: string;
+  ruta: string;
+  tamano: number;
+  fechaMs: number;
+}
+
+/** Una descarga en curso (`nombre` es `null` si el navegador todavía no sabe cómo se llamará). */
+export interface DescargaEnCurso {
+  id: string;
+  nombre: string | null;
+  tamano: number;
+}
+
+/** Lo que suena en el computador (Spotify, Música o, en Windows, el reproductor del sistema). */
+export interface EstadoMusica {
+  app: string;
+  sonando: boolean;
+  cancion: string | null;
+  artista: string | null;
+}
+
+/** El próximo evento del calendario y cómo decirlo ("Cálculo en 25 min"). */
+export interface EstadoCalendario {
+  proximo: { titulo: string; lugar: string | null; inicioMs: number; finMs: number; todoElDia: boolean } | null;
+  etiqueta: string | null;
+}
+
+/** Una sesión de Claude Code del usuario (modo programador). */
+export interface SesionClaude {
+  id: string;
+  proyecto: string;
+  estado: "pensando" | "trabajando" | "permiso" | "esperando" | "lista" | "error";
+  actividad: string;
+  ultimaActividadMs: number;
+}
+
+/** Un permiso que pide una sesión de Claude Code y se puede responder desde la isla. */
+export interface PermisoClaude {
+  id: string;
+  proyecto: string;
+  titulo: string;
+  detalle: string;
+}
+
+export interface EstadoProgramador {
+  sesiones: SesionClaude[];
+  permisos: PermisoClaude[];
+}
+
+export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
+
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
 export type Animo = "cansado" | "acalorado" | null;
 
@@ -36,6 +89,13 @@ type Aviso =
   | { tipo: "temporizador-aviso"; texto: string }
   | { tipo: "equipo-aviso"; texto: string; celebrar: boolean }
   | { tipo: "animo"; animo: Animo }
+  | { tipo: "descargas"; enCurso: DescargaEnCurso[] }
+  | { tipo: "descarga-lista"; descarga: Descarga }
+  | { tipo: "musica"; estado: EstadoMusica | null }
+  | ({ tipo: "calendario" } & EstadoCalendario)
+  | { tipo: "calendario-aviso"; texto: string }
+  | ({ tipo: "programador" } & EstadoProgramador)
+  | { tipo: "programador-reaccion"; reaccion: "termino" | "fallo"; proyecto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -63,6 +123,13 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAvisoTemporizador = new Set<(texto: string) => void>();
   private readonly oyentesEquipo = new Set<(aviso: { texto: string; celebrar: boolean }) => void>();
   private readonly oyentesAnimo = new Set<(animo: Animo) => void>();
+  private readonly oyentesDescargas = new Set<(enCurso: DescargaEnCurso[]) => void>();
+  private readonly oyentesDescargaLista = new Set<(descarga: Descarga) => void>();
+  private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
+  private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
+  private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
+  private readonly oyentesReaccion = new Set<(reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -119,6 +186,56 @@ export class TransportePuente implements Transporte {
   alCambiarAnimo(oyente: (animo: Animo) => void): () => void {
     this.oyentesAnimo.add(oyente);
     return () => this.oyentesAnimo.delete(oyente);
+  }
+
+  /** Las descargas en curso, cada vez que cambian. */
+  alCambiarDescargas(oyente: (enCurso: DescargaEnCurso[]) => void): () => void {
+    this.oyentesDescargas.add(oyente);
+    return () => this.oyentesDescargas.delete(oyente);
+  }
+
+  /** Cuando termina una descarga. */
+  alDescargaLista(oyente: (descarga: Descarga) => void): () => void {
+    this.oyentesDescargaLista.add(oyente);
+    return () => this.oyentesDescargaLista.delete(oyente);
+  }
+
+  /** Lo que suena, cada vez que cambia (canción, pausa, app cerrada…). */
+  alCambiarMusica(oyente: (estado: EstadoMusica | null) => void): () => void {
+    this.oyentesMusica.add(oyente);
+    return () => this.oyentesMusica.delete(oyente);
+  }
+
+  /** El próximo evento del calendario, cada vez que cambia (al menos cada minuto mientras falte poco). */
+  alCambiarCalendario(oyente: (estado: EstadoCalendario) => void): () => void {
+    this.oyentesCalendario.add(oyente);
+    return () => this.oyentesCalendario.delete(oyente);
+  }
+
+  /** El aviso 10 min antes de un evento. */
+  alAvisoCalendario(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoCalendario.add(oyente);
+    return () => this.oyentesAvisoCalendario.delete(oyente);
+  }
+
+  /** Las sesiones de Claude Code y sus permisos pendientes, cada vez que cambian. */
+  alCambiarProgramador(oyente: (estado: EstadoProgramador) => void): () => void {
+    this.oyentesProgramador.add(oyente);
+    return () => this.oyentesProgramador.delete(oyente);
+  }
+
+  /** Cuando una sesión de Claude Code termina su turno (o falla). */
+  alReaccionProgramador(oyente: (reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void): () => void {
+    this.oyentesReaccion.add(oyente);
+    return () => this.oyentesReaccion.delete(oyente);
+  }
+
+  async decidirPermisoClaude(id: string, decision: "allow" | "deny"): Promise<void> {
+    await this.pedir({ tipo: "programador-decidir", permiso: id, decision });
+  }
+
+  async controlarMusica(accion: AccionMusica): Promise<void> {
+    await this.pedir({ tipo: "musica-control", accion });
   }
 
   async cancelarTemporizador(id: number): Promise<void> {
@@ -202,6 +319,27 @@ export class TransportePuente implements Transporte {
         return;
       case "animo":
         for (const oyente of this.oyentesAnimo) oyente(aviso.animo);
+        return;
+      case "descargas":
+        for (const oyente of this.oyentesDescargas) oyente(aviso.enCurso);
+        return;
+      case "calendario":
+        for (const oyente of this.oyentesCalendario) oyente({ proximo: aviso.proximo, etiqueta: aviso.etiqueta });
+        return;
+      case "calendario-aviso":
+        for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
+        return;
+      case "programador":
+        for (const oyente of this.oyentesProgramador) oyente({ sesiones: aviso.sesiones, permisos: aviso.permisos });
+        return;
+      case "programador-reaccion":
+        for (const oyente of this.oyentesReaccion) oyente({ reaccion: aviso.reaccion, proyecto: aviso.proyecto });
+        return;
+      case "musica":
+        for (const oyente of this.oyentesMusica) oyente(aviso.estado);
+        return;
+      case "descarga-lista":
+        for (const oyente of this.oyentesDescargaLista) oyente(aviso.descarga);
         return;
       case "conexion": {
         const estado = { conectado: aviso.conectado, detalle: aviso.detalle };

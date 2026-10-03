@@ -1,0 +1,61 @@
+[
+  {
+    "id": "assignment_5001",
+    "title": "Informe 2: derivadas",
+    "description": "<p>Entregar en PDF.</p>",
+    "start_at": "2026-10-06T02:59:59Z",
+    "end_at": "2026-10-06T02:59:59Z",
+    "all_day": false,
+    "type": "assignment",
+    "context_code": "course_101",
+    "context_name": "Cálculo II",
+    "html_url": "https://canvas.ejemplo.cl/courses/101/assignments/5001",
+    "assignment": {
+      "id": 5001,
+      "name": "Informe 2: derivadas",
+      "due_at": "2026-10-06T02:59:59Z",
+      "course_id": 101,
+      "html_url": "https://canvas.ejemplo.cl/courses/101/assignments/5001",
+      "user_submitted": false,
+      "submission_types": ["online_upload"]
+    }
+  },
+  {
+    "id": "assignment_5002",
+    "title": "Tarea 1: vectores",
+    "start_at": "2026-10-07T03:59:00Z",
+    "end_at": "2026-10-07T03:59:00Z",
+    "all_day": false,
+    "type": "assignment",
+    "context_code": "course_102",
+    "context_name": "Álgebra Lineal",
+    "html_url": "https://canvas.ejemplo.cl/courses/102/assignments/5002",
+    "assignment": {
+      "id": 5002,
+      "name": "Tarea 1: vectores",
+      "due_at": "2026-10-07T03:59:00Z",
+      "course_id": 102,
+      "html_url": "https://canvas.ejemplo.cl/courses/102/assignments/5002",
+      "user_submitted": true
+    }
+  },
+  {
+    "id": "assignment_5003",
+    "title": "Proyecto final",
+    "start_at": "2026-10-20T03:59:00Z",
+    "type": "assignment",
+    "context_code": "course_101",
+    "html_url": "https://canvas.ejemplo.cl/courses/101/assignments/5003",
+    "assignment": { "id": 5003, "name": "Proyecto final", "due_at": "2026-10-20T03:59:00Z", "html_url": "javascript:alert(1)" }
+  },
+  {
+    "id": 9001,
+    "title": "Clase auxiliar",
+    "start_at": "2026-10-06T18:00:00Z",
+    "end_at": "2026-10-06T19:30:00Z",
+    "all_day": false,
+    "type": "event",
+    "context_code": "course_101",
+    "html_url": "https://canvas.ejemplo.cl/calendar?event_id=9001&include_contexts=course_101"
+  }
+]

@@ -10,6 +10,7 @@ import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Pla
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
 import { describirCreacion, describirDia, describirProximo, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
 import { describirSesiones, type SesionClaude } from "./programador.ts";
+import { describirEntregas, type Entrega } from "./aula.ts";
 import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
@@ -50,7 +51,8 @@ export type Accion =
       /** Dentro de cuánto ("en 12 minutos") o a qué hora ("a las 15:30"). */
       cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean };
     }
-  | { intencion: "programador-sesiones" };
+  | { intencion: "programador-sesiones" }
+  | { intencion: "aula-entregas" | "aula-semana" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -97,6 +99,8 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "calendario-manana":
     case "calendario-proximo":
     case "programador-sesiones":
+    case "aula-entregas":
+    case "aula-semana":
       return { intencion };
     case "calendario-crear":
     case "calendario-crear-manana": {
@@ -133,6 +137,7 @@ export class Motor {
   private readonly calendario: (() => EventoCalendario[] | null) | null;
   private readonly sesionesClaude: (() => SesionClaude[]) | null;
   private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
+  private readonly aula: (() => Entrega[] | null) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -153,8 +158,11 @@ export class Motor {
       sesionesClaude?: () => SesionClaude[];
       /** Crea un evento en el Calendario del Mac (lo hace el puente con EventKit). */
       crearEvento?: (evento: NuevoEvento) => ResultadoCreacion;
+      /** Las entregas del aula (Canvas o Moodle; `null` si no está configurada). */
+      aula?: () => Entrega[] | null;
     } = {},
   ) {
+    this.aula = opciones.aula ?? null;
     this.crearEvento = opciones.crearEvento ?? null;
     this.sesionesClaude = opciones.sesionesClaude ?? null;
     this.calendario = opciones.calendario ?? null;
@@ -187,6 +195,11 @@ export class Motor {
     if (accion.intencion === "programador-sesiones") {
       if (!this.sesionesClaude) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
+    }
+    if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {
+      if (!this.aula) return null;
+      const texto = describirEntregas(this.aula(), this.reloj().getTime(), accion.intencion === "aula-semana");
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto };
     }
     if (accion.intencion === "calendario-crear" || accion.intencion === "calendario-crear-manana") {
       if (!this.crearEvento) return null;

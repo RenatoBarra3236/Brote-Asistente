@@ -63,3 +63,55 @@
   color: var(--texto);
   font: inherit;
 }
+
+/* Conectores (Todoist, Notion, GitHub, Canva y servidores propios). */
+.seccion-conectores {
+  margin-top: 18px;
+}
+
+.etiqueta-sin-probar {
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 176, 33, 0.2);
+  color: var(--texto);
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.estado-conector {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.esperando-autorizacion {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(92, 160, 255, 0.14);
+  font-size: 12px;
+}
+
+.formulario-conector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.formulario-conector select {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: inherit;
+}
+
+.avanzado summary {
+  cursor: pointer;
+  color: var(--suave);
+  font-weight: 600;
+}

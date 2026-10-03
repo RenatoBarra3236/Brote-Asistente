@@ -56,12 +56,22 @@
 //   pedido { "tipo": "programador-decidir", "permiso": "…", "decision": "allow" | "deny" }
 //   pedido { "tipo": "programador-estado" }   → "datos": { sesiones, permisos }
 //
+// Aula (Canvas o Moodle, solo lectura; ~/.asistente-prototipo/aula.json lo escribe Rust):
+//   aviso { "tipo": "aula", "configurada": true, "proxima": { curso, titulo, entregaMs, url, entregada } | null, "pendientes": 3, "error": null }
+//   aviso { "tipo": "aula-aviso", "texto": "📚 Mañana a esta hora vence…" }   24 h y 2 h antes, una vez
+//   pedido { "tipo": "aula-estado" }   → "datos": lo mismo que el aviso "aula"
+//
+// Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
+// está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
+// `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
 // Al cerrarse la entrada (la app terminó), el puente se desconecta y sale.
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import {
   Gastos,
@@ -74,6 +84,13 @@ import {
   esDeOpenClaw,
   leerEventoHook,
   AvisadorCalendario,
+  AvisadorEntregas,
+  describirErrorAula,
+  leerAula,
+  leerConfigAula,
+  marcaConfigAula,
+  pendientes,
+  type Entrega,
   combinar,
   descargarIcal,
   etiquetaProximo,
@@ -123,8 +140,9 @@ import {
   suscribirseALaSesion,
 } from "./conexion.ts";
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
+import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
 import { esDeMemoria } from "./permisos.ts";
-import { CARPETA_OPENCLAW, WORKSPACE } from "./rutas.ts";
+import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE } from "./rutas.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
@@ -149,7 +167,30 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__musica_estado",
   "mcp__gastos__musica_control",
   "mcp__gastos__calendario_proximos",
+  "mcp__gastos__aula_entregas",
 ]);
+
+/**
+ * Las herramientas de solo lectura de los conectores del catálogo que están conectados (Todoist,
+ * Notion…) también pasan sin preguntar. Se lee al momento conectores.json (lo escribe Configurar
+ * Brote) y la configuración de OpenClaw (la URL debe ser la del catálogo); los propios siempre preguntan.
+ */
+function esDeConectorSinPreguntar(herramienta: unknown): boolean {
+  if (typeof herramienta !== "string" || !herramienta.startsWith("mcp__")) return false;
+  let config: unknown = null;
+  try {
+    config = JSON.parse(readFileSync(CONFIG_OPENCLAW, "utf8"));
+  } catch {
+    return false;
+  }
+  return permitidaSinPreguntar(herramienta, leerConectados(), config);
+}
+
+/** "Todoist · Buscar tareas" para la isla, en vez de "claude-cli native tool: mcp__todoist__find-tasks". */
+function anotarConector(objeto: any, herramienta: unknown): void {
+  const bonito = nombreBonito(herramienta);
+  if (bonito && objeto && typeof objeto === "object") objeto.conector = { servicio: bonito.servicio, accion: bonito.accion, propio: bonito.propio };
+}
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
 function conversacionesGuardadas(): Set<string> {
@@ -216,6 +257,7 @@ const motor = new Motor(gastos, {
   // Crear un evento es un pedido del usuario y tarda menos de un segundo: se hace al tiro y después
   // se vuelve a leer el calendario para que aparezca en la isla.
   crearEvento: (evento) => crearEvento(evento),
+  aula: () => entregasAula,
 });
 
 /** Crea un evento en el Calendario del Mac (para el motor y para el MCP) y vuelve a leer el calendario. */
@@ -377,6 +419,69 @@ async function revisarCalendario(): Promise<void> {
 setInterval(() => void revisarCalendario(), 30_000);
 void revisarCalendario();
 
+// Aula (Canvas o Moodle): se lee cada 30 min, o al tiro si cambió aula.json (se mira cada minuto).
+// Cada minuto se revisa si toca avisar (24 h y 2 h antes). El token es secreto: nunca se registra, y
+// los errores solo dicen qué tipo de problema hubo. Si falla la red se conservan las últimas entregas.
+let entregasAula: Entrega[] | null = null;
+let errorAula: "token" | "red" | "respuesta" | null = null;
+let proximaLecturaAula = 0;
+let marcaAula = -1;
+let leyendoAula: Promise<void> | null = null;
+let ultimoAula = "";
+const avisadorEntregas = new AvisadorEntregas();
+function leerAulaSiToca(): Promise<void> {
+  leyendoAula ??= (async () => {
+    const ahora = Date.now();
+    const marca = marcaConfigAula();
+    if (marca === marcaAula && ahora < proximaLecturaAula) return;
+    marcaAula = marca;
+    proximaLecturaAula = ahora + 30 * 60_000;
+    const config = leerConfigAula();
+    if (!config) {
+      entregasAula = null;
+      errorAula = null;
+      return;
+    }
+    const lectura = await leerAula(config, ahora);
+    if ("entregas" in lectura) {
+      entregasAula = lectura.entregas;
+      errorAula = null;
+      return;
+    }
+    registrar(`aula: no pude leer (${lectura.error})`);
+    errorAula = lectura.error;
+    // Sin red se conservan las últimas; con el token malo o una respuesta rara, no.
+    if (lectura.error !== "red") entregasAula = null;
+    // Se reintenta antes que en 30 min.
+    proximaLecturaAula = ahora + 5 * 60_000;
+  })().finally(() => (leyendoAula = null));
+  return leyendoAula;
+}
+function estadoAula() {
+  const lista = entregasAula ? pendientes(entregasAula, Date.now()) : [];
+  return {
+    configurada: entregasAula !== null || errorAula !== null,
+    proxima: lista[0] ?? null,
+    pendientes: lista.length,
+    error: entregasAula === null && errorAula ? describirErrorAula(errorAula) : null,
+  };
+}
+async function revisarAula(): Promise<void> {
+  await leerAulaSiToca();
+  for (const texto of avisadorEntregas.revisar(entregasAula ?? [], Date.now())) {
+    registrar("aula: aviso");
+    avisar({ tipo: "aula-aviso", texto });
+  }
+  const estado = estadoAula();
+  const texto = JSON.stringify(estado);
+  if (texto !== ultimoAula) {
+    ultimoAula = texto;
+    avisar({ tipo: "aula", ...estado });
+  }
+}
+setInterval(() => void revisarAula(), 60_000);
+void revisarAula();
+
 // Música: se revisa cada 3 s (5 en Windows, donde PowerShell tarda más en partir), una lectura a la
 // vez. Si el usuario negó el permiso de Automatización para una app, no se le pregunta de nuevo
 // hasta dentro de 30 min.
@@ -436,6 +541,9 @@ async function consultarDelMcp(datos: unknown): Promise<object> {
       }
       return { resultado: crearEvento({ titulo: e.titulo, lugar, inicioMs: e.inicioMs, finMs: e.finMs }) };
     }
+    case "aula":
+      await leerAulaSiToca();
+      return { entregas: entregasAula, error: entregasAula === null ? errorAula : null };
     case "calendario":
       await leerCalendarios();
       return { eventos: eventosMac === null && icsTexto === null ? null : eventosCalendario() };
@@ -630,8 +738,14 @@ const cliente = (() => {
         if (marco.event === "agent" && marco.payload?.stream === "tool" && datos?.phase === "start") {
           if (String(datos.name ?? "").endsWith("gastos_anotar")) recordarAnotacion(datos.args);
         }
+        if (aprobacion) anotarConector(aprobacion.presentation, herramienta);
+        if ((marco.event === "agent" && (marco.payload?.stream === "tool" || marco.payload?.stream === "item")) && datos?.phase === "start") {
+          anotarConector(datos, datos.name);
+        }
         if (
-          (PERMITIDAS_SIN_PREGUNTAR.has(herramienta) || esDeMemoria(herramienta, aprobacion?.presentation?.detail)) &&
+          (PERMITIDAS_SIN_PREGUNTAR.has(herramienta) ||
+            esDeMemoria(herramienta, aprobacion?.presentation?.detail) ||
+            esDeConectorSinPreguntar(herramienta)) &&
           aprobacion.presentation.allowedDecisions?.includes("allow-once")
         ) {
           // La isla no ve la solicitud; si permitirla falla, se la muestra para que decida el usuario.
@@ -752,6 +866,8 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: musica };
     case "calendario-estado":
       return { datos: estadoCalendario() };
+    case "aula-estado":
+      return { datos: estadoAula() };
     case "programador-estado":
       return { datos: estadoProgramador() };
     case "programador-decidir": {

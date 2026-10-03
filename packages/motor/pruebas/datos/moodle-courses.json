@@ -1,0 +1,4 @@
+[
+  { "id": 11, "shortname": "FIS101", "fullname": "Física I", "displayname": "Física I", "enrolledusercount": 84, "idnumber": "", "visible": 1, "summary": "", "summaryformat": 1, "format": "topics", "showgrades": true, "lang": "", "enablecompletion": true, "category": 3, "progress": 40, "completed": false, "startdate": 1785556800, "enddate": 1796356800, "marker": 0, "lastaccess": 1791100000, "isfavourite": false, "hidden": false, "overviewfiles": [] },
+  { "id": 12, "shortname": "QUI100", "fullname": "Química General", "displayname": "Química General", "enrolledusercount": 120, "idnumber": "", "visible": 1, "format": "weeks", "progress": 55, "completed": false, "hidden": false }
+]

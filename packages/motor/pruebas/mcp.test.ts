@@ -37,7 +37,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "motor_proponer_plantilla"],
     );
   });
 
@@ -105,6 +105,14 @@ describe("servidor MCP de gastos", () => {
           consulta.tipo === "musica-estado" ? { musica }
           : consulta.tipo === "musica-control" ? { hecho: true, musica }
           : consulta.tipo === "calendario-crear" ? { resultado: { ok: true, calendario: "Universidad" } }
+          : consulta.tipo === "aula"
+            ? {
+                entregas: [
+                  { curso: "Física I", titulo: "Lab 4", entregaMs: Date.now() + 86_400_000, url: null, entregada: false },
+                  { curso: "Física I", titulo: "Lab 3", entregaMs: Date.now() + 3_600_000, url: null, entregada: true },
+                  { curso: "Química", titulo: "Informe final", entregaMs: Date.now() + 40 * 86_400_000, url: null, entregada: false },
+                ],
+              }
           : { eventos: [{ titulo: "Cálculo", lugar: "B-12", inicioMs: inicio, finMs: inicio + 3_600_000, todoElDia: false }] };
         respuesta.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(cuerpo));
       });
@@ -119,13 +127,23 @@ describe("servidor MCP de gastos", () => {
       assert.deepEqual(eventos.map((e: any) => [e.titulo, e.lugar]), [["Cálculo", "B-12"]]);
       // Crear un evento también lo hace Brote (el MCP no tiene el permiso de Calendario).
       assert.match((await llamarEsperando("calendario_crear", { titulo: "Prueba de física", inicio: "2026-12-05 10:00", minutos: 90 })).texto, /Listo: «Prueba de física» .* «Universidad»/);
-      assert.deepEqual(pedidos.map((p) => p.tipo), ["musica-estado", "musica-control", "calendario", "calendario-crear"]);
+      // El aula también la lee Brote: por defecto solo lo pendiente de los próximos 14 días.
+      const aula = JSON.parse((await llamarEsperando("aula_entregas", {})).texto);
+      assert.deepEqual(aula.entregas.map((e: any) => [e.titulo, e.entregada]), [["Lab 4", false]]);
+      const conEntregadas = JSON.parse((await llamarEsperando("aula_entregas", { dias: 60, incluirEntregadas: true })).texto);
+      assert.equal(conEntregadas.entregas.length, 3);
+      assert.deepEqual(pedidos.map((p) => p.tipo), ["musica-estado", "musica-control", "calendario", "calendario-crear", "aula", "aula"]);
       assert.equal(pedidos[3].evento.finMs - pedidos[3].evento.inicioMs, 90 * 60_000);
       assert.equal(pedidos[1].accion, "play");
     } finally {
       rmSync(process.env.ASISTENTE_CONEXION_HOOKS!, { force: true });
       servidor.close();
     }
+  });
+
+  it("el aula responde aunque no haya ninguna conectada", async () => {
+    const respuesta = await llamarEsperando("aula_entregas", {});
+    if (process.platform === "linux") assert.match(respuesta.texto, /No hay aula conectada|entregas|aula/);
   });
 
   it("el calendario responde aunque no haya ninguno conectado", async () => {

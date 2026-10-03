@@ -1,0 +1,52 @@
+[
+  {
+    "context_type": "Course",
+    "course_id": 101,
+    "context_name": "Cálculo II",
+    "type": "submitting",
+    "ignore": "https://canvas.ejemplo.cl/api/v1/users/self/todo/assignment_5001/submitting?permanent=0",
+    "ignore_permanently": "https://canvas.ejemplo.cl/api/v1/users/self/todo/assignment_5001/submitting?permanent=1",
+    "html_url": "https://canvas.ejemplo.cl/courses/101/assignments/5001#submit",
+    "needs_grading_count": null,
+    "group_id": null,
+    "assignment": {
+      "id": 5001,
+      "name": "Informe 2: derivadas",
+      "description": "<p>Entregar en PDF.</p>",
+      "due_at": "2026-10-06T02:59:59Z",
+      "unlock_at": null,
+      "lock_at": null,
+      "points_possible": 10.0,
+      "grading_type": "points",
+      "submission_types": ["online_upload"],
+      "has_submitted_submissions": true,
+      "course_id": 101,
+      "html_url": "https://canvas.ejemplo.cl/courses/101/assignments/5001",
+      "published": true
+    }
+  },
+  {
+    "context_type": "Course",
+    "course_id": 102,
+    "context_name": "Álgebra Lineal",
+    "type": "submitting",
+    "ignore": "https://canvas.ejemplo.cl/api/v1/users/self/todo/quiz_77/submitting?permanent=0",
+    "ignore_permanently": "https://canvas.ejemplo.cl/api/v1/users/self/todo/quiz_77/submitting?permanent=1",
+    "html_url": "https://canvas.ejemplo.cl/courses/102/quizzes/77",
+    "quiz": {
+      "id": 77,
+      "title": "Control 3",
+      "html_url": "https://canvas.ejemplo.cl/courses/102/quizzes/77",
+      "due_at": "2026-10-09T22:00:00Z",
+      "time_limit": 30,
+      "quiz_type": "assignment",
+      "published": true
+    }
+  },
+  {
+    "context_type": "Course",
+    "course_id": 101,
+    "type": "grading",
+    "assignment": { "id": 5999, "name": "Algo para corregir (no es del estudiante)", "due_at": "2026-10-06T12:00:00Z", "course_id": 101 }
+  }
+]

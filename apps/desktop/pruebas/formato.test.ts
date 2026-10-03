@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto } from "../src/agente/formato.ts";
+import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto, venceEn } from "../src/agente/formato.ts";
 
 describe("formatos de la isla", () => {
   test("cuenta regresiva y tamaños", () => {
@@ -44,5 +44,18 @@ describe("formatos de la isla", () => {
     for (const p of ["c", "d", "e"]) pasos = agregarPaso(pasos, p);
     assert.deepEqual(pasos, ["Editando b.ts", "c", "d", "e"]);
     assert.deepEqual(agregarPaso(pasos, ""), pasos);
+  });
+});
+
+describe("venceEn", () => {
+  const ahora = new Date(2026, 9, 5, 12, 0).getTime();
+  test("dicho corto, de lo más urgente a lo lejano", () => {
+    assert.equal(venceEn(ahora + 45 * 60_000, ahora), "en 45 min");
+    assert.equal(venceEn(ahora + 3.5 * 3_600_000, ahora), "en 3 h");
+    assert.equal(venceEn(new Date(2026, 9, 5, 23, 59).getTime(), ahora), "hoy 23:59");
+    assert.equal(venceEn(new Date(2026, 9, 6, 23, 59).getTime(), ahora), "mañana 23:59");
+    assert.equal(venceEn(new Date(2026, 9, 8, 23, 59).getTime(), ahora), "jue 23:59");
+    assert.equal(venceEn(new Date(2026, 9, 20, 23, 59).getTime(), ahora), "20/10");
+    assert.equal(venceEn(ahora - 1, ahora), "venció");
   });
 });

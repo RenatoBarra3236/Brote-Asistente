@@ -7,6 +7,7 @@ import {
   type Descarga,
   type DescargaEnCurso,
   type EstadoCalendario,
+  type EstadoAula,
   type EstadoMusica,
   type EstadoProgramador,
   type LecturaEquipo,
@@ -154,6 +155,21 @@ async function iniciar(): Promise<void> {
     puente.alCambiarCalendario(cambiarCalendario);
     void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
     puente.alAvisoCalendario((texto) => {
+      panel.mostrarAviso(texto);
+      personaje.tocar();
+    });
+
+    // Aula: la próxima entrega (se repinta cada minuto para que "en 45 min" no quede viejo) y los
+    // avisos 24 h y 2 h antes, con un saltito de Brote.
+    let aula: EstadoAula | null = null;
+    const cambiarAula = (estado: EstadoAula) => {
+      aula = estado;
+      panel.mostrarAula(estado);
+    };
+    puente.alCambiarAula(cambiarAula);
+    void puente.consultar<EstadoAula>({ tipo: "aula-estado" }).then(cambiarAula, () => {});
+    setInterval(() => aula && panel.mostrarAula(aula), 60_000);
+    puente.alAvisoAula((texto) => {
       panel.mostrarAviso(texto);
       personaje.tocar();
     });

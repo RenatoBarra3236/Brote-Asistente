@@ -364,6 +364,18 @@ button.tarjeta:hover {
   font-weight: 600;
 }
 
+/* Aula: la próxima entrega; ámbar si vence en menos de 24 h. */
+.tarjeta.aula.pronto {
+  background: linear-gradient(150deg, rgba(255, 176, 33, 0.22), rgba(255, 176, 33, 0.06));
+}
+.tarjeta.aula.pronto .tarjeta-detalle {
+  color: rgb(255, 214, 150);
+  font-weight: 600;
+}
+.tarjeta.aula.con-error .tarjeta-detalle {
+  white-space: normal;
+}
+
 /* Música. */
 .tarjeta.musica {
   display: flex;

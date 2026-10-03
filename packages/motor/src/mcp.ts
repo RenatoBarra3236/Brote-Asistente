@@ -23,6 +23,7 @@ import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
 import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
+import { describirErrorAula, leerAula, leerConfigAula, type Entrega } from "./aula.ts";
 import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
 import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
@@ -202,6 +203,22 @@ const HERRAMIENTAS = [
     annotations: { title: "Sesiones de Claude Code", readOnlyHint: true },
   },
   {
+    name: "aula_entregas",
+    description:
+      "Las entregas del usuario en su aula virtual (Canvas o Moodle, solo lectura): curso, título, fecha límite en su hora " +
+      "local y si ya la entregó. Por defecto solo las pendientes de los próximos 14 días. Úsala para planificar su estudio " +
+      "o si pregunta qué tiene que entregar. No puede entregar nada ni ver notas.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dias: { type: "integer", minimum: 1, maximum: 60, default: 14 },
+        incluirEntregadas: { type: "boolean", default: false },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Aula: entregas", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -325,6 +342,31 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
       if (!estado) return "No hay música abierta (no abro apps de música).";
       return hecho ? `Hecho: ${accion} en ${estado.app}.` : "No pude controlar la música.";
     }
+    case "aula_entregas": {
+      const dias = Number.isInteger(args.dias) ? Math.min(Math.max(args.dias, 1), 60) : 14;
+      const ahora = Date.now();
+      // Lo lee Brote (que ya lo tiene, sin volver a pedirlo al campus); si no está abierto, se lee aquí.
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "aula" }, { limiteMs: 25_000 });
+      let entregas: Entrega[];
+      if (deBrote) {
+        if (deBrote.error) return describirErrorAula(deBrote.error);
+        if (!Array.isArray(deBrote.entregas)) return SIN_AULA;
+        entregas = deBrote.entregas;
+      } else {
+        const config = leerConfigAula();
+        if (!config) return SIN_AULA;
+        const lectura = await leerAula(config, ahora);
+        if ("error" in lectura) return describirErrorAula(lectura.error);
+        entregas = lectura.entregas;
+      }
+      const lista = entregas.filter(
+        (e) => e.entregaMs <= ahora + dias * 86_400_000 && (args.incluirEntregadas === true ? e.entregaMs > ahora - 7 * 86_400_000 : !e.entregada && e.entregaMs > ahora),
+      );
+      return JSON.stringify({
+        ahora: fechaHora(ahora),
+        entregas: lista.map((e) => ({ curso: e.curso, titulo: e.titulo, vence: fechaHora(e.entregaMs), entregada: e.entregada, url: e.url })),
+      });
+    }
     case "programador_sesiones": {
       const sesiones = await pedirSesiones();
       if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
@@ -335,7 +377,7 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
   }
 }
 
-const ESPERAN = new Set(["calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
+const ESPERAN = new Set(["aula_entregas", "calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
 
 /** Los argumentos de `calendario_crear` → el evento, o un error de uso. */
 function leerNuevoEvento(args: any): NuevoEvento {
@@ -354,6 +396,8 @@ function leerNuevoEvento(args: any): NuevoEvento {
     finMs: inicio.getTime() + minutos * 60_000,
   };
 }
+
+const SIN_AULA = "No hay aula conectada. El usuario puede conectar Canvas o Moodle en Brote: 🌱 → Configurar Brote.";
 
 const SIN_CALENDARIO =
   "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";

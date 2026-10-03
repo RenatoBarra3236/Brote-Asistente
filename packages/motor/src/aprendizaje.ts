@@ -134,6 +134,10 @@ export function describirIntencion(intencion: Intencion): string {
       return "crear un evento en tu calendario";
     case "programador-sesiones":
       return "mostrar tus sesiones de Claude Code";
+    case "aula-entregas":
+      return "mostrar tus entregas pendientes";
+    case "aula-semana":
+      return "mostrar lo que tienes que entregar esta semana";
   }
 }
 

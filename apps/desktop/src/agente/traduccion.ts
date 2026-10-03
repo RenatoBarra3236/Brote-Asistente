@@ -94,7 +94,7 @@ function desdeAgente(payload: any): Suceso | null {
           tipo: "herramienta-inicio",
           id: idHerramienta(data),
           nombre,
-          etiqueta: etiquetaHerramienta(nombre, undefined, data.meta),
+          etiqueta: etiquetaConector(data.conector) ?? etiquetaHerramienta(nombre, undefined, data.meta),
         };
       }
       if (fase === "end") return { tipo: "herramienta-fin", id: idHerramienta(data), error: data.status === "failed" };
@@ -106,7 +106,7 @@ function desdeAgente(payload: any): Suceso | null {
           tipo: "herramienta-inicio",
           id: idHerramienta(data),
           nombre,
-          etiqueta: etiquetaHerramienta(nombre, data.args),
+          etiqueta: etiquetaConector(data.conector) ?? etiquetaHerramienta(nombre, data.args),
         };
       }
       if (fase === "result") return { tipo: "herramienta-fin", id: idHerramienta(data), error: data.isError === true };
@@ -185,6 +185,30 @@ export function etiquetaHerramienta(nombre: string, args?: any, meta?: unknown):
   }
 }
 
+/** Un conector (Todoist, Notion…) con el nombre que le pone el puente: "Todoist · Buscar tareas". */
+interface Conector {
+  servicio: string;
+  accion: string;
+  propio?: boolean;
+}
+
+function esConector(valor: any): valor is Conector {
+  return typeof valor?.servicio === "string" && typeof valor?.accion === "string";
+}
+
+function etiquetaConector(conector: unknown): string | null {
+  return esConector(conector) ? `${conector.servicio} · ${conector.accion}…` : null;
+}
+
+/** Los argumentos de una herramienta de un conector, cortos: "content: Comprar pan · dueString: mañana". */
+function resumirArgumentos(args: any, crudo: string): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return recortar(crudo, 200);
+  const partes = Object.entries(args)
+    .filter(([, valor]) => valor !== null && valor !== undefined && valor !== "")
+    .map(([clave, valor]) => `${clave}: ${typeof valor === "string" ? valor : JSON.stringify(valor)}`);
+  return recortar(partes.join(" · "), 200);
+}
+
 /** Pregunta y detalle legibles a partir de `approval.presentation`. */
 export function describirAprobacion(presentacion: any): { titulo: string; detalle: string } {
   // El título original es del estilo "claude-cli native tool: Bash".
@@ -198,6 +222,10 @@ export function describirAprobacion(presentacion: any): { titulo: string; detall
     // El detalle no siempre es JSON: se muestra tal cual.
   }
   const ruta = args?.file_path ?? args?.notebook_path;
+  if (esConector(presentacion?.conector)) {
+    const { servicio, accion, propio } = presentacion.conector;
+    return { titulo: `${servicio} · ${accion}${propio ? " (servicio agregado por ti)" : ""}`, detalle: resumirArgumentos(args, crudo) };
+  }
   switch (herramienta) {
     case "Bash":
       return { titulo: "¿Ejecuto este comando?", detalle: recortar(String(args?.command ?? crudo), 200) };

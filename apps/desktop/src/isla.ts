@@ -1,10 +1,11 @@
 // macOS: la "isla" negra que continúa el notch, como la Dynamic Island del iPhone.
-// Cerrada, apenas sobresale y el personaje asoma pequeño en un costado; abierta, se
-// despliega hacia abajo con el personaje a la izquierda y, a la derecha, el panel para
-// hablar con el agente (`panel.ts`). Crece lo justo para el contenido del panel.
+// Cerrada, apenas sobresale: Brote asoma pequeño en el ala derecha y en la izquierda va lo más
+// urgente (un temporizador, la música…). Abierta, se despliega hacia abajo: las pestañas en la
+// fila del notch y, debajo, una tarjeta con Brote a la izquierda y el panel (`panel.ts`) a la
+// derecha. Crece lo justo para el contenido del panel.
 
 import type { Zona } from "./panel";
-import { ESTADOS } from "./personaje/estados";
+import { ESTADOS, type RGB } from "./personaje/estados";
 import { Resorte, lerp, limitar } from "./personaje/fisica";
 import type { Personaje } from "./personaje/personaje";
 
@@ -14,17 +15,28 @@ const ALA = 1.6;
 const OREJA = 8;
 /** Cuánto sigue abierta la isla después de que el cursor se va y el agente queda en reposo. */
 const ESPERA_CIERRE = 0.8;
-/** Ancho preferido de la isla abierta. La ventana del notch mide 440 × 300 (lib.rs). */
-const ANCHO_ABIERTA = 400;
-/** Alto mínimo de la isla abierta bajo el notch: lo que ocupa el personaje. */
-const ALTO_PERSONAJE = 110;
-/** Columna izquierda de la isla abierta, donde va el personaje. */
-const COLUMNA = 104;
+/** Ancho preferido de la isla abierta. La ventana del notch mide 600 × 380 (lib.rs). */
+const ANCHO_ABIERTA = 560;
+/** Alto mínimo de la tarjeta interior: lo que ocupan Brote y su etiqueta. */
+const ALTO_TARJETA = 168;
+/** Columna de Brote dentro de la tarjeta. */
+const COLUMNA = 116;
+/** Margen entre el borde de la isla y la tarjeta, y dentro de la tarjeta. */
+const BORDE = 8;
 const MARGEN = 10;
+/** El tamaño de Brote con la isla abierta. */
+const RADIO_GRANDE = 30;
 
 interface Tamano {
   ancho: number;
   alto: number;
+}
+
+/** Lo que se ve en el ala izquierda de la isla cerrada: un texto ("12:34") o las ondas de la música. */
+export interface Ala {
+  texto: string;
+  color: string;
+  ondas?: boolean;
 }
 
 export class Isla {
@@ -44,9 +56,9 @@ export class Isla {
     this.notchAlto = notchAlto;
     const ala = notchAlto * ALA;
     this.cerrada = { ancho: notchAncho + 2 * ala, alto: notchAlto };
-    this.desplegada = { ancho: Math.max(notchAncho + 2 * ala + 60, ANCHO_ABIERTA), alto: notchAlto + ALTO_PERSONAJE };
-    this.ancho = new Resorte(this.cerrada.ancho, 2.2, 0.72);
-    this.alto = new Resorte(this.cerrada.alto, 2.2, 0.72);
+    this.desplegada = { ancho: Math.max(notchAncho + 2 * ala + 60, ANCHO_ABIERTA), alto: notchAlto + ALTO_TARJETA + BORDE };
+    this.ancho = new Resorte(this.cerrada.ancho, 2.2, 0.74);
+    this.alto = new Resorte(this.cerrada.alto, 2.2, 0.74);
   }
 
   /** El tamaño de la ventana limita cuánto puede crecer la isla. */
@@ -90,62 +102,99 @@ export class Isla {
     return Math.abs(x - W / 2) <= mitad && y >= 0 && y <= this.alto.valor + 4;
   }
 
-  /** Dónde va el panel dentro de la isla abierta: a la derecha del personaje, bajo el notch. */
+  /** Dónde va el panel (a la derecha de Brote, dentro de la tarjeta) y las pestañas (en la fila del notch). */
   zonaPanel(W: number): Zona {
     const ancho = this.desplegada.ancho;
+    const x0 = W / 2 - ancho / 2;
+    const arriba = this.notchAlto + MARGEN;
     return {
-      x: W / 2 - ancho / 2 + COLUMNA,
-      y: this.notchAlto + MARGEN,
-      ancho: ancho - COLUMNA - MARGEN - 4,
-      altoMax: Math.max(0, this.ventana.alto - 4 - this.notchAlto - 2 * MARGEN),
+      x: x0 + BORDE + COLUMNA,
+      y: arriba,
+      ancho: ancho - 2 * BORDE - COLUMNA - MARGEN,
+      altoMax: Math.max(0, this.ventana.alto - 4 - arriba - MARGEN - BORDE),
+      barra: { x: x0 + 14, y: 0, ancho: ancho - 28, alto: this.notchAlto },
     };
   }
 
-  /**
-   * `reloj`: un temporizador corriendo ("12:34" y su color), que se ve en el ala izquierda
-   * mientras la isla está cerrada.
-   */
-  dibujar(ctx: CanvasRenderingContext2D, W: number, personaje: Personaje, reloj?: { texto: string; color: string }): void {
+  /** `ala`: lo que se ve en el ala izquierda mientras la isla está cerrada. */
+  dibujar(ctx: CanvasRenderingContext2D, W: number, personaje: Personaje, ala?: Ala): void {
     const camino = this.camino(W);
     ctx.fillStyle = "#000";
     ctx.fill(camino);
 
-    // Progreso del despliegue: 0 cerrada, 1 abierta. El personaje crece y pasa a su columna.
+    // Progreso del despliegue: 0 cerrada, 1 abierta. Brote crece y pasa a su columna.
     const p = this.progreso();
-    const ala = this.notchAlto * ALA;
-    const radioChico = this.notchAlto * 0.3;
-    const radioGrande = 30;
-    const xChico = W / 2 + this.notchAncho / 2 + ala / 2;
-    const xGrande = W / 2 - this.ancho.valor / 2 + COLUMNA / 2 + 4;
-    const sueloChico = this.notchAlto * 0.5 + radioChico * 0.92;
-    const sueloGrande = this.notchAlto + ALTO_PERSONAJE - 14;
+    const x0 = W / 2 - this.ancho.valor / 2;
+    const color = colorDe(ESTADOS[personaje.estado].color);
 
     ctx.save();
     ctx.clip(camino);
-    personaje.dibujar(ctx, lerp(xChico, xGrande, p), lerp(sueloChico, sueloGrande, p), lerp(radioChico, radioGrande, p));
+    if (p > 0.05) this.dibujarTarjeta(ctx, W, p);
+
+    const ala0 = this.notchAlto * ALA;
+    const radioChico = this.notchAlto * 0.3;
+    const xChico = W / 2 + this.notchAncho / 2 + ala0 / 2;
+    const xGrande = x0 + BORDE + COLUMNA / 2;
+    const sueloChico = this.notchAlto * 0.5 + radioChico * 0.92;
+    const sueloGrande = this.notchAlto + 4 + ALTO_TARJETA * 0.62;
+    const cx = lerp(xChico, xGrande, p);
+    const suelo = lerp(sueloChico, sueloGrande, p);
+    const radio = lerp(radioChico, RADIO_GRANDE, p);
+
+    // Un halo suave del color del estado detrás de Brote.
+    if (p > 0.3) {
+      const alfa = ((p - 0.3) / 0.7) * 0.22;
+      const cy = suelo - radio;
+      const halo = ctx.createRadialGradient(cx, cy, radio * 0.4, cx, cy, radio * 2.4);
+      halo.addColorStop(0, `rgba(${color}, ${alfa})`);
+      halo.addColorStop(1, `rgba(${color}, 0)`);
+      ctx.fillStyle = halo;
+      ctx.fillRect(cx - radio * 2.5, cy - radio * 2.5, radio * 5, radio * 5);
+    }
+    personaje.dibujar(ctx, cx, suelo, radio);
+
     if (p > 0.6) {
-      const alfa = (p - 0.6) / 0.4;
-      ctx.fillStyle = `rgba(255,255,255,${0.85 * alfa})`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      // Achica la letra si el nombre del estado no cabe en la columna del personaje.
+      ctx.globalAlpha = (p - 0.6) / 0.4;
       // En reposo se muestra su nombre: "En reposo" sobraba mientras se lee una respuesta.
       const nombre = personaje.estado === "reposo" ? "Brote" : ESTADOS[personaje.estado].nombre;
-      ctx.font = "600 11px system-ui, sans-serif";
-      const tamano = Math.min(11, (11 * (COLUMNA - 12)) / ctx.measureText(nombre).width);
-      ctx.font = `600 ${tamano.toFixed(1)}px system-ui, sans-serif`;
-      ctx.fillText(nombre, xGrande, this.notchAlto + 12);
+      etiqueta(ctx, nombre, color, xGrande, sueloGrande + 22, COLUMNA - 16);
+      ctx.globalAlpha = 1;
     }
-    if (reloj && p < 0.5) {
+    if (ala && p < 0.5) {
       ctx.globalAlpha = 1 - p * 2;
-      ctx.fillStyle = reloj.color;
-      ctx.font = "600 10px ui-monospace, 'SF Mono', Menlo, monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(reloj.texto, W / 2 - this.notchAncho / 2 - (this.notchAlto * ALA) / 2, this.notchAlto / 2);
+      const x = W / 2 - this.notchAncho / 2 - ala0 / 2;
+      if (ala.ondas) ondas(ctx, x, this.notchAlto / 2, ala.color, this.t);
+      else {
+        ctx.fillStyle = ala.color;
+        ctx.font = "600 10px ui-monospace, 'SF Mono', Menlo, monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(ala.texto, x, this.notchAlto / 2);
+      }
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+  }
+
+  /** La tarjeta interior: un poco más clara que la isla, con un degradado sutil y un borde fino. */
+  private dibujarTarjeta(ctx: CanvasRenderingContext2D, W: number, p: number): void {
+    const x = W / 2 - this.ancho.valor / 2 + BORDE;
+    const y = this.notchAlto + 2;
+    const ancho = this.ancho.valor - 2 * BORDE;
+    const alto = this.alto.valor - this.notchAlto - 2 - BORDE;
+    if (alto < 8 || ancho < 8) return;
+    const forma = new Path2D();
+    forma.roundRect(x, y, ancho, alto, Math.min(16, alto / 2));
+    ctx.globalAlpha = limitar((p - 0.05) / 0.6, 0, 1);
+    const fondo = ctx.createLinearGradient(x, y, x + ancho * 0.4, y + alto);
+    fondo.addColorStop(0, "#17171d");
+    fondo.addColorStop(1, "#0f0f13");
+    ctx.fillStyle = fondo;
+    ctx.fill(forma);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+    ctx.lineWidth = 1;
+    ctx.stroke(forma);
+    ctx.globalAlpha = 1;
   }
 
   private tamanoDesplegada(altoPanel: number): Tamano {
@@ -155,7 +204,7 @@ export class Isla {
       this.ventana.ancho - 2 * OREJA - 4,
     );
     this.desplegada.alto = Math.min(
-      this.notchAlto + Math.max(ALTO_PERSONAJE, altoPanel + 2 * MARGEN),
+      this.notchAlto + BORDE + Math.max(ALTO_TARJETA, altoPanel + 2 * MARGEN),
       this.ventana.alto - 4,
     );
     return this.desplegada;
@@ -163,7 +212,7 @@ export class Isla {
 
   private progreso(): number {
     return limitar(
-      (this.alto.valor - this.cerrada.alto) / (this.notchAlto + ALTO_PERSONAJE - this.cerrada.alto),
+      (this.alto.valor - this.cerrada.alto) / (this.notchAlto + BORDE + ALTO_TARJETA - this.cerrada.alto),
       0,
       1,
     );
@@ -174,7 +223,7 @@ export class Isla {
     const alto = this.alto.valor;
     const x0 = W / 2 - ancho / 2;
     const x1 = W / 2 + ancho / 2;
-    const radio = Math.min(alto * 0.45, 20);
+    const radio = Math.min(alto * 0.45, 22);
     const camino = new Path2D();
     camino.moveTo(x0 - OREJA, 0);
     camino.quadraticCurveTo(x0, 0, x0, OREJA);
@@ -187,4 +236,41 @@ export class Isla {
     camino.closePath();
     return camino;
   }
+}
+
+/** "R, G, B" (0–255) para usar en `rgba(…)`. */
+function colorDe([r, g, b]: RGB): string {
+  return `${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}`;
+}
+
+/** La etiqueta bajo Brote: una píldora con un punto del color de su estado y el nombre. */
+function etiqueta(ctx: CanvasRenderingContext2D, texto: string, color: string, cx: number, cy: number, anchoMax: number): void {
+  ctx.font = "600 11px system-ui, -apple-system, sans-serif";
+  const anchoTexto = Math.min(ctx.measureText(texto).width, anchoMax - 24);
+  const ancho = anchoTexto + 24;
+  const x = cx - ancho / 2;
+  const forma = new Path2D();
+  forma.roundRect(x, cy - 10, ancho, 20, 10);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.fill(forma);
+  ctx.fillStyle = `rgb(${color})`;
+  ctx.beginPath();
+  ctx.arc(x + 10, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(texto, x + 17, cy + 0.5, anchoTexto);
+}
+
+/** Cuatro barritas que suben y bajan, como un ecualizador: la música está sonando. */
+function ondas(ctx: CanvasRenderingContext2D, cx: number, cy: number, color: string, t: number): void {
+  ctx.fillStyle = color;
+  const fases = [0, 1.7, 0.6, 2.4];
+  fases.forEach((fase, i) => {
+    const alto = 3 + 7 * (0.5 + 0.5 * Math.sin(t * 7 + fase * 2.1)) * (0.6 + 0.4 * Math.sin(t * 2.3 + fase));
+    const forma = new Path2D();
+    forma.roundRect(cx - 7.5 + i * 4.5, cy - alto / 2, 2.5, alto, 1.25);
+    ctx.fill(forma);
+  });
 }

@@ -73,6 +73,15 @@ export interface EstadoProgramador {
 
 export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
 
+/** Lo que el puente sabe del computador (pedido `equipo-estado`). Tamaños en bytes; `cpu` entre 0 y 1. */
+export interface LecturaEquipo {
+  bateria: { porcentaje: number; conectado: boolean } | null;
+  cpu: number | null;
+  disco: { libre: number; total: number } | null;
+  procesoPesado: string | null;
+  memoria?: { total: number; libre: number } | null;
+}
+
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
 export type Animo = "cansado" | "acalorado" | null;
 

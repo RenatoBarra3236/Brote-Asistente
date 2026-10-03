@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+  Vista previa de la isla en un navegador, para trabajar el diseño sin abrir la app: simula Tauri y
+  el puente con datos de ejemplo (pomodoro, calendario, música, una descarga y una sesión de Claude
+  Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
+  Parámetros: ?pestana=inicio|chat|codigo|equipo · ?cerrada=1 (sin abrir la isla) · ?vacia=1 (sin datos) ·
+  ?modo=flotante (la ventana de Windows).
+  No es parte de la app (no está entre las páginas de vite.config.ts).
+-->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Vista previa de la isla</title>
+    <link rel="stylesheet" href="/src/estilos.css" />
+    <style>
+      html {
+        background: radial-gradient(120% 90% at 30% 10%, #3b3f7a, #14152b 60%, #0a0a14) !important;
+        min-height: 100%;
+      }
+      body {
+        position: relative;
+        width: 600px !important;
+        height: 380px !important;
+        margin: 0 auto !important;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+      /* El modo flotante (Windows) vive en una ventana de 400 × 280. */
+      body.flotante {
+        width: 400px !important;
+        height: 280px !important;
+        margin-top: 40px !important;
+      }
+    </style>
+    <script>
+      const parametros = new URLSearchParams(location.search);
+      const vacia = parametros.has("vacia");
+      const ahora = Date.now();
+      const datos = vacia
+        ? { temporizadores: [], musica: null, calendario: { proximo: null, etiqueta: null }, programador: { sesiones: [], permisos: [] } }
+        : {
+            temporizadores: [
+              { id: 1, tipo: "pomodoro", etiqueta: "cálculo", fase: "estudio", ciclos: 1, finMs: ahora + 18 * 60_000 + 42_000, duracionMs: 25 * 60_000 },
+            ],
+            musica: { app: "Spotify", sonando: true, cancion: "Demons", artista: "Imagine Dragons" },
+            calendario: {
+              proximo: { titulo: "Cálculo II", lugar: "Sala B-12", inicioMs: ahora + 25 * 60_000, finMs: ahora + 115 * 60_000, todoElDia: false },
+              etiqueta: "Cálculo II en 25 min",
+            },
+            programador: {
+              sesiones: [
+                { id: "s1", proyecto: "Asistente-multiplataforma", estado: "trabajando", actividad: "Editando isla.ts…", ultimaActividadMs: ahora },
+                { id: "s2", proyecto: "tarea-rust", estado: "lista", actividad: "Terminó", ultimaActividadMs: ahora - 60_000 },
+              ],
+              permisos: [],
+            },
+          };
+      const equipo = (cpu) => ({
+        animo: null,
+        lectura: {
+          bateria: { porcentaje: 64, conectado: false },
+          cpu,
+          disco: { libre: 83 * 1024 ** 3, total: 494 * 1024 ** 3 },
+          procesoPesado: "Google Chrome",
+          memoria: { total: 16 * 1024 ** 3, libre: 4.6 * 1024 ** 3 },
+        },
+      });
+
+      // Aunque el navegador no esté a la vista, la isla sigue atendiendo al "cursor".
+      Object.defineProperty(document, "hidden", { get: () => false });
+
+      // Tauri simulado: los comandos que usa main.ts y el evento "puente".
+      const callbacks = new Map();
+      let siguiente = 1;
+      let manejadorPuente = null;
+      let mouse = { x: 300, y: 60 };
+      addEventListener("mousemove", (e) => (mouse = { x: e.clientX, y: e.clientY }));
+      const emitir = (aviso) => manejadorPuente && callbacks.get(manejadorPuente)?.({ event: "puente", id: 0, payload: JSON.stringify(aviso) });
+      const responder = (id, extra) => setTimeout(() => emitir({ tipo: "respuesta", id, ok: true, ...extra }), 120);
+      let t = 0;
+
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: "personaje" }, currentWebview: { windowLabel: "personaje", label: "personaje" } },
+        transformCallback(cb) {
+          const id = siguiente++;
+          callbacks.set(id, cb);
+          return id;
+        },
+        unregisterCallback(id) {
+          callbacks.delete(id);
+        },
+        async invoke(comando, args) {
+          switch (comando) {
+            case "diseno":
+              return { modo: parametros.get("modo") === "flotante" ? "flotante" : "notch", notchAncho: 185, notchAlto: 32 };
+            case "agente_modo":
+              return "real";
+            case "agente_conexion":
+              return JSON.stringify({ tipo: "conexion", conectado: true });
+            case "plugin:event|listen":
+              if (args.event === "puente") manejadorPuente = args.handler;
+              return args.handler;
+            case "cursor_relativo": {
+              // El cursor "está" sobre la isla (o lejos, con ?cerrada=1); los ojos siguen el mouse real.
+              const caja = document.body.getBoundingClientRect();
+              if (parametros.has("cerrada")) return { x: mouse.x - caja.left - caja.width / 2, y: 400 };
+              // Flotante: el cursor sobre Brote (abajo a la derecha), que es lo que abre el panel.
+              if (parametros.get("modo") === "flotante") return { x: caja.width / 2 - 62, y: caja.height / 2 - 50 };
+              return { x: Math.max(-200, Math.min(200, mouse.x - caja.left - caja.width / 2)), y: -caja.height / 2 + 20 };
+            }
+            case "agente_escribir": {
+              const pedido = JSON.parse(args.linea);
+              const id = pedido.id;
+              switch (pedido.tipo) {
+                case "temporizadores-listar":
+                  return responder(id, { datos: datos.temporizadores });
+                case "musica-estado":
+                  return responder(id, { datos: datos.musica });
+                case "calendario-estado":
+                  return responder(id, { datos: datos.calendario });
+                case "programador-estado":
+                  return responder(id, { datos: datos.programador });
+                case "equipo-estado":
+                  t += 1;
+                  return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
+                case "enviar":
+                  return responder(id, {
+                    local: { texto: "Esta semana llevas **$23.500**: comida $11.000, transporte $7.500 y otros $5.000.", intencion: "total-periodo" },
+                  });
+                default:
+                  return responder(id, {});
+              }
+            }
+            default:
+              return null;
+          }
+        },
+      };
+
+      // Una descarga en curso, como llegaría del puente.
+      if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
+      // La pestaña pedida: se elige con un clic, como lo haría el usuario.
+      const pestana = parametros.get("pestana");
+      if (pestana) {
+        setTimeout(() => {
+          const titulos = { inicio: "Inicio", chat: "Chat", codigo: "Claude Code", equipo: "Equipo" };
+          if (pestana === "chat") {
+            const entrada = document.querySelector(".entrada");
+            entrada.value = "¿cuánto llevo esta semana?";
+            entrada.dispatchEvent(new Event("input"));
+            document.querySelector(".formulario").requestSubmit();
+          } else document.querySelector(`.pestana[title="${titulos[pestana]}"]`)?.click();
+        }, 1500);
+      }
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <script>
+      if (parametros.get("modo") === "flotante") document.body.classList.add("flotante");
+    </script>
+    <canvas id="lienzo"></canvas>
+  </body>
+</html>

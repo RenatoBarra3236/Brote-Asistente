@@ -143,9 +143,9 @@ fn ubicar_en_esquina(ventana: &WebviewWindow) -> tauri::Result<()> {
 #[cfg(target_os = "macos")]
 fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
-    const ANCHO: f64 = 440.0;
+    const ANCHO: f64 = 600.0;
     // Transparente y los clics la atraviesan fuera de la isla: el alto solo limita cuánto puede crecer.
-    const ALTO: f64 = 300.0;
+    const ALTO: f64 = 380.0;
 
     // Para probar en un Mac la experiencia de Windows (ventana flotante en vez de notch).
     if std::env::var("ASISTENTE_MODO").is_ok_and(|modo| modo == "flotante") {

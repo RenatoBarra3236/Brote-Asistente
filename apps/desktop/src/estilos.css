@@ -20,31 +20,139 @@ body {
   display: none !important;
 }
 
-/* Panel para hablar con el agente, dentro de la isla negra (panel.ts). */
+/* Colores de la isla (todo va sobre negro). */
+:root {
+  --texto: rgba(255, 255, 255, 0.92);
+  --texto-2: rgba(255, 255, 255, 0.6);
+  --texto-3: rgba(255, 255, 255, 0.4);
+  --tarjeta: rgba(255, 255, 255, 0.055);
+  --tarjeta-hover: rgba(255, 255, 255, 0.09);
+  --linea: rgba(255, 255, 255, 0.07);
+  --verde: rgb(111, 207, 126);
+  --azul: rgb(92, 160, 255);
+  --violeta: rgb(160, 132, 250);
+  --ambar: rgb(255, 186, 72);
+  --rojo: rgb(255, 112, 102);
+  --coral: rgb(255, 128, 102);
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.icono {
+  display: inline-flex;
+  flex: none;
+  vertical-align: -0.15em;
+}
+.icono svg {
+  display: block;
+}
+.gira svg {
+  animation: girar 0.9s linear infinite;
+}
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Pestañas (en la fila del notch) ---------- */
+
+.barra {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease-out;
+}
+.barra.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.barra-grupo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pestana {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--texto-3);
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    background 120ms,
+    color 120ms;
+}
+.pestana:hover {
+  color: var(--texto);
+}
+.pestana.activa {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+/* Algo pendiente en una pestaña que no está a la vista. */
+.pestana.con-punto::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ambar);
+  box-shadow: 0 0 0 2px #000;
+}
+
+/* ---------- Panel ---------- */
+
 .panel {
   position: absolute;
   display: flex;
   flex-direction: column;
   gap: 8px;
   box-sizing: border-box;
-  font: 12px/1.4 system-ui, -apple-system, sans-serif;
-  color: rgba(255, 255, 255, 0.92);
+  font: 12px/1.4 var(--sans);
+  color: var(--texto);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 140ms ease-out;
+  transform: translateY(-4px);
+  transition:
+    opacity 160ms ease-out,
+    transform 200ms ease-out;
 }
-
-/* Modo flotante: sin la isla negra detrás, el panel lleva su propio fondo. */
-.panel.flotante {
-  padding: 10px;
-  border-radius: 18px;
-  background: rgba(18, 18, 18, 0.94);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-}
-
 .panel.visible {
   opacity: 1;
   pointer-events: auto;
+  transform: none;
+}
+
+/* Modo flotante: sin la isla negra detrás, el panel lleva su propio fondo y las pestañas arriba. */
+.panel.flotante {
+  padding: 8px 10px 10px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #19191f, #0e0e12);
+  box-shadow:
+    0 0 0 1px var(--linea),
+    0 8px 28px rgba(0, 0, 0, 0.4);
+}
+.panel.flotante .barra {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+}
+.panel.flotante .tarjetas {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Dentro del panel, `hidden` siempre oculta (aunque la clase diga `display: flex`). */
@@ -52,99 +160,378 @@ body {
   display: none !important;
 }
 
-/* Las filas de estado: se encogen y hacen scroll antes que el campo de texto. */
-.estado {
-  flex: 0 3 auto;
-  min-height: 26px;
+.vista {
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
-.estado:empty,
-.estado:not(:has(> :not([hidden]))) {
+.vista::-webkit-scrollbar {
   display: none;
 }
 
-/* Temporizadores y pomodoro. */
-.temporizadores {
-  flex: none;
+.titulo-vista {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px;
+}
+.titulo-vista strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.titulo-vista span {
+  color: var(--texto-3);
+  font-size: 11px;
+}
+
+.vacia-texto {
+  margin: 0;
+  color: var(--texto-2);
+}
+
+.sugerencias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.sugerencia {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--texto);
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+.sugerencia:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------- Tarjetas (Inicio) ---------- */
+
+.tarjetas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+/* Los temporizadores son tarjetas sueltas dentro de la grilla. */
+.tarjetas > .grupo-tarjetas {
+  display: contents;
+}
+.grupo-tarjetas {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
-.temporizador {
+.tarjeta {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+}
+.tarjeta.ancha {
+  grid-column: 1 / -1;
+}
+button.tarjeta {
+  display: block;
+  width: 100%;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.tarjeta:hover {
+  background: var(--tarjeta-hover);
+}
+.tarjeta-etiqueta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px 5px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  gap: 4px;
+  overflow: hidden;
+  color: var(--texto-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tarjeta-titulo {
+  margin-top: 2px;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tarjeta-detalle {
+  overflow: hidden;
+  color: var(--texto-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tarjeta-cerrar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--texto-2);
+  font-size: 9px;
+  cursor: pointer;
+}
+.tarjeta-cerrar:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+}
+.tarjeta.vacia {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--linea);
+}
+
+/* Barras de avance (temporizadores, descargas, equipo). */
+.avance {
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.avance i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--texto-2);
+  transition: width 400ms linear;
+}
+.avance.indeterminado i {
+  width: 35%;
+  background: var(--azul);
+  animation: ir-y-volver 1.3s ease-in-out infinite alternate;
+}
+@keyframes ir-y-volver {
+  from {
+    transform: translateX(-20%);
+  }
+  to {
+    transform: translateX(210%);
+  }
+}
+
+/* Temporizadores y pomodoro. */
+.temporizador-tiempo {
+  margin-top: 2px;
+  font: 600 22px/1.1 var(--mono);
+  letter-spacing: -0.02em;
+}
+.temporizador .tarjeta-etiqueta {
+  padding-right: 22px;
 }
 .temporizador.pomodoro.estudio {
-  background: rgba(255, 99, 71, 0.16);
+  background: linear-gradient(150deg, rgba(255, 128, 102, 0.2), rgba(255, 128, 102, 0.06));
+}
+.temporizador.pomodoro.estudio .avance i {
+  background: var(--coral);
 }
 .temporizador.pomodoro.descanso {
-  background: rgba(98, 214, 138, 0.14);
+  background: linear-gradient(150deg, rgba(111, 207, 126, 0.18), rgba(111, 207, 126, 0.05));
 }
-.temporizador-nombre {
+.temporizador.pomodoro.descanso .avance i {
+  background: var(--verde);
+}
+
+/* Calendario. */
+.tarjeta.calendario.pronto {
+  background: linear-gradient(150deg, rgba(92, 160, 255, 0.22), rgba(92, 160, 255, 0.06));
+}
+.tarjeta.calendario.pronto .tarjeta-detalle {
+  color: rgb(180, 210, 255);
+  font-weight: 600;
+}
+
+/* Música. */
+.tarjeta.musica {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.musica-portada {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 9px;
+  background: linear-gradient(140deg, #5b47b8, #2c2160);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+}
+.ondas {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: none;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 10px;
+  padding: 2px 3px;
+  border-radius: 6px;
+  background: #000;
+}
+.ondas i {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--violeta);
+  animation: onda 0.9s ease-in-out infinite alternate;
+}
+.ondas i:nth-child(2) {
+  animation-delay: -0.4s;
+}
+.ondas i:nth-child(3) {
+  animation-delay: -0.7s;
+}
+@keyframes onda {
+  from {
+    height: 2px;
+  }
+  to {
+    height: 10px;
+  }
+}
+.musica.sonando .ondas {
+  display: flex;
+}
+.musica-texto {
+  flex: 1;
+  min-width: 0;
+}
+.musica-titulo {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.musica-detalle {
+  overflow: hidden;
+  color: var(--texto-2);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.boton-musica {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--texto-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.boton-musica:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.musica .boton-musica:nth-last-child(2) {
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+}
+
+/* Filas (descargas). */
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+.fila > .icono {
+  color: var(--texto-2);
+}
+.fila .avance {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+.fila-nombre {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.temporizador-tiempo {
-  font: 600 12px ui-monospace, "SF Mono", Menlo, monospace;
-}
-.temporizador-cancelar {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-size: 9px;
-  cursor: pointer;
-}
-.aviso-destacado {
+.fila-dato {
   flex: none;
-  margin: 0;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: rgba(255, 196, 0, 0.18);
-  color: rgb(255, 222, 130);
-  font-weight: 600;
+  color: var(--texto-2);
+  font: 600 11px var(--mono);
+}
+.descarga.lista .fila-dato,
+.descarga.lista > .icono {
+  color: var(--verde);
+}
+
+/* Resumen de Claude Code en Inicio. */
+.tarjeta.claude.pide {
+  background: linear-gradient(150deg, rgba(255, 186, 72, 0.2), rgba(255, 186, 72, 0.05));
+}
+
+/* ---------- Chat ---------- */
+
+.chat-vacio {
+  padding: 2px;
 }
 
 .burbuja {
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
   user-select: text;
   -webkit-user-select: text;
   scrollbar-width: thin;
 }
-
 .burbuja p {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
+/* Lo que escribiste, como una píldora a la derecha. */
 .burbuja-usuario {
-  margin-bottom: 4px !important;
-  color: rgba(255, 255, 255, 0.5);
+  width: fit-content;
+  max-width: 85%;
+  margin: 0 0 8px auto !important;
+  padding: 5px 11px;
+  border-radius: 14px 14px 4px 14px;
+  background: rgba(255, 255, 255, 0.12);
   white-space: nowrap !important;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
+.burbuja-respuesta {
+  padding: 1px 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
 /* Formato de las respuestas (markdown mínimo). */
 .burbuja-respuesta p + p,
 .burbuja-respuesta p + ul,
@@ -162,57 +549,74 @@ body {
   padding: 0 4px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.12);
-  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  font: 11px var(--mono);
 }
-
 .burbuja-respuesta.error {
-  color: rgb(255, 138, 128);
+  color: var(--rojo);
 }
-
+/* Mientras Brote piensa: tres puntos que laten. */
+.burbuja-respuesta.escribiendo::after {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 6px;
+  background:
+    radial-gradient(circle 3px, var(--texto-2) 95%, transparent) 0 0 / 10px 6px repeat-x;
+  animation: latir 1s ease-in-out infinite;
+}
+@keyframes latir {
+  50% {
+    opacity: 0.3;
+  }
+}
 .burbuja-herramienta {
-  margin-top: 4px !important;
-  color: rgb(122, 178, 255);
-  font-style: italic;
-}
-
-.burbuja-sin-ia {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 6px !important;
-  font-size: 11px;
+  color: var(--azul);
+}
+.burbuja-sin-ia {
+  width: fit-content;
+  margin-top: 6px !important;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 214, 102, 0.12);
   color: rgb(255, 214, 102);
-  opacity: 0.85;
+  font-size: 11px;
 }
 
 .aprobacion {
   flex: none;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border-radius: 12px;
-  background: rgba(255, 176, 33, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 176, 33, 0.35);
+  background: linear-gradient(150deg, rgba(255, 186, 72, 0.18), rgba(255, 186, 72, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(255, 186, 72, 0.3);
 }
-
 .aprobacion-titulo {
   margin: 0 0 4px;
+  color: rgb(255, 205, 120);
   font-weight: 600;
-  color: rgb(255, 196, 92);
 }
-
 .aprobacion-detalle {
   display: block;
-  margin-bottom: 8px;
   max-height: 3.2em;
+  margin-bottom: 8px;
+  padding: 4px 6px;
   overflow: hidden;
-  font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.85);
+  font: 11px/1.45 var(--mono);
   overflow-wrap: anywhere;
 }
-
 /* Propuesta del motor que aprende: mismo formato que una aprobación, en verde. */
 .aprobacion.propuesta {
-  background: rgba(98, 214, 138, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(98, 214, 138, 0.35);
+  background: linear-gradient(150deg, rgba(111, 207, 126, 0.16), rgba(111, 207, 126, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(111, 207, 126, 0.3);
 }
 .propuesta .aprobacion-titulo {
-  color: rgb(132, 226, 160);
+  color: rgb(150, 228, 165);
 }
 .propuesta-detalle {
   margin: 0 0 8px;
@@ -220,9 +624,9 @@ body {
   overflow-wrap: anywhere;
 }
 .propuesta .boton-primario {
-  background: rgb(98, 214, 138);
+  background: var(--verde);
+  color: #0b2410;
 }
-
 .aprobacion-botones {
   display: flex;
   justify-content: flex-end;
@@ -232,37 +636,182 @@ body {
 .boton,
 .boton-enviar {
   border: none;
-  font: 600 12px system-ui, -apple-system, sans-serif;
+  font: 600 12px var(--sans);
   cursor: pointer;
 }
-
 .boton {
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
-
 .boton-primario {
-  background: rgb(255, 176, 33);
-  color: #1d1300;
+  background: var(--ambar);
+  color: #2a1a00;
 }
-
+.boton-fila {
+  padding: 2px 9px;
+  font-size: 11px;
+}
 .boton:hover:not(:disabled),
 .boton-enviar:hover:not(:disabled) {
   filter: brightness(1.15);
 }
-
-/* Mientras Brote trabaja, el botón de enviar sirve para detenerlo. */
-.boton-enviar.detener {
-  background: rgb(255, 99, 99);
-  color: #fff;
-}
-
 .boton:disabled,
 .boton-enviar:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* ---------- Código (sesiones de Claude Code) ---------- */
+
+.sesion-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sesion-nombre {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chip {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--texto-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.chip.trabajando,
+.chip.pensando {
+  background: rgba(92, 160, 255, 0.18);
+  color: rgb(170, 205, 255);
+}
+.chip.permiso {
+  background: rgba(255, 186, 72, 0.2);
+  color: rgb(255, 205, 120);
+}
+.chip.lista {
+  background: rgba(111, 207, 126, 0.18);
+  color: rgb(150, 228, 165);
+}
+.chip.error {
+  background: rgba(255, 112, 102, 0.18);
+  color: rgb(255, 160, 150);
+}
+.pasos {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pasos li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1px 0;
+  color: var(--texto-3);
+}
+.pasos li > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pasos li .icono {
+  color: var(--verde);
+  font-size: 13px;
+}
+.pasos li.actual {
+  color: var(--texto);
+}
+.sesion.trabajando .pasos li.actual .icono,
+.sesion.pensando .pasos li.actual .icono {
+  color: var(--azul);
+}
+.sesion.error .pasos li.actual .icono {
+  color: var(--rojo);
+}
+
+/* ---------- Equipo ---------- */
+
+.metricas {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 2px;
+}
+.metrica {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.metrica-nombre {
+  flex: 1;
+  color: var(--texto-2);
+}
+.metrica-valor {
+  font: 600 11.5px var(--mono);
+}
+.metrica .avance {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+.metrica.verde .avance i {
+  background: var(--verde);
+}
+.metrica.azul .avance i {
+  background: var(--azul);
+}
+.metrica.violeta .avance i {
+  background: var(--violeta);
+}
+.metrica.ambar .avance i {
+  background: var(--ambar);
+}
+.metrica.rojo .avance i {
+  background: var(--rojo);
+}
+.metrica.gris .avance i {
+  background: rgba(255, 255, 255, 0.45);
+}
+.grafico {
+  flex-basis: 100%;
+  width: 100%;
+  height: 22px;
+  margin-top: 4px;
+}
+.grafico polyline {
+  fill: none;
+  stroke: var(--azul);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.metrica.rojo .grafico polyline {
+  stroke: var(--rojo);
+}
+.metrica-nota {
+  margin: 0;
+  color: var(--texto-3);
+  font-size: 11px;
+}
+
+/* ---------- Aviso y campo de texto ---------- */
+
+.aviso-destacado {
+  flex: none;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: linear-gradient(150deg, rgba(255, 196, 0, 0.2), rgba(255, 196, 0, 0.07));
+  box-shadow: inset 0 0 0 1px rgba(255, 196, 0, 0.25);
+  color: rgb(255, 222, 130);
+  font-weight: 600;
 }
 
 .formulario {
@@ -270,31 +819,14 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 3px 3px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 4px 4px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px var(--linea);
 }
-
 .formulario:focus-within {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
-
-/* Abre la ventana "Lo que sé de ti". */
-.boton-memoria {
-  flex: none;
-  margin-left: -8px;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.75;
-}
-.boton-memoria:hover {
-  opacity: 1;
-}
-
 .entrada {
   flex: 1;
   min-width: 0;
@@ -303,118 +835,29 @@ body {
   outline: none;
   background: transparent;
   color: #fff;
-  font: 12px system-ui, -apple-system, sans-serif;
+  font: 12px var(--sans);
   /* El body no deja seleccionar; en WebKit eso también puede bloquear la escritura. */
   user-select: text;
   -webkit-user-select: text;
 }
-
 .entrada::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--texto-3);
 }
-
 .boton-enviar {
-  width: 22px;
-  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border-radius: 50%;
   background: #fff;
   color: #000;
-  line-height: 22px;
-  padding: 0;
+  font-size: 13px;
 }
-
-/* Filas de estado (descargas, música, calendario, sesiones de Claude Code). */
-.filas {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.fila {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 20px;
-  padding: 4px 6px 4px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-}
-.fila-nombre {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fila-dato {
-  flex: none;
-  color: rgba(255, 255, 255, 0.6);
-  font: 600 11px ui-monospace, "SF Mono", Menlo, monospace;
-}
-.descarga.lista {
-  background: rgba(98, 214, 138, 0.14);
-}
-.descarga.lista .fila-dato {
-  color: rgb(132, 226, 160);
-}
-.boton-fila {
-  padding: 2px 9px;
-  font-size: 11px;
-}
-.musica.sonando {
-  background: rgba(155, 122, 247, 0.18);
-}
-.boton-musica {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
+/* Mientras Brote trabaja, el botón de enviar sirve para detenerlo. */
+.boton-enviar.detener {
+  background: var(--rojo);
   color: #fff;
-  font-size: 10px;
-  line-height: 22px;
-  cursor: pointer;
-}
-.boton-musica:hover {
-  filter: brightness(1.3);
-}
-.fila.calendario {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fila.calendario.pronto {
-  background: rgba(122, 178, 255, 0.2);
-  color: rgb(190, 215, 255);
-  font-weight: 600;
-}
-/* Modo programador: sesiones de Claude Code. */
-.sesion .fila-nombre {
-  flex: 0 1 auto;
-  max-width: 55%;
-  font-weight: 600;
-}
-.fila-actividad {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.65);
-}
-.sesion.trabajando,
-.sesion.pensando {
-  background: rgba(77, 158, 255, 0.16);
-}
-.sesion.permiso {
-  background: rgba(255, 176, 33, 0.16);
-}
-.sesion.lista .fila-actividad {
-  color: rgb(132, 226, 160);
-}
-.sesion.error .fila-actividad {
-  color: rgb(255, 138, 128);
+  font-size: 11px;
 }

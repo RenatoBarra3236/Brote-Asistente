@@ -9,10 +9,11 @@ import {
   type EstadoCalendario,
   type EstadoMusica,
   type EstadoProgramador,
+  type LecturaEquipo,
   type TemporizadorActivo,
 } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
-import { Isla } from "./isla";
+import { Isla, type Ala } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
 import { Personaje } from "./personaje/personaje";
@@ -87,6 +88,7 @@ async function iniciar(): Promise<void> {
     ...(puente
       ? {
           alAbrirMemoria: () => void invoke("abrir_memoria"),
+          alAbrirConfiguracion: () => void invoke("abrir_configuracion"),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
@@ -126,7 +128,16 @@ async function iniciar(): Promise<void> {
       .then(({ animo }) => personaje.setAnimo(animo), () => {});
     void puente.consultar<TemporizadorActivo[]>({ tipo: "temporizadores-listar" }).then(mostrarTemporizadores, () => {});
 
-    // Música: la píldora con sus botones y Brote se balancea mientras suena.
+    // Equipo: batería, CPU, memoria y disco. Se pide siempre (el puente responde con su última
+    // lectura, sin medir de nuevo), así el gráfico de la CPU ya tiene historia al abrir la pestaña.
+    const pedirEquipo = () =>
+      void puente
+        .consultar<{ lectura: LecturaEquipo | null }>({ tipo: "equipo-estado" })
+        .then(({ lectura }) => panel.mostrarEquipo(lectura), () => {});
+    pedirEquipo();
+    setInterval(pedirEquipo, 3000);
+
+    // Música: la tarjeta con sus botones y Brote se balancea mientras suena.
     const cambiarMusica = (estado: EstadoMusica | null) => {
       musica = estado;
       panel.mostrarMusica(estado);
@@ -304,14 +315,16 @@ async function iniciar(): Promise<void> {
     personaje.actualizar(dt);
     panel.actualizarRelojes();
     // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador, una descarga o la música.
-    const reloj =
+    const reloj: Ala | null =
       relojPrincipal(temporizadores) ??
       (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
       relojCalendario(proximoEvento) ??
-      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null) ??
+      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)", ondas: true } : null) ??
       (programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando") ? { texto: "⌨", color: "rgb(122, 178, 255)" } : null);
     ctx.clearRect(0, 0, W, H);
-    const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
+    // Lo que hace Brote por el modo programador no abre la isla (las sesiones pueden trabajar
+    // por horas); un permiso de Claude Code sí, por `retieneIsla`.
+    const activo = (personaje.estado !== "reposo" && !porProgramador) || panel.retieneIsla(ahora);
     if (isla) {
       isla.actualizar(dt, hover, activo, panel.alto());
       isla.dibujar(ctx, W, personaje, reloj ?? undefined);

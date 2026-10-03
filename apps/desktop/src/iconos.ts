@@ -4,8 +4,7 @@
 const TRAZO = `fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"`;
 
 const ICONOS = {
-  inicio: `<path ${TRAZO} d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h3V9.5h2V13h3V6.5"/>`,
-  chat: `<path ${TRAZO} d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>`,
+  brote: `<path ${TRAZO} d="M8 14V8.5M8 8.5C8 5.5 6 3.8 2.8 3.8 2.8 6.8 4.8 8.5 8 8.5zM8 10c0-3 1.8-5 5.2-5 0 3-1.8 5-5.2 5z"/>`,
   codigo: `<rect ${TRAZO} x="2" y="3" width="12" height="10" rx="1.5"/><path ${TRAZO} d="m5 6.5 2 1.5-2 1.5M8.5 10H11"/>`,
   equipo: `<rect ${TRAZO} x="4.5" y="4.5" width="7" height="7" rx="1"/><path ${TRAZO} d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14"/>`,
   memoria: `<path ${TRAZO} d="M8 4.5C6.6 3.6 4.6 3.4 2.5 4v8.5c2.1-.6 4.1-.4 5.5.5 1.4-.9 3.4-1.1 5.5-.5V4c-2.1-.6-4.1-.4-5.5.5zM8 4.5V13"/>`,

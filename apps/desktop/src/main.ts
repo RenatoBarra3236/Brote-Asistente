@@ -14,6 +14,7 @@ import {
   type TemporizadorActivo,
 } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
+import type { ConfigFunciones } from "./agente/funciones";
 import { Isla, type Ala } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
@@ -113,6 +114,9 @@ async function iniciar(): Promise<void> {
     panel.mostrarTemporizadores(lista);
   };
   if (puente) {
+    // Qué funciones están prendidas y qué tarjetas se ven (Configurar Brote → Funciones).
+    puente.alCambiarFunciones((config) => panel.mostrarFunciones(config));
+    void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then((config) => panel.mostrarFunciones(config), () => {});
     puente.alCambiarTemporizadores(mostrarTemporizadores);
     puente.alAvisoTemporizador((texto) => {
       panel.mostrarAviso(texto);

@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./transporte.ts";
+import type { ConfigFunciones } from "./funciones.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -124,6 +125,7 @@ type Aviso =
   | { tipo: "aula-aviso"; texto: string }
   | ({ tipo: "programador" } & EstadoProgramador)
   | { tipo: "programador-reaccion"; reaccion: "termino" | "fallo"; proyecto: string }
+  | ({ tipo: "funciones" } & ConfigFunciones)
   | {
       tipo: "respuesta";
       id: string;
@@ -160,6 +162,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAvisoAula = new Set<(texto: string) => void>();
   private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
   private readonly oyentesReaccion = new Set<(reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void>();
+  private readonly oyentesFunciones = new Set<(config: ConfigFunciones) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -249,6 +252,12 @@ export class TransportePuente implements Transporte {
   }
 
   /** El aula (próxima entrega), cada vez que cambia. */
+  /** Las funciones prendidas y las tarjetas de Inicio (Configurar Brote → Funciones), cada vez que cambian. */
+  alCambiarFunciones(oyente: (config: ConfigFunciones) => void): () => void {
+    this.oyentesFunciones.add(oyente);
+    return () => this.oyentesFunciones.delete(oyente);
+  }
+
   alCambiarAula(oyente: (estado: EstadoAula) => void): () => void {
     this.oyentesAula.add(oyente);
     return () => this.oyentesAula.delete(oyente);
@@ -370,6 +379,9 @@ export class TransportePuente implements Transporte {
         return;
       case "calendario-aviso":
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
+        return;
+      case "funciones":
+        for (const oyente of this.oyentesFunciones) oyente({ activas: aviso.activas, tarjetas: aviso.tarjetas });
         return;
       case "aula":
         for (const oyente of this.oyentesAula) oyente({ configurada: aviso.configurada, proxima: aviso.proxima, pendientes: aviso.pendientes, error: aviso.error });

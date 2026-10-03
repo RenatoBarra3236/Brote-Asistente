@@ -212,7 +212,7 @@ body {
   background: rgba(255, 255, 255, 0.14);
 }
 
-/* ---------- Tarjetas (Inicio) ---------- */
+/* ---------- Tarjetas (pestaña Brote) ---------- */
 
 .tarjetas {
   display: grid;
@@ -510,10 +510,6 @@ button.tarjeta:hover {
 
 /* ---------- Chat ---------- */
 
-.chat-vacio {
-  padding: 2px;
-}
-
 .burbuja {
   flex: 0 1 auto;
   min-height: 0;
@@ -675,7 +671,7 @@ button.tarjeta:hover {
   cursor: default;
 }
 
-/* ---------- Código (sesiones de Claude Code) ---------- */
+/* ---------- Claude (sesiones de Claude Code) ---------- */
 
 .sesion-cabecera {
   display: flex;
@@ -871,5 +867,83 @@ button.tarjeta:hover {
 .boton-enviar.detener {
   background: var(--rojo);
   color: #fff;
+  font-size: 11px;
+}
+
+/* ---------- Brote: cabecera, píldoras y "ver la respuesta" ---------- */
+
+.cabecera-vista {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.enlace-vista {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--texto-3);
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+.enlace-vista:hover {
+  color: var(--texto);
+}
+
+/* Mientras se conversa, las tarjetas se encogen a una fila de píldoras. */
+.pildoras {
+  flex: none;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pildoras::-webkit-scrollbar {
+  display: none;
+}
+.pildora {
+  flex: none;
+  max-width: 150px;
+  padding: 3px 9px;
+  overflow: hidden;
+  border: none;
+  border-radius: 999px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+  color: var(--texto-2);
+  font: 600 11px var(--sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.pildora:hover {
+  background: var(--tarjeta-hover);
+  color: var(--texto);
+}
+
+/* ---------- Claude: títulos de sección y el espacio reservado del uso del plan ---------- */
+
+.seccion-titulo {
+  padding: 0 2px;
+  color: var(--texto-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.uso-plan {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+}
+.uso-plan-texto {
+  margin: 0;
+  color: var(--texto-3);
   font-size: 11px;
 }

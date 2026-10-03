@@ -13,6 +13,9 @@ let id = 0;
 // Que las pruebas nunca hablen con el Brote real del computador (podrían pausar la música).
 const CARPETA = mkdtempSync(join(tmpdir(), "mcp-puente-"));
 process.env.ASISTENTE_CONEXION_HOOKS = join(CARPETA, "hooks.json");
+// Y que usen sus propias funciones (todas prendidas), no las de Configurar Brote del computador.
+process.env.ASISTENTE_FUNCIONES = join(CARPETA, "funciones.json");
+writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador"].map((id) => [id, true])) }));
 after(() => rmSync(CARPETA, { recursive: true, force: true }));
 
 beforeEach(() => {

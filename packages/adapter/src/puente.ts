@@ -61,6 +61,15 @@
 //   aviso { "tipo": "aula-aviso", "texto": "📚 Mañana a esta hora vence…" }   24 h y 2 h antes, una vez
 //   pedido { "tipo": "aula-estado" }   → "datos": lo mismo que el aviso "aula"
 //
+// Funciones (Configurar Brote → Funciones; ~/.asistente-prototipo/funciones.json, lo escribe Rust):
+//   lo apagado no se vigila (música, descargas, calendario, aula, equipo, temporizadores, modo
+//   programador), el motor responde "Eso está apagado…" y la isla oculta sus tarjetas. El archivo se
+//   relee cuando cambia (se mira cada 2 s).
+//   aviso { "tipo": "funciones", "activas": { … }, "tarjetas": { orden, ocultas } }   al partir y cuando cambia
+//   pedido { "tipo": "funciones-estado" }   → "datos": lo mismo
+//   pedido { "tipo": "permisos-estado" }    → "datos": { descargas, automatizacion, calendarios } (lo que se sabe
+//     de los permisos de macOS por las lecturas que ya se hicieron; nunca pregunta nada nuevo)
+//
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
 // `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
@@ -91,6 +100,10 @@ import {
   marcaConfigAula,
   pendientes,
   type Entrega,
+  leerFunciones,
+  marcaFunciones,
+  type ConfigFunciones,
+  type IdFuncion,
   combinar,
   descargarIcal,
   etiquetaProximo,
@@ -144,6 +157,7 @@ import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectore
 import { esDeMemoria } from "./permisos.ts";
 import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE } from "./rutas.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
+import { TareasPorFuncion, cada } from "./tareas.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
 const IGNORADOS = new Set(["tick", "health", "presence", "heartbeat", "cron"]);
@@ -240,6 +254,11 @@ function renovarSuscripcion(cliente: Parameters<typeof suscribirseALaSesion>[0])
   }, 500);
 }
 
+// Lo que el usuario prendió o apagó en Configurar Brote → Funciones.
+let funciones: ConfigFunciones = leerFunciones();
+let marcaDeFunciones = marcaFunciones();
+const activa = (id: IdFuncion): boolean => funciones.activas[id];
+
 const gastos = new Gastos(RUTA_BASE);
 // Las plantillas aprendidas se leen en cada mensaje: una recién aceptada sirve al tiro.
 const temporizadores = new Temporizadores(gastos);
@@ -258,6 +277,7 @@ const motor = new Motor(gastos, {
   // se vuelve a leer el calendario para que aparezca en la isla.
   crearEvento: (evento) => crearEvento(evento),
   aula: () => entregasAula,
+  activa,
 });
 
 /** Crea un evento en el Calendario del Mac (para el motor y para el MCP) y vuelve a leer el calendario. */
@@ -275,7 +295,7 @@ function crearEvento(evento: NuevoEvento): ResultadoCreacion {
 // servidor local con token. Las de OpenClaw (que corren en su carpeta) se ignoran. Un permiso se
 // muestra en la isla y el hook espera la respuesta; si el usuario contesta en la terminal (llega otro
 // evento de esa sesión) o nadie contesta en 45 s, se suelta sin decisión y todo sigue como siempre.
-const sesionesClaude = new SesionesClaude();
+let sesionesClaude = new SesionesClaude();
 const CARPETAS_OPENCLAW = [CARPETA_OPENCLAW, WORKSPACE];
 const ESPERA_PERMISO_CLAUDE_MS = 45_000;
 interface PermisoClaude {
@@ -305,6 +325,8 @@ function soltarPermisos(sesion: string): void {
   for (const permiso of permisosClaude.values()) if (permiso.sesion === sesion) permiso.soltar({});
 }
 async function alEventoClaude(datos: unknown): Promise<object> {
+  // Con el modo programador apagado, los hooks (si siguen instalados) no muestran nada.
+  if (!activa("programador")) return {};
   const evento = leerEventoHook(datos);
   if (!evento || esDeOpenClaw(evento.cwd, CARPETAS_OPENCLAW)) return {};
   // Otro evento de la sesión (no la notificación del mismo permiso) = el permiso ya se respondió.
@@ -340,7 +362,7 @@ async function alEventoClaude(datos: unknown): Promise<object> {
 setInterval(avisarSesiones, 30_000);
 void iniciarServidorHooks({
   alEvento: alEventoClaude,
-  sesiones: () => sesionesClaude.visibles(Date.now()),
+  sesiones: () => (activa("programador") ? sesionesClaude.visibles(Date.now()) : []),
   consultar: consultarDelMcp,
 }).then(
   ({ puerto, token }) => {
@@ -374,6 +396,7 @@ async function leerCalendarios(): Promise<void> {
       proximaLecturaMac = ahora + 5 * 60_000;
       const lectura = await leerCalendarioMac(ahora);
       eventosMac = lectura?.permiso === 3 ? lectura.eventos : null;
+      if (lectura && !lectura.error) permisoCalendarioMac = lectura.permiso;
       // Para depurar en el Mac: por qué no se ven los eventos (nunca se registran los eventos mismos).
       const estado = lectura === null ? "osascript falló" : lectura.error ? `error: ${lectura.error}` : `permiso ${lectura.permiso}`;
       if (estado !== ultimoEstadoMac) {
@@ -416,8 +439,16 @@ async function revisarCalendario(): Promise<void> {
     avisar({ tipo: "calendario", ...estado });
   }
 }
-setInterval(() => void revisarCalendario(), 30_000);
-void revisarCalendario();
+let permisoCalendarioMac: number | null = null;
+function detenerCalendario(): void {
+  eventosMac = null;
+  icsTexto = null;
+  proximaLecturaMac = 0;
+  proximaLecturaIcal = 0;
+  marcaIcal = -1;
+  ultimoProximo = JSON.stringify({ proximo: null, etiqueta: null });
+  avisar({ tipo: "calendario", proximo: null, etiqueta: null });
+}
 
 // Aula (Canvas o Moodle): se lee cada 30 min, o al tiro si cambió aula.json (se mira cada minuto).
 // Cada minuto se revisa si toca avisar (24 h y 2 h antes). El token es secreto: nunca se registra, y
@@ -479,8 +510,15 @@ async function revisarAula(): Promise<void> {
     avisar({ tipo: "aula", ...estado });
   }
 }
-setInterval(() => void revisarAula(), 60_000);
-void revisarAula();
+function detenerAula(): void {
+  entregasAula = null;
+  errorAula = null;
+  marcaAula = -1;
+  proximaLecturaAula = 0;
+  const estado = estadoAula();
+  ultimoAula = JSON.stringify(estado);
+  avisar({ tipo: "aula", ...estado });
+}
 
 // Música: se revisa cada 3 s (5 en Windows, donde PowerShell tarda más en partir), una lectura a la
 // vez. Si el usuario negó el permiso de Automatización para una app, no se le pregunta de nuevo
@@ -488,6 +526,8 @@ void revisarAula();
 let musica: EstadoMusica | null = null;
 let leyendoMusica = false;
 const sinPermisoHasta = new Map<AppMusica, number>();
+/** Lo que se sabe del permiso de Automatización de cada app (por las lecturas que ya se hicieron). */
+const permisoMusica = new Map<AppMusica, boolean>();
 async function revisarMusica(): Promise<void> {
   if (leyendoMusica) return;
   leyendoMusica = true;
@@ -498,7 +538,9 @@ async function revisarMusica(): Promise<void> {
     for (const app of lectura?.sinPermiso ?? []) {
       registrar(`música: sin permiso para ${app}`);
       sinPermisoHasta.set(app, ahora + 30 * 60_000);
+      permisoMusica.set(app, false);
     }
+    if (lectura?.estado) permisoMusica.set(lectura.estado.app as AppMusica, true);
     const estado = lectura?.estado ?? null;
     if (JSON.stringify(estado) !== JSON.stringify(musica)) {
       musica = estado;
@@ -515,15 +557,28 @@ async function pedirMusica(accion: AccionMusica): Promise<boolean> {
   setTimeout(() => void revisarMusica(), 400);
   return hecho;
 }
-if (process.platform === "darwin" || process.platform === "win32") {
-  setInterval(() => void revisarMusica(), process.platform === "win32" ? 5000 : 3000);
-  void revisarMusica();
+const LEE_MUSICA = process.platform === "darwin" || process.platform === "win32";
+function detenerMusica(): void {
+  if (musica === null) return;
+  musica = null;
+  avisar({ tipo: "musica", estado: null });
 }
+
+const FUNCION_DE_CONSULTA: Record<string, IdFuncion> = {
+  "musica-estado": "musica",
+  "musica-control": "musica",
+  calendario: "calendario",
+  "calendario-crear": "calendario",
+  aula: "aula",
+};
 
 // Consultas del servidor MCP (por el servidor local con token): la música y el calendario se leen
 // aquí, dentro de Brote, que tiene los permisos de macOS; el MCP corre dentro de OpenClaw, sin ellos.
 async function consultarDelMcp(datos: unknown): Promise<object> {
   const consulta = (datos ?? {}) as { tipo?: unknown; accion?: unknown };
+  // El servidor MCP ya revisa las funciones apagadas; esto es por si acaso (no se lee nada apagado).
+  const funcion = FUNCION_DE_CONSULTA[String(consulta.tipo)];
+  if (funcion && !activa(funcion)) throw new Error("función apagada");
   switch (consulta.tipo) {
     case "musica-estado":
       return { musica };
@@ -555,11 +610,14 @@ async function consultarDelMcp(datos: unknown): Promise<object> {
 // Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,
 // porque fs.watch no siempre avisa (carpetas en la nube, algunos sistemas de archivos).
 const CARPETA_DESCARGAS = carpetaDescargas();
-const seguidorDescargas = new SeguidorDescargas();
+let seguidorDescargas = new SeguidorDescargas();
+/** Si se pudo leer la carpeta de descargas la última vez (`null`: no se ha intentado). */
+let accesoDescargas: boolean | null = null;
 let ultimasEnCurso = "";
 let revisionDescargas: ReturnType<typeof setTimeout> | undefined;
 function revisarDescargas(): void {
   const listado = listarCarpeta(CARPETA_DESCARGAS);
+  accesoDescargas = listado !== null;
   if (!listado) return;
   const { enCurso, listas } = seguidorDescargas.revisar(listado, CARPETA_DESCARGAS);
   const texto = JSON.stringify(enCurso);
@@ -572,17 +630,27 @@ function revisarDescargas(): void {
     avisar({ tipo: "descarga-lista", descarga });
   }
 }
-vigilarCarpeta(CARPETA_DESCARGAS, () => {
-  clearTimeout(revisionDescargas);
-  revisionDescargas = setTimeout(revisarDescargas, 300);
-});
-setInterval(revisarDescargas, 4000);
-revisarDescargas();
+function vigilarDescargas(): () => void {
+  const dejarDeVigilar = vigilarCarpeta(CARPETA_DESCARGAS, () => {
+    clearTimeout(revisionDescargas);
+    revisionDescargas = setTimeout(revisarDescargas, 300);
+  });
+  const detener = cada(4000, revisarDescargas);
+  return () => {
+    dejarDeVigilar();
+    detener();
+    clearTimeout(revisionDescargas);
+    // Al volver a prenderla, lo que ya estaba en la carpeta no se anuncia como nuevo.
+    seguidorDescargas = new SeguidorDescargas();
+    ultimasEnCurso = "[]";
+    avisar({ tipo: "descargas", enCurso: [] });
+  };
+}
 
 // Brote reacciona al computador. La CPU se mide cada 5 s; la batería cada 15 s y el disco cada
 // 10 min (cuestan más y cambian lento). El programa culpable solo se busca con la CPU alta.
 const medidorCpu = new MedidorCpu();
-const vigilante = new Vigilante();
+let vigilante = new Vigilante();
 let lecturaEquipo: LecturaEquipo | null = null;
 let animo: Animo = null;
 let bateria: LecturaEquipo["bateria"] = null;
@@ -615,8 +683,16 @@ function revisarEquipo(): void {
     avisar({ tipo: "animo", animo });
   }
 }
-setInterval(revisarEquipo, 5000);
-revisarEquipo();
+function detenerEquipo(): void {
+  vigilante = new Vigilante();
+  lecturaEquipo = null;
+  proximaBateria = 0;
+  proximoDisco = 0;
+  if (animo !== null) {
+    animo = null;
+    avisar({ tipo: "animo", animo });
+  }
+}
 
 /**
  * Cada segundo: avisa lo que terminó y manda la lista si cambió. Revisa la base y no solo lo que
@@ -634,7 +710,85 @@ function revisarTemporizadores(): void {
     avisar({ tipo: "temporizadores", lista: JSON.parse(lista) });
   }
 }
-setInterval(revisarTemporizadores, 1000);
+function detenerTemporizadores(): void {
+  ultimaLista = "[]";
+  avisar({ tipo: "temporizadores", lista: [] });
+}
+
+/** Las tareas de fondo de cada función: solo corren las prendidas. */
+const tareas = new TareasPorFuncion({
+  temporizadores: () => {
+    const detener = cada(1000, revisarTemporizadores);
+    return () => {
+      detener();
+      detenerTemporizadores();
+    };
+  },
+  calendario: () => {
+    const detener = cada(30_000, () => void revisarCalendario());
+    return () => {
+      detener();
+      detenerCalendario();
+    };
+  },
+  aula: () => {
+    const detener = cada(60_000, () => void revisarAula());
+    return () => {
+      detener();
+      detenerAula();
+    };
+  },
+  ...(LEE_MUSICA
+    ? {
+        musica: () => {
+          const detener = cada(process.platform === "win32" ? 5000 : 3000, () => void revisarMusica());
+          return () => {
+            detener();
+            detenerMusica();
+          };
+        },
+      }
+    : {}),
+  descargas: vigilarDescargas,
+  equipo: () => {
+    const detener = cada(5000, revisarEquipo);
+    return () => {
+      detener();
+      detenerEquipo();
+    };
+  },
+  programador: () => () => {
+    for (const permiso of permisosClaude.values()) permiso.soltar({});
+    sesionesClaude = new SesionesClaude();
+    avisarSesiones();
+  },
+});
+
+/** Relee funciones.json si cambió: arranca o detiene lo que corresponda y avisa a la isla. */
+function revisarFunciones(forzar = false): void {
+  const marca = marcaFunciones();
+  if (!forzar && marca === marcaDeFunciones) return;
+  marcaDeFunciones = marca;
+  funciones = leerFunciones();
+  const { arrancadas, detenidas } = tareas.aplicar(funciones.activas);
+  if (arrancadas.length + detenidas.length > 0) {
+    registrar(`funciones: ${[...arrancadas.map((f) => `+${f}`), ...detenidas.map((f) => `-${f}`)].join(" ")}`);
+  }
+  avisar({ tipo: "funciones", ...funciones });
+}
+revisarFunciones(true);
+setInterval(revisarFunciones, 2000);
+
+/** Lo que se sabe de los permisos de macOS, solo por las lecturas que ya se hicieron (nunca pregunta). */
+function estadoPermisos() {
+  return {
+    descargas: !activa("descargas") || accesoDescargas === null ? "sin-usar" : accesoDescargas ? "concedido" : "negado",
+    automatizacion: Object.fromEntries(permisoMusica),
+    calendarios:
+      permisoCalendarioMac === null ? "sin-usar" : permisoCalendarioMac === 3 ? "concedido" : permisoCalendarioMac === 0 ? "sin-preguntar" : "negado",
+  };
+}
+
 let conectado = false;
 /** El último mensaje que este puente envió al agente: las propuestas deben venir de él. */
 let ultimoMensajeAlAgente: string | null = null;
@@ -883,7 +1037,11 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };
     }
     case "temporizadores-listar":
-      return { datos: temporizadores.activos() };
+      return { datos: activa("temporizadores") ? temporizadores.activos() : [] };
+    case "funciones-estado":
+      return { datos: funciones };
+    case "permisos-estado":
+      return { datos: estadoPermisos() };
     case "conversacion-nueva":
       if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
       await nuevaConversacion(cliente);
@@ -924,6 +1082,7 @@ entrada.on("line", (linea) => {
 });
 
 async function salir(): Promise<void> {
+  tareas.detenerTodo();
   await cliente?.stopAndWait().catch(() => {});
   gastos.cerrar();
   process.exit(0);

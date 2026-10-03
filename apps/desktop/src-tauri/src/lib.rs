@@ -4,6 +4,7 @@ mod conectores;
 mod configuracion;
 mod descargas;
 mod entorno;
+mod funciones;
 mod puente;
 
 use puente::Puente;
@@ -92,7 +93,7 @@ async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
 /// La ventana "Configurar Brote".
 #[tauri::command]
 async fn abrir_configuracion(app: AppHandle) -> Result<(), String> {
-    abrir_ventana(&app, "configuracion", "configuracion.html", "Configurar Brote", (520.0, 720.0)).await
+    abrir_ventana(&app, "configuracion", "configuracion.html", "Configurar Brote", (720.0, 560.0)).await
 }
 
 /// En macOS la app no tiene Dock ni menú, así que Cmd + Q lo maneja el propio personaje.
@@ -266,6 +267,8 @@ pub fn run() {
             configuracion::reiniciar,
             configuracion::guardar_calendario,
             configuracion::guardar_aula,
+            funciones::guardar_funciones,
+            funciones::leer_funciones,
             conectores::conector_conectar,
             conectores::conector_cancelar,
             conectores::abrir_autorizacion,

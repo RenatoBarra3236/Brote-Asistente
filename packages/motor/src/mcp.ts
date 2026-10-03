@@ -28,6 +28,11 @@ import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } fr
 import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
+import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
+import { FuncionesVigiladas } from "./funciones-archivo.ts";
+
+/** Lo que el usuario prendió o apagó en Configurar Brote → Funciones (se relee cuando cambia). */
+const funciones = new FuncionesVigiladas();
 
 const VERSION_PROTOCOLO = "2025-06-18";
 const MONTO_MAXIMO = 100_000_000;
@@ -557,7 +562,10 @@ export function atender(gastos: Gastos, mensaje: any): object | null | Promise<o
       return responder({});
     case "tools/list":
       return responder({ tools: HERRAMIENTAS });
-    case "tools/call":
+    case "tools/call": {
+      // Una función apagada no hace nada (ni lee la música, ni el calendario, ni el disco).
+      const funcion = funcionDeHerramienta(String(params?.name));
+      if (funcion && !funciones.activa(funcion)) return responder({ content: [{ type: "text", text: MENSAJE_APAGADA_MCP }] });
       if (ESPERAN.has(String(params?.name))) {
         return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
           (texto) => responder({ content: [{ type: "text", text: texto }] }),
@@ -576,6 +584,7 @@ export function atender(gastos: Gastos, mensaje: any): object | null | Promise<o
         if (!(error instanceof ErrorDeUso)) process.stderr.write(`[gastos] ${String(error)}\n`);
         return responder({ content: [{ type: "text", text: motivo }], isError: true });
       }
+    }
     default:
       return { jsonrpc: "2.0", id, error: { code: -32601, message: `Método no soportado: ${method}` } };
   }

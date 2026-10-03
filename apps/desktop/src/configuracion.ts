@@ -1,635 +1,373 @@
-// La ventana "Configurar Brote" (paso 10): muestra qué falta para que Brote funcione y lo arregla.
+// La ventana "Configurar Brote". Dos caras:
+//
+//   Primera vez (falta algo obligatorio y todavía no se eligieron funciones): un asistente de 3 pasos.
+//     1. Preparar: los 11 pasos técnicos como una sola barra de progreso; solo aparece una tarjeta
+//        cuando el usuario tiene que hacer algo (instalar Node, iniciar sesión en Claude, aceptar el
+//        consentimiento del agente). Los nombres técnicos quedan plegados en "Detalles".
+//     2. Qué quieres que haga Brote: presets y una tarjeta con interruptor por función.
+//     3. Listo: "Empezar" guarda las funciones y reinicia Brote.
+//   Uso diario: barra lateral con Estado (y Reparar), Funciones, Conectores, Aula, Permisos y Memoria.
+//
 // La revisión y los arreglos los hace Rust con el script `configurar` (ver configuracion.rs); esta
-// ventana solo pide pasos conocidos y abre terminales o páginas de una lista cerrada.
+// ventana solo pide pasos conocidos y abre terminales o páginas de listas cerradas.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { FUNCIONES, normalizarFunciones } from "./agente/funciones";
+import { filasPermisos, funcionesSinConfigurar, necesitaAsistente, permisoCalendarioDePaso, preparacion, esTecnico, type LecturaPermisos } from "./agente/preparacion";
+import { TransportePuente } from "./agente/puente";
+import { revisarConectores, vistaConectores } from "./configurar/conectores";
+import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso } from "./configurar/comun";
+import { formularioAula } from "./configurar/formularios";
+import { vistaFunciones, vistaTarjetasInicio } from "./configurar/funciones";
 
-type Estado = "ok" | "falta" | "opcional";
+type Seccion = "estado" | "funciones" | "conectores" | "aula" | "permisos" | "memoria";
 
-type Accion =
-  | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean; textoConsentimiento?: string }
-  | { tipo: "terminal"; etiqueta: string; terminal: string }
-  | { tipo: "enlace"; etiqueta: string; enlace: string }
-  | { tipo: "ical"; etiqueta: string; configurada: boolean }
-  | { tipo: "aula"; etiqueta: string; configurada: boolean; plataforma: "canvas" | "moodle" | null };
+const SECCIONES: { id: Seccion; icono: string; titulo: string }[] = [
+  { id: "estado", icono: "🌱", titulo: "Estado" },
+  { id: "funciones", icono: "✨", titulo: "Funciones" },
+  { id: "conectores", icono: "🔌", titulo: "Conectores" },
+  { id: "aula", icono: "📚", titulo: "Aula" },
+  { id: "permisos", icono: "🔒", titulo: "Permisos" },
+  { id: "memoria", icono: "🧠", titulo: "Memoria" },
+];
 
-interface Paso {
-  id: string;
-  titulo: string;
-  estado: Estado;
-  detalle: string;
-  accion?: Accion;
-  quitar?: { paso: string; etiqueta: string };
-}
+const raiz = document.querySelector<HTMLDivElement>("#raiz")!;
+let modo: "cargando" | "asistente" | "diario" = "cargando";
+let pasoAsistente: 1 | 2 | 3 = 1;
+let seccion: Seccion = "estado";
 
-const ICONOS: Record<Estado, string> = { ok: "✅", falta: "⚠️", opcional: "○" };
-/** Cuántas vueltas da "Arreglar todo" como máximo (cada arreglo puede destrabar otro). */
-const VUELTAS = 14;
+// ---------------------------------------------------------------- piezas comunes
 
-const contenedor = document.querySelector<HTMLElement>("#pasos")!;
-const aviso = document.querySelector<HTMLParagraphElement>("#aviso")!;
-const listo = document.querySelector<HTMLDivElement>("#listo")!;
-const revisarBoton = document.querySelector<HTMLButtonElement>("#revisar")!;
-const todoBoton = document.querySelector<HTMLButtonElement>("#todo")!;
-const empezar = document.querySelector<HTMLButtonElement>("#empezar")!;
-
-let pasos: Paso[] = [];
-let ocupado = false;
-/** Los pasos que el usuario aceptó explícitamente (configurar OpenClaw, instalar el modo programador…). */
-const consentimientos = new Set<string>();
-const TEXTO_CONSENTIMIENTO =
-  " Entiendo que OpenClaw podrá usar este computador para ayudarme, y que Brote me pedirá permiso antes de ejecutar comandos.";
-/** Lo escrito en el campo de la dirección iCal (sobrevive a que la ventana se vuelva a pintar). */
-let borradorIcal = "";
-
-function crear<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase?: string, texto?: string): HTMLElementTagNameMap[K] {
-  const elemento = document.createElement(etiqueta);
-  if (clase) elemento.className = clase;
-  if (texto !== undefined) elemento.textContent = texto;
-  return elemento;
-}
-
-function mostrarAviso(texto: string, error = false): void {
-  aviso.textContent = texto;
-  aviso.classList.toggle("error", error);
-  aviso.hidden = false;
-}
-
-function mensajeDe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function puedeAutomatico(paso: Paso): boolean {
-  return paso.estado === "falta" && paso.accion?.tipo === "automatica" && (!paso.accion.requiereConsentimiento || consentimientos.has(paso.id));
-}
-
-function pintar(): void {
-  const faltan = pasos.filter((p) => p.estado === "falta");
-  listo.hidden = faltan.length > 0 || pasos.length === 0;
-  todoBoton.disabled = ocupado || !pasos.some((p) => p.estado === "falta" && p.accion?.tipo === "automatica");
-  revisarBoton.disabled = ocupado;
-
-  contenedor.replaceChildren(
-    ...pasos.map((paso) => {
-      const tarjeta = crear("article", `tarjeta paso ${paso.estado}`);
-      const cabeza = crear("div", "tarjeta-cabeza");
-      cabeza.append(crear("h3", undefined, `${ICONOS[paso.estado]}  ${paso.titulo}`));
-      tarjeta.append(cabeza, crear("p", "tarjeta-texto", paso.detalle));
-
-      if (paso.quitar) {
-        const quitar = paso.quitar;
-        const botones = crear("div", "botones");
-        const boton = crear("button", "boton", quitar.etiqueta);
-        boton.type = "button";
-        boton.disabled = ocupado;
-        boton.addEventListener("click", () => void deshacer(paso.titulo, quitar.paso));
-        botones.append(boton);
-        tarjeta.append(botones);
-      }
-      const accion = paso.accion;
-      if (!accion) return tarjeta;
-      if (accion.tipo === "ical") {
-        tarjeta.append(formularioIcal(accion.configurada));
-        return tarjeta;
-      }
-      if (accion.tipo === "aula") {
-        tarjeta.append(formularioAula(accion.configurada, accion.plataforma));
-        return tarjeta;
-      }
-      const botones = crear("div", "botones");
-      if (accion.tipo === "automatica" && accion.requiereConsentimiento) {
-        const etiqueta = crear("label", "consentimiento");
-        const casilla = crear("input");
-        casilla.type = "checkbox";
-        casilla.checked = consentimientos.has(paso.id);
-        casilla.addEventListener("change", () => {
-          if (casilla.checked) consentimientos.add(paso.id);
-          else consentimientos.delete(paso.id);
-          aviso.hidden = true;
-          pintar();
-        });
-        etiqueta.append(casilla, document.createTextNode(accion.textoConsentimiento ?? TEXTO_CONSENTIMIENTO));
-        tarjeta.append(etiqueta);
-      }
-      const boton = crear("button", "boton boton-primario", accion.etiqueta);
-      boton.type = "button";
-      boton.disabled = ocupado || (accion.tipo === "automatica" && accion.requiereConsentimiento === true && !consentimientos.has(paso.id));
-      boton.addEventListener("click", () => void actuar(paso));
-      botones.append(boton);
-      tarjeta.append(botones);
-      return tarjeta;
-    }),
-  );
-}
-
-/**
- * La dirección iCal secreta: un campo (oculto, como una contraseña) y los botones para guardarla o
- * quitarla. La guarda Rust (`guardar_calendario`), que la valida y la deja con permisos 600.
- */
-function formularioIcal(configurada: boolean): HTMLElement {
-  const formulario = crear("form", "formulario-ical");
-  const campo = crear("input", "campo");
-  campo.type = "password";
-  campo.autocomplete = "off";
-  campo.spellcheck = false;
-  campo.placeholder = configurada ? "Dirección guardada (oculta). Pega otra para cambiarla" : "https://calendar.google.com/calendar/ical/…/basic.ics";
-  campo.value = borradorIcal;
-  campo.setAttribute("aria-label", "Dirección secreta en formato iCal");
-  const guardar = crear("button", "boton boton-primario", "Guardar");
-  guardar.type = "submit";
-  guardar.disabled = ocupado || borradorIcal.trim() === "";
-  campo.addEventListener("input", () => {
-    borradorIcal = campo.value;
-    guardar.disabled = ocupado || borradorIcal.trim() === "";
-  });
-  const botones = crear("div", "botones");
-  if (configurada) {
-    const quitar = crear("button", "boton", "Quitar");
-    quitar.type = "button";
-    quitar.disabled = ocupado;
-    quitar.addEventListener("click", () => void guardarIcal(null));
-    botones.append(quitar);
-  }
-  botones.append(guardar);
-  formulario.addEventListener("submit", (evento) => {
-    evento.preventDefault();
-    void guardarIcal(borradorIcal);
-  });
-  formulario.append(campo, botones);
-  return formulario;
-}
-
-async function guardarIcal(url: string | null): Promise<void> {
-  try {
-    await invoke("guardar_calendario", { url });
-    borradorIcal = "";
-    mostrarAviso(url ? "Guardé la dirección. Reviso que funcione…" : "Quité la dirección del calendario.");
-  } catch (error) {
-    mostrarAviso(`Calendario: ${mensajeDe(error)}`, true);
-    return;
-  }
-  await revisar();
-}
-
-/** Lo escrito en el formulario del aula (el token nunca sale de esta ventana salvo hacia Rust). */
-const borradorAula = { plataforma: "canvas" as "canvas" | "moodle", url: "", token: "" };
-
-const AYUDA_AULA = {
-  canvas: "En Canvas: Cuenta → Configuración → «+ Nuevo token de acceso». Copia el token (se muestra una sola vez).",
-  moodle: "En Moodle: tu nombre → Preferencias → Claves de seguridad, y copia la del servicio «Moodle mobile web service».",
-};
-
-/**
- * El aula (Canvas o Moodle), solo lectura: la dirección del campus y un token personal. Nunca la
- * contraseña. Lo guarda Rust (`guardar_aula`), que lo valida y lo deja con permisos 600.
- */
-function formularioAula(configurada: boolean, plataforma: "canvas" | "moodle" | null): HTMLElement {
-  const formulario = crear("form", "formulario-conector");
-  if (plataforma && !borradorAula.url && !borradorAula.token) borradorAula.plataforma = plataforma;
-  const selector = crear("select");
-  selector.setAttribute("aria-label", "Plataforma del aula");
-  for (const [valor, texto] of [["canvas", "Canvas"], ["moodle", "Moodle"]] as const) {
-    const opcion = crear("option", undefined, texto);
-    opcion.value = valor;
-    opcion.selected = borradorAula.plataforma === valor;
-    selector.append(opcion);
-  }
-  const ayuda = crear("p", "nota", AYUDA_AULA[borradorAula.plataforma]);
-  const url = crear("input", "campo");
-  url.type = "url";
-  url.placeholder = "https://campus.tu-universidad.cl";
-  url.value = borradorAula.url;
-  url.setAttribute("aria-label", "Dirección del campus");
-  const token = crear("input", "campo");
-  token.type = "password";
-  token.autocomplete = "off";
-  token.spellcheck = false;
-  token.placeholder = configurada ? "Token guardado (oculto). Pega otro para cambiarlo" : "Token personal (nunca tu contraseña)";
-  token.value = borradorAula.token;
-  token.setAttribute("aria-label", "Token personal del aula");
-  const guardar = crear("button", "boton boton-primario", "Guardar");
-  guardar.type = "submit";
-  const actualizar = () => (guardar.disabled = ocupado || !borradorAula.url.trim() || !borradorAula.token.trim());
-  actualizar();
-  selector.addEventListener("change", () => {
-    borradorAula.plataforma = selector.value === "moodle" ? "moodle" : "canvas";
-    ayuda.textContent = AYUDA_AULA[borradorAula.plataforma];
-  });
-  url.addEventListener("input", () => {
-    borradorAula.url = url.value;
-    actualizar();
-  });
-  token.addEventListener("input", () => {
-    borradorAula.token = token.value;
-    actualizar();
-  });
-  const botones = crear("div", "botones");
-  if (configurada) {
-    const quitar = crear("button", "boton", "Quitar");
-    quitar.type = "button";
-    quitar.disabled = ocupado;
-    quitar.addEventListener("click", () => void guardarAula(false));
-    botones.append(quitar);
-  }
-  botones.append(guardar);
-  formulario.addEventListener("submit", (evento) => {
-    evento.preventDefault();
-    void guardarAula(true);
-  });
-  formulario.append(selector, ayuda, url, token, botones);
-  return formulario;
-}
-
-async function guardarAula(guardar: boolean): Promise<void> {
-  try {
-    await invoke("guardar_aula", guardar ? { tipo: borradorAula.plataforma, url: borradorAula.url, token: borradorAula.token } : { tipo: null, url: null, token: null });
-    borradorAula.url = "";
-    borradorAula.token = "";
-    mostrarAviso(guardar ? "Guardé tu aula. Reviso que funcione…" : "Quité el aula.");
-  } catch (error) {
-    mostrarAviso(`Aula: ${mensajeDe(error)}`, true);
-    return;
-  }
-  await revisar();
-}
-
-async function revisar(): Promise<void> {
-  ocupado = true;
-  pintar();
-  try {
-    pasos = JSON.parse(await invoke<string>("configuracion", { orden: "revisar" }));
-  } catch (error) {
-    mostrarAviso(`No pude revisar: ${mensajeDe(error)}`, true);
-  } finally {
-    ocupado = false;
-    pintar();
-  }
-}
-
-/** Aplica un paso automático. Devuelve si salió bien. */
-async function aplicar(paso: Paso): Promise<boolean> {
-  mostrarAviso(`${paso.titulo}: trabajando… (puede tardar un poco)`);
-  const resultado = JSON.parse(await invoke<string>("configuracion", { orden: "aplicar", paso: paso.id })) as {
-    ok: boolean;
-    detalle: string;
-  };
-  mostrarAviso(resultado.detalle, !resultado.ok);
-  return resultado.ok;
-}
-
-/** El segundo botón de un paso (por ejemplo, desinstalar el modo programador). */
-async function deshacer(titulo: string, id: string): Promise<void> {
-  ocupado = true;
-  pintar();
-  try {
-    await aplicar({ id, titulo, estado: "ok", detalle: "" });
-  } catch (error) {
-    mostrarAviso(`${titulo}: ${mensajeDe(error)}`, true);
-  } finally {
-    ocupado = false;
-  }
-  await revisar();
-}
-
-async function actuar(paso: Paso): Promise<void> {
-  const accion = paso.accion;
-  if (!accion) return;
-  try {
-    if (accion.tipo === "terminal") {
-      await invoke("abrir_terminal", { cual: accion.terminal });
-      mostrarAviso("Abrí una terminal. Cuando termines ahí, vuelve y pulsa «Revisar de nuevo».");
-      return;
-    }
-    if (accion.tipo === "enlace") {
-      await invoke("abrir_enlace", { cual: accion.enlace });
-      mostrarAviso("Abrí la página en tu navegador. Después de instalarlo, pulsa «Revisar de nuevo».");
-      return;
-    }
-    ocupado = true;
-    pintar();
-    await aplicar(paso);
-  } catch (error) {
-    mostrarAviso(`${paso.titulo}: ${mensajeDe(error)}`, true);
-  } finally {
-    ocupado = false;
-  }
-  await revisar();
-}
-
-todoBoton.addEventListener("click", async () => {
-  // Configurar OpenClaw necesita el consentimiento explícito: se avisa en vez de no hacer nada.
-  const sinConsentimiento = pasos.find(
-    (p) => p.estado === "falta" && p.accion?.tipo === "automatica" && p.accion.requiereConsentimiento && !consentimientos.has(p.id),
-  );
-  if (sinConsentimiento && !pasos.some(puedeAutomatico)) {
-    mostrarAviso("Primero marca la casilla de «Agente de OpenClaw» para aceptar que se configure.", true);
-    const casilla = document.querySelector<HTMLElement>(".consentimiento");
-    casilla?.scrollIntoView({ behavior: "smooth", block: "center" });
-    casilla?.classList.add("resaltada");
-    return;
-  }
-  ocupado = true;
-  pintar();
-  try {
-    for (let vuelta = 0; vuelta < VUELTAS; vuelta++) {
-      const siguiente = pasos.find(puedeAutomatico);
-      if (!siguiente) break;
-      if (!(await aplicar(siguiente))) break;
-      pasos = JSON.parse(await invoke<string>("configuracion", { orden: "revisar" }));
-      pintar();
-    }
-  } catch (error) {
-    mostrarAviso(mensajeDe(error), true);
-  } finally {
-    ocupado = false;
-  }
-  await revisar();
-  const pendientes = pasos.filter((p) => p.estado === "falta");
-  if (pendientes.length > 0) mostrarAviso(`Falta: ${pendientes.map((p) => p.titulo).join(", ")}. Revisa los botones de cada uno.`);
-});
-
-// ---------------------------------------------------------------- conectores
-
-interface FilaConector {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  auth: "oauth" | "token";
-  probado: boolean;
-  estado: "conectado" | "sin-autorizar" | "desconectado";
-  herramientas: number;
-  ayudaToken?: string;
-}
-
-interface FilaPropio {
-  id: string;
-  url: string;
-  estado: "conectado" | "sin-autorizar" | "desconectado";
-  herramientas: number;
-}
-
-/** Lo que manda Rust (evento `conector`) en cada fase de una conexión. */
-interface FaseConector {
-  id: string;
-  fase: "agregando" | "autorizar" | "esperando" | "listo" | "error" | "cancelado";
-  url?: string;
-  detalle?: string;
-}
-
-const contenedorConectores = document.querySelector<HTMLElement>("#conectores")!;
-let conectores: { catalogo: FilaConector[]; propios: FilaPropio[] } | null = null;
-/** La conexión en curso: solo una a la vez. */
-let conexion: { id: string; fase: FaseConector["fase"]; url?: string } | null = null;
-let revisandoConectores = false;
-/** Lo escrito en los formularios (sobrevive a que se vuelva a pintar). */
-const tokens = new Map<string, string>();
-const propio = { nombre: "", url: "", acepto: false };
-const TEXTO_CONSENTIMIENTO_PROPIO =
-  " Entiendo que este servicio podrá ver lo que le pida a Brote que haga con él, y que cada acción me pedirá permiso.";
-
-function estadoTexto(estado: FilaConector["estado"], herramientas: number): string {
-  if (estado === "conectado") return `✅ Conectado · ${herramientas === 1 ? "1 herramienta" : `${herramientas} herramientas`}`;
-  if (estado === "sin-autorizar") return "⚠️ Guardado, pero falta autorizar (o el token no sirve)";
-  return "○ Sin conectar";
-}
-
-function boton(texto: string, clase: string, alHacer: () => void, deshabilitado = false): HTMLButtonElement {
-  const b = crear("button", clase, texto);
-  b.type = "button";
-  b.disabled = deshabilitado;
-  b.addEventListener("click", alHacer);
-  return b;
-}
-
-/** Mientras espera al navegador: el botón para abrir la autorización y Cancelar. */
-function panelEsperando(id: string): HTMLElement {
-  const caja = crear("div");
-  const texto =
-    conexion?.fase === "agregando" ? "Preparando la conexión…" : conexion?.url ? "Esperando que autorices en el navegador…" : "Conectando…";
-  caja.append(crear("p", "esperando-autorizacion", texto));
-  const botones = crear("div", "botones");
-  botones.append(boton("Cancelar", "boton", () => void cancelarConexion()));
-  if (conexion?.url) {
-    const url = conexion.url;
-    botones.append(boton("Abrir en el navegador", "boton boton-primario", () => void abrirAutorizacion(id, url)));
-  }
-  caja.append(botones);
+/** La barra de progreso de los pasos técnicos (Preparar y Estado). */
+function barraPreparacion(): HTMLElement {
+  const resumen = preparacion(estado.pasos, estado.consentimientos);
+  const caja = crear("div", `progreso${resumen.listo ? " listo" : ""}`);
+  const texto = crear("p", "progreso-texto");
+  if (estado.trabajandoEn) texto.textContent = `${estado.trabajandoEn} (${resumen.listos} de ${resumen.total})`;
+  else if (!estado.revisado) texto.textContent = "Revisando lo que hay en tu computador…";
+  else if (resumen.listo) texto.textContent = "Todo listo por dentro ✓";
+  else texto.textContent = `${resumen.listos} de ${resumen.total} listos`;
+  const barra = crear("div", `barra-progreso${estado.trabajandoEn || !estado.revisado ? " trabajando" : ""}`);
+  const relleno = crear("i");
+  relleno.style.width = `${Math.round((resumen.listos / resumen.total) * 100)}%`;
+  barra.append(relleno);
+  caja.append(texto, barra);
   return caja;
 }
 
-function tarjetaConector(c: FilaConector): HTMLElement {
-  const tarjeta = crear("article", `tarjeta paso ${c.estado === "conectado" ? "ok" : "opcional"}`);
-  const titulo = crear("h3", undefined, c.nombre);
-  if (!c.probado) titulo.append(crear("span", "etiqueta-sin-probar", "sin probar"));
-  tarjeta.append(titulo, crear("p", "tarjeta-texto", c.descripcion), crear("p", "estado-conector", estadoTexto(c.estado, c.herramientas)));
-  if (conexion?.id === c.id) {
-    tarjeta.append(panelEsperando(c.id));
+/** Las tarjetas de lo que el usuario tiene que hacer él (instalar Node, iniciar sesión, aceptar…). */
+function tarjetasDelUsuario(): HTMLElement[] {
+  return preparacion(estado.pasos, estado.consentimientos).delUsuario.map((p) => {
+    const tarjeta = tarjetaPaso(p);
+    tarjeta.classList.add("del-usuario");
     return tarjeta;
-  }
-  const ocupadoAhora = conexion !== null || revisandoConectores;
-  if (c.auth === "token" && c.estado !== "conectado") {
-    const formulario = crear("form", "formulario-conector");
-    if (c.ayudaToken) formulario.append(crear("p", "nota", c.ayudaToken));
-    const campo = crear("input", "campo");
-    campo.type = "password";
-    campo.autocomplete = "off";
-    campo.spellcheck = false;
-    campo.placeholder = "Token personal (fine-grained, de solo lectura)";
-    campo.value = tokens.get(c.id) ?? "";
-    campo.setAttribute("aria-label", `Token de ${c.nombre}`);
-    const conectar = crear("button", "boton boton-primario", "Conectar");
-    conectar.type = "submit";
-    conectar.disabled = ocupadoAhora || !campo.value.trim();
-    campo.addEventListener("input", () => {
-      tokens.set(c.id, campo.value);
-      conectar.disabled = ocupadoAhora || !campo.value.trim();
-    });
-    formulario.addEventListener("submit", (evento) => {
-      evento.preventDefault();
-      void conectar_(c.id, { token: tokens.get(c.id) ?? "" });
-    });
-    const botones = crear("div", "botones");
-    if (c.estado === "sin-autorizar") botones.append(boton("Desconectar", "boton", () => void desconectar(c.id, c.nombre), ocupadoAhora));
-    botones.append(conectar);
-    formulario.append(campo, botones);
-    tarjeta.append(formulario);
-    return tarjeta;
-  }
-  const botones = crear("div", "botones");
-  if (c.estado !== "desconectado") botones.append(boton("Desconectar", "boton", () => void desconectar(c.id, c.nombre), ocupadoAhora));
-  if (c.estado !== "conectado") {
-    botones.append(boton(c.estado === "sin-autorizar" ? "Autorizar" : "Conectar", "boton boton-primario", () => void conectar_(c.id, {}), ocupadoAhora));
-  }
-  tarjeta.append(botones);
-  return tarjeta;
+  });
 }
 
-function tarjetaPropio(p: FilaPropio): HTMLElement {
-  const tarjeta = crear("article", `tarjeta paso ${p.estado === "conectado" ? "ok" : "opcional"}`);
-  tarjeta.append(crear("h3", undefined, `${p.id} (agregado por ti)`), crear("p", "tarjeta-texto", p.url), crear("p", "estado-conector", estadoTexto(p.estado, p.herramientas)));
-  if (conexion?.id === p.id) {
-    tarjeta.append(panelEsperando(p.id));
-    return tarjeta;
-  }
-  const botones = crear("div", "botones");
-  botones.append(boton("Desconectar", "boton", () => void desconectar(p.id, p.id), conexion !== null || revisandoConectores));
-  tarjeta.append(botones);
-  return tarjeta;
-}
-
-/** "Agregar otro por URL": nombre, dirección https y una casilla de consentimiento propia. */
-function formularioPropio(): HTMLElement {
-  const detalles = crear("details", "tarjeta avanzado");
-  detalles.open = propio.nombre !== "" || propio.url !== "" || conexion?.id === propio.nombre;
-  detalles.append(crear("summary", undefined, "Agregar otro por URL (avanzado)"));
-  const formulario = crear("form", "formulario-conector");
-  formulario.append(crear("p", "nota", "Un servidor MCP remoto con OAuth. Ninguna de sus herramientas queda permitida sin preguntar."));
-  const nombre = crear("input", "campo");
-  nombre.placeholder = "nombre (minúsculas, números y guiones)";
-  nombre.value = propio.nombre;
-  nombre.setAttribute("aria-label", "Nombre del servidor");
-  const url = crear("input", "campo");
-  url.type = "url";
-  url.placeholder = "https://…/mcp";
-  url.value = propio.url;
-  url.setAttribute("aria-label", "Dirección del servidor MCP");
-  const etiqueta = crear("label", "consentimiento");
-  const casilla = crear("input");
-  casilla.type = "checkbox";
-  casilla.checked = propio.acepto;
-  etiqueta.append(casilla, document.createTextNode(TEXTO_CONSENTIMIENTO_PROPIO));
-  const agregar = crear("button", "boton boton-primario", "Conectar");
-  agregar.type = "submit";
-  const actualizar = () => {
-    agregar.disabled = conexion !== null || !propio.acepto || !/^[a-z0-9-]{2,32}$/.test(propio.nombre) || !propio.url.startsWith("https://");
-  };
-  actualizar();
-  nombre.addEventListener("input", () => {
-    propio.nombre = nombre.value.trim();
-    actualizar();
-  });
-  url.addEventListener("input", () => {
-    propio.url = url.value.trim();
-    actualizar();
-  });
-  casilla.addEventListener("change", () => {
-    propio.acepto = casilla.checked;
-    actualizar();
-  });
-  formulario.addEventListener("submit", (evento) => {
-    evento.preventDefault();
-    if (propio.acepto) void conectar_(propio.nombre, { url: propio.url });
-  });
-  const botones = crear("div", "botones");
-  botones.append(agregar);
-  formulario.append(nombre, url, etiqueta, botones);
-  detalles.append(formulario);
+/** Los pasos técnicos, plegados: para quien quiera saber qué hay por dentro. */
+function detallesTecnicos(): HTMLElement {
+  const detalles = crear("details", "detalles");
+  detalles.append(crear("summary", undefined, "Detalles técnicos"));
+  const tecnicos = estado.pasos.filter(esTecnico);
+  if (tecnicos.length === 0) detalles.append(crear("p", "nota", "Todavía no reviso nada."));
+  detalles.append(...tecnicos.map(filaPaso));
   return detalles;
 }
 
-function pintarConectores(): void {
-  if (!conectores) return;
-  const nuevo = conexion && !conectores.catalogo.some((c) => c.id === conexion!.id) && !conectores.propios.some((p) => p.id === conexion!.id);
-  contenedorConectores.replaceChildren(
-    ...conectores.catalogo.map(tarjetaConector),
-    ...conectores.propios.map(tarjetaPropio),
-    // Un propio recién agregado todavía no aparece en la lista: su espera va en el formulario.
-    ...(nuevo ? [panelEsperando(conexion!.id)] : []),
-    formularioPropio(),
+// ---------------------------------------------------------------- asistente
+
+function pasosDelAsistente(): HTMLElement {
+  const lista = crear("ol", "pasos-asistente");
+  (["Preparar", "Qué quieres que haga Brote", "Listo"] as const).forEach((titulo, i) => {
+    const n = (i + 1) as 1 | 2 | 3;
+    const item = crear("li", n === pasoAsistente ? "actual" : n < pasoAsistente ? "hecho" : "");
+    item.append(crear("span", "numero", n < pasoAsistente ? "✓" : String(n)), crear("span", undefined, titulo));
+    lista.append(item);
+  });
+  return lista;
+}
+
+function asistentePreparar(): HTMLElement[] {
+  const resumen = preparacion(estado.pasos, estado.consentimientos);
+  const preparar = boton(
+    resumen.listo ? "Listo" : "Preparar Brote",
+    "boton boton-primario boton-grande",
+    () => void prepararTodo(),
+    estado.ocupado || resumen.listo || !resumen.hayAutomatico,
   );
+  const fila = crear("div", "fila-preparar");
+  fila.append(barraPreparacion(), preparar);
+  const partes: HTMLElement[] = [
+    cabecera("Preparemos a Brote", "Brote necesita OpenClaw (su cerebro) y Claude Code con tu cuenta. Lo instalo y lo configuro yo; solo te pido ayuda cuando haga falta."),
+    fila,
+  ];
+  const delUsuario = tarjetasDelUsuario();
+  if (delUsuario.length > 0) partes.push(crear("p", "nota-seccion", "Necesito que hagas esto:"), ...delUsuario);
+  else if (!resumen.listo && !resumen.hayAutomatico && estado.revisado && !estado.ocupado) {
+    partes.push(crear("p", "nota", "Revisa los detalles: algo no se pudo arreglar solo."));
+  }
+  partes.push(detallesTecnicos());
+  return partes;
 }
 
-async function revisarConectores(): Promise<void> {
-  revisandoConectores = true;
-  pintarConectores();
-  try {
-    conectores = JSON.parse(await invoke<string>("configuracion", { orden: "conectores" }));
-  } catch (error) {
-    contenedorConectores.replaceChildren(crear("p", "vacio", `No pude revisar los conectores: ${mensajeDe(error)}`));
-  } finally {
-    revisandoConectores = false;
-    pintarConectores();
-  }
+function asistenteFunciones(): HTMLElement[] {
+  return [
+    cabecera("¿Qué quieres que haga Brote?", "Elige un punto de partida y ajusta lo que quieras. Puedes cambiarlo cuando quieras en Configurar Brote → Funciones."),
+    vistaFunciones(true),
+  ];
 }
 
-async function conectar_(id: string, datos: { url?: string; token?: string }): Promise<void> {
-  if (conexion) return;
-  conexion = { id, fase: "agregando" };
-  pintarConectores();
-  try {
-    await invoke("conector_conectar", { id, url: datos.url ?? null, token: datos.token ?? null });
-  } catch (error) {
-    conexion = null;
-    mostrarAviso(`No pude conectar: ${mensajeDe(error)}`, true);
-    pintarConectores();
+function asistenteListo(): HTMLElement[] {
+  const activas = FUNCIONES.filter((f) => estado.funciones.activas[f.id]);
+  const lista = crear("ul", "resumen-funciones");
+  for (const f of activas) lista.append(crear("li", undefined, f.nombre));
+  const partes: HTMLElement[] = [cabecera("¡Listo! 🌱", "Brote ya puede acompañarte. Esto es lo que va a hacer:"), lista];
+  const pendientes = funcionesSinConfigurar(estado.funciones.activas, estado.pasos);
+  if (pendientes.length > 0) {
+    const aviso = crear("p", "nota-pendiente", `Quedó por configurar: ${pendientes.map((f) => f.nombre).join(", ")}. Hasta entonces no muestran nada; puedes hacerlo en el paso anterior o después en Configurar Brote → Funciones.`);
+    partes.push(aviso);
   }
+  const permisos = filasPermisos(estado.funciones.activas, null).filter((f) => f.usadoPor.length > 0);
+  if (EN_MAC && permisos.length > 0) {
+    partes.push(
+      crear("p", "nota", `macOS te va a preguntar por algunos permisos la primera vez que Brote los necesite: ${permisos.map((p) => p.nombre).join(", ")}. Puedes revisarlos en Configurar Brote → Permisos.`),
+    );
+  }
+  partes.push(crear("p", "nota", "¿Usas Todoist, Notion, GitHub o Canva? Conéctalos después en Configurar Brote → Conectores."));
+  return partes;
 }
 
-async function cancelarConexion(): Promise<void> {
-  try {
-    await invoke("conector_cancelar");
-  } catch (error) {
-    mostrarAviso(mensajeDe(error), true);
-  }
+function pintarAsistente(): void {
+  const contenido = crear("main", "asistente-contenido");
+  contenido.append(...(pasoAsistente === 1 ? asistentePreparar() : pasoAsistente === 2 ? asistenteFunciones() : asistenteListo()));
+  const pie = crear("footer", "pie");
+  const izquierda = crear("p", undefined, "Todo queda en tu computador. Brote siempre te pide permiso antes de ejecutar comandos.");
+  const botones = crear("div", "botones-pie");
+  if (pasoAsistente > 1) botones.append(boton("Atrás", "boton", () => irA((pasoAsistente - 1) as 1 | 2), estado.ocupado));
+  if (pasoAsistente === 1) {
+    const resumen = preparacion(estado.pasos, estado.consentimientos);
+    const siguiente = boton("Siguiente", "boton boton-primario", () => irA(2), estado.ocupado || !resumen.listo);
+    if (!resumen.listo) siguiente.title = "Primero hay que preparar a Brote";
+    botones.append(siguiente);
+  } else if (pasoAsistente === 2) botones.append(boton("Siguiente", "boton boton-primario", () => irA(3), estado.ocupado));
+  else botones.append(boton("Empezar", "boton boton-primario", () => void empezar(), estado.ocupado));
+  pie.append(izquierda, botones);
+  const cabeza = crear("header", "cabecera asistente-cabecera");
+  cabeza.append(crear("h1", undefined, "Configurar Brote 🌱"), pasosDelAsistente());
+  raiz.replaceChildren(cabeza, contenido, pie);
+  raiz.className = "raiz modo-asistente";
 }
 
-async function abrirAutorizacion(id: string, url: string): Promise<void> {
-  try {
-    await invoke("abrir_autorizacion", { id, url });
-  } catch (error) {
-    mostrarAviso(`No abrí la página: ${mensajeDe(error)}`, true);
-  }
+function irA(n: 1 | 2 | 3): void {
+  pasoAsistente = n;
+  pintar();
+  raiz.querySelector("main")?.scrollTo(0, 0);
 }
 
-async function desconectar(id: string, nombre: string): Promise<void> {
-  revisandoConectores = true;
-  pintarConectores();
-  try {
-    const resultado = JSON.parse(await invoke<string>("configuracion", { orden: "desconectar", paso: id })) as { ok: boolean; detalle: string };
-    mostrarAviso(resultado.detalle, !resultado.ok);
-  } catch (error) {
-    mostrarAviso(`${nombre}: ${mensajeDe(error)}`, true);
-  }
-  await revisarConectores();
+async function empezar(): Promise<void> {
+  if (!(await guardarFunciones())) return;
+  void invoke("reiniciar");
 }
 
-void listen<FaseConector>("conector", ({ payload }) => {
-  if (!conexion || payload.id !== conexion.id) return;
-  switch (payload.fase) {
-    case "agregando":
-    case "esperando":
-      conexion.fase = payload.fase;
-      break;
-    case "autorizar":
-      conexion = { ...conexion, fase: "autorizar", url: payload.url };
-      break;
-    case "listo":
-      conexion = null;
-      tokens.delete(payload.id);
-      if (payload.id === propio.nombre) Object.assign(propio, { nombre: "", url: "", acepto: false });
-      mostrarAviso(payload.detalle ?? "Listo.");
-      void revisarConectores();
-      return;
-    case "error":
-    case "cancelado":
-      conexion = null;
-      mostrarAviso(payload.fase === "cancelado" ? "Cancelé la conexión." : (payload.detalle ?? "No se pudo conectar."), payload.fase === "error");
-      void revisarConectores();
-      return;
+// ---------------------------------------------------------------- uso diario
+
+function seccionEstado(): HTMLElement[] {
+  const resumen = preparacion(estado.pasos, estado.consentimientos);
+  const indicador = crear("div", `indicador ${!estado.revisado ? "revisando" : resumen.listo ? "bien" : "mal"}`);
+  const punto = crear("span", "indicador-punto");
+  const textos = crear("div", "indicador-texto");
+  if (!estado.revisado) textos.append(crear("strong", undefined, "Revisando…"));
+  else if (resumen.listo) textos.append(crear("strong", undefined, "Brote está funcionando"), crear("span", undefined, "OpenClaw, Claude Code y tus gastos están conectados."));
+  else textos.append(crear("strong", undefined, "A Brote le falta algo"), crear("span", undefined, resumen.faltan.map((p) => p.titulo).join(", ")));
+  const botones = crear("div", "botones");
+  botones.append(boton("Revisar de nuevo", "boton", () => void revisarTodo(), estado.ocupado));
+  if (!resumen.listo || estado.trabajandoEn) botones.append(boton("Reparar", "boton boton-primario", () => void prepararTodo(), estado.ocupado || !resumen.hayAutomatico));
+  if (estado.reparado && resumen.listo) botones.append(boton("Reiniciar Brote", "boton boton-primario", () => void invoke("reiniciar"), estado.ocupado));
+  indicador.append(punto, textos, botones);
+  const partes: HTMLElement[] = [cabecera("Estado"), indicador];
+  if (estado.trabajandoEn || !resumen.listo) partes.push(barraPreparacion());
+  partes.push(...tarjetasDelUsuario(), detallesTecnicos());
+  return partes;
+}
+
+function seccionFunciones(): HTMLElement[] {
+  return [
+    cabecera("Funciones", "Lo apagado no corre por detrás, no pide permisos y no aparece en la isla."),
+    vistaFunciones(false),
+    cabecera("Tarjetas de Inicio", "Qué se ve en la pestaña Brote de la isla, y en qué orden."),
+    vistaTarjetasInicio(),
+  ];
+}
+
+function seccionAula(): HTMLElement[] {
+  const partes: HTMLElement[] = [cabecera("Aula", "Canvas o Moodle, solo lectura: tus entregas en la isla y un aviso 24 h y 2 h antes. Nunca tu contraseña.")];
+  if (!estado.funciones.activas.aula) {
+    const apagada = crear("div", "tarjeta aviso-apagada");
+    apagada.append(
+      crear("p", undefined, "La función Aula está apagada: Brote no lee tu campus."),
+      boton("Prender el aula", "boton boton-primario", () => {
+        estado.funciones.activas.aula = true;
+        pintar();
+        void guardarFunciones();
+      }),
+    );
+    partes.push(apagada);
   }
-  pintarConectores();
+  const aula = paso("aula");
+  if (aula?.accion?.tipo === "aula") partes.push(tarjetaPaso({ ...aula, accion: undefined }, [formularioAula(aula.accion.configurada, aula.accion.plataforma)]));
+  else partes.push(crear("p", "vacio", estado.revisado ? "No pude revisar el aula." : "Revisando…"));
+  return partes;
+}
+
+const ESTADOS_PERMISO = { concedido: "Concedido", negado: "Negado", "sin-preguntar": "No lo ha pedido", "sin-usar": "Sin usar" } as const;
+
+function seccionPermisos(): HTMLElement[] {
+  const partes: HTMLElement[] = [cabecera("Permisos de macOS", "Qué permisos usa Brote, para qué, y cuáles puedes quitar.")];
+  if (!EN_MAC) {
+    partes.push(crear("p", "nota", "En este computador Brote no necesita permisos especiales del sistema."));
+    return partes;
+  }
+  const lectura: LecturaPermisos | null = estado.permisos
+    ? { ...estado.permisos, calendarios: permisoCalendarioDePaso(estado.pasos) ?? estado.permisos.calendarios }
+    : null;
+  for (const fila of filasPermisos(estado.funciones.activas, lectura)) {
+    const tarjeta = crear("article", `tarjeta permiso${fila.falta ? " falta" : ""}${fila.sobra ? " sobra" : ""}`);
+    const cabeza = crear("div", "tarjeta-cabeza");
+    cabeza.append(crear("h3", undefined, fila.nombre), crear("span", `chip-estado ${fila.estado}`, ESTADOS_PERMISO[fila.estado]));
+    tarjeta.append(
+      cabeza,
+      crear("p", "tarjeta-texto", fila.usadoPor.length > 0 ? `Lo usa: ${fila.usadoPor.map((f) => f.nombre).join(", ")}.` : "Ninguna función activa lo usa."),
+    );
+    if (fila.falta) tarjeta.append(crear("p", "nota-permiso", `Sin este permiso, «${fila.usadoPor[0].nombre}» no funciona. Actívalo en Configuración del Sistema → ${fila.donde}.`));
+    if (fila.sobra) {
+      tarjeta.append(
+        crear("p", "nota-permiso", `Ya no hace falta. Si se lo diste antes, puedes quitarlo en Configuración del Sistema → ${fila.donde}.`),
+      );
+    }
+    if (fila.falta || fila.sobra) {
+      const botones = crear("div", "botones");
+      botones.append(
+        boton("Abrir Privacidad y seguridad", "boton", () => void invoke("abrir_enlace", { cual: fila.enlace }).catch((e) => mostrarAviso(mensajeDe(e), true))),
+      );
+      tarjeta.append(botones);
+    }
+    partes.push(tarjeta);
+  }
+  partes.push(crear("p", "nota", "Brote sabe si un permiso está dado solo cuando lo usa: nunca pregunta nada para averiguarlo."));
+  return partes;
+}
+
+function seccionMemoria(): HTMLElement[] {
+  const tarjeta = crear("article", "tarjeta");
+  tarjeta.append(
+    crear("h3", undefined, "Lo que sé de ti"),
+    crear("p", "tarjeta-texto", "Todo lo que Brote recuerda, las frases que aprendió y las conversaciones guardadas, para corregirlo u olvidarlo."),
+  );
+  const botones = crear("div", "botones");
+  botones.append(boton("Abrir «Lo que sé de ti»", "boton boton-primario", () => void invoke("abrir_memoria").catch((e) => mostrarAviso(mensajeDe(e), true))));
+  tarjeta.append(botones);
+  const partes: HTMLElement[] = [cabecera("Memoria"), tarjeta];
+  const local = paso("memoria-local");
+  if (local) {
+    const busqueda = crear("p", "nota", `Búsqueda por significado: ${local.estado === "ok" ? "activada" : "sin configurar"} (en Funciones).`);
+    partes.push(busqueda);
+  }
+  return partes;
+}
+
+function pintarDiario(): void {
+  const lateral = crear("nav", "lateral");
+  lateral.setAttribute("aria-label", "Secciones");
+  const titulo = crear("div", "lateral-titulo", "Configurar Brote");
+  lateral.append(titulo);
+  const resumen = preparacion(estado.pasos, estado.consentimientos);
+  for (const s of SECCIONES) {
+    const b = boton("", `lateral-boton${s.id === seccion ? " actual" : ""}`, () => {
+      seccion = s.id;
+      pintar();
+      raiz.querySelector("main")?.scrollTo(0, 0);
+    });
+    b.setAttribute("aria-current", String(s.id === seccion));
+    b.append(crear("span", "lateral-icono", s.icono), crear("span", undefined, s.titulo));
+    if (s.id === "estado" && estado.revisado && !resumen.listo) b.append(crear("span", "lateral-punto"));
+    lateral.append(b);
+  }
+  const contenido = crear("main", "contenido");
+  const partes =
+    seccion === "estado"
+      ? seccionEstado()
+      : seccion === "funciones"
+        ? seccionFunciones()
+        : seccion === "conectores"
+          ? [cabecera("Conectores", "Servicios que Brote puede usar cuando se lo pidas. Lo que solo lee no te pregunta; lo que cambia algo te pide permiso en la isla."), vistaConectores()]
+          : seccion === "aula"
+            ? seccionAula()
+            : seccion === "permisos"
+              ? seccionPermisos()
+              : seccionMemoria();
+  contenido.append(...partes);
+  raiz.replaceChildren(lateral, contenido);
+  raiz.className = "raiz modo-diario";
+}
+
+// ---------------------------------------------------------------- inicio
+
+alPintar(() => {
+  // Se rearma todo con el estado nuevo; el scroll se conserva (al prender una función no se salta arriba).
+  const scroll = raiz.querySelector("main")?.scrollTop ?? 0;
+  if (modo === "asistente") pintarAsistente();
+  else if (modo === "diario") pintarDiario();
+  const main = raiz.querySelector("main");
+  if (main) main.scrollTop = scroll;
 });
 
-revisarBoton.addEventListener("click", () => {
-  void revisar();
+/** Lo que el puente sabe de los permisos (si Brote está corriendo con el puente). */
+const puente = new TransportePuente();
+const conPuente = puente.iniciar().then(
+  () => true,
+  () => false,
+);
+
+async function pedirPermisos(): Promise<void> {
+  if (!(await conPuente)) return;
+  try {
+    estado.permisos = await puente.consultar<LecturaPermisos>({ tipo: "permisos-estado" });
+    pintar();
+  } catch {
+    // Sin puente (por ejemplo, con el simulador) los permisos quedan "sin usar".
+  }
+}
+
+async function revisarTodo(): Promise<void> {
   void revisarConectores();
-});
-empezar.addEventListener("click", () => void invoke("reiniciar"));
-// Al volver a la ventana (por ejemplo, desde la terminal) se revisa de nuevo.
+  void pedirPermisos();
+  await revisar();
+}
+
+async function iniciar(): Promise<void> {
+  try {
+    const texto = await invoke<string | null>("leer_funciones");
+    estado.hayArchivoFunciones = texto !== null;
+    estado.funciones = normalizarFunciones(texto ? JSON.parse(texto) : null);
+  } catch {
+    // Archivo roto: se parte de los valores por defecto (el próximo guardado lo arregla).
+  }
+  void revisarConectores();
+  void pedirPermisos();
+  await revisar();
+  modo = necesitaAsistente(estado.pasos, estado.hayArchivoFunciones) ? "asistente" : "diario";
+  // Parámetros solo para la vista previa del diseño: ?seccion=funciones, ?paso=2.
+  const parametros = new URLSearchParams(location.search);
+  const pedida = parametros.get("seccion");
+  if (SECCIONES.some((s) => s.id === pedida)) seccion = pedida as Seccion;
+  const pasoPedido = Number(parametros.get("paso"));
+  if (modo === "asistente" && (pasoPedido === 2 || pasoPedido === 3)) pasoAsistente = pasoPedido;
+  pintar();
+}
+
+// Al volver a la ventana (por ejemplo, desde la terminal o Privacidad) se revisa de nuevo.
 window.addEventListener("focus", () => {
-  if (!ocupado) void revisar();
+  if (!estado.ocupado && modo !== "cargando") void revisarTodo();
 });
 
-void revisar();
-void revisarConectores();
+void iniciar();

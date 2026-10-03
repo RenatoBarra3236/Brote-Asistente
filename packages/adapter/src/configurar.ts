@@ -58,7 +58,7 @@ export type Estado = "ok" | "falta" | "opcional";
  */
 export type Accion =
   | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean; textoConsentimiento?: string }
-  | { tipo: "terminal"; etiqueta: string; terminal: "login-claude" | "memoria-local" }
+  | { tipo: "terminal"; etiqueta: string; terminal: "login-claude" | "memoria-local" | "brew-node" }
   | { tipo: "enlace"; etiqueta: string; enlace: "node" | "claude-code" | "privacidad-calendarios" }
   /** La dirección iCal secreta: la ventana muestra un campo y Rust la guarda (con permisos 600). */
   | { tipo: "ical"; etiqueta: string; configurada: boolean }
@@ -71,6 +71,8 @@ export interface Paso {
   estado: Estado;
   detalle: string;
   accion?: Accion;
+  /** Otra forma de hacerlo (por ejemplo, descargar Node si no se quiere usar Homebrew). */
+  alternativa?: Accion | null;
   /** Un segundo botón para deshacer el paso (por ejemplo, desinstalar los hooks). */
   quitar?: { paso: string; etiqueta: string };
 }
@@ -190,12 +192,16 @@ function agente(config: any): { id: string; workspace: string } | null {
 export function revisar(): Paso[] {
   const pasos: Paso[] = [];
   const version = Number(process.versions.node.split(".")[0]);
+  // Con Homebrew (macOS) se ofrece instalarlo con él; Rust hace lo mismo cuando no hay Node para correr esto.
+  const descargar: Accion = { tipo: "enlace", etiqueta: "Descargar Node", enlace: "node" };
+  const conBrew = process.platform === "darwin" && buscarPrograma("brew") !== null;
   pasos.push({
     id: "node",
     titulo: "Node",
     estado: version >= 24 ? "ok" : "falta",
     detalle: `Node ${process.versions.node}${version >= 24 ? "" : ": Brote necesita Node 24 o superior"}`,
-    accion: version >= 24 ? undefined : { tipo: "enlace", etiqueta: "Descargar Node", enlace: "node" },
+    accion: version >= 24 ? undefined : conBrew ? { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-node" } : descargar,
+    alternativa: version >= 24 || !conBrew ? undefined : descargar,
   });
 
   const versionOpenclaw = openclaw(["--version"]).salida.match(/(\d{4}\.\d+\.\d+)/)?.[1];

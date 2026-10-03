@@ -8,33 +8,13 @@
     <link rel="stylesheet" href="/src/configuracion.css" />
   </head>
   <body>
-    <header class="cabecera">
-      <div>
-        <h1>Configurar Brote 🌱</h1>
-        <p class="bajada">Brote necesita OpenClaw y Claude Code con tu cuenta. Revisemos qué falta.</p>
-      </div>
-    </header>
-    <div class="listo" id="listo" hidden>
-      <p><strong>¡Todo listo!</strong> Brote ya puede conversar contigo usando tu cuenta de Claude.</p>
-      <button type="button" class="boton boton-primario" id="empezar">Empezar</button>
-    </div>
-    <p class="aviso" id="aviso" hidden></p>
-    <main id="pasos" aria-live="polite"><p class="vacio">Revisando…</p></main>
-    <section class="seccion seccion-conectores" aria-labelledby="titulo-conectores">
-      <h2 id="titulo-conectores">Conectores</h2>
-      <p class="nota">
-        Servicios que Brote puede usar cuando se lo pidas. Lo que solo lee (buscar tareas, leer una página) no te pregunta;
-        todo lo que cambia algo te pide permiso en la isla.
-      </p>
-      <div id="conectores" aria-live="polite"><p class="vacio">Revisando…</p></div>
-    </section>
-    <footer class="pie">
-      <p>Todo queda en tu computador. Brote siempre te pide permiso antes de ejecutar comandos.</p>
-      <div class="botones-pie">
-        <button type="button" class="boton" id="revisar">Revisar de nuevo</button>
-        <button type="button" class="boton boton-primario" id="todo">Arreglar todo</button>
-      </div>
-    </footer>
+    <!--
+      Dos caras (src/configuracion.ts): la primera vez, un asistente de 3 pasos (Preparar · Qué quieres
+      que haga Brote · Listo); después, una barra lateral (Estado, Funciones, Conectores, Aula,
+      Permisos, Memoria). Todo el contenido se arma con texto, nunca con HTML.
+    -->
+    <div id="raiz" class="raiz" aria-live="polite"><p class="vacio cargando">Revisando…</p></div>
+    <p class="aviso flotando" id="aviso" role="status" hidden></p>
     <script type="module" src="/src/configuracion.ts"></script>
   </body>
 </html>

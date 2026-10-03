@@ -40,18 +40,35 @@ Te van a pasar uno de estos archivos:
 
 ## 3. Configurar (la primera vez)
 
-Al abrir Brote por primera vez aparece la ventana **Configurar Brote**. Revisa lo que falta y lo arregla:
+Al abrir Brote por primera vez aparece la ventana **Configurar Brote**, con tres pasos:
 
-1. Marca la casilla de **Agente de OpenClaw** (aceptas que OpenClaw pueda usar tu computador para ayudarte; Brote siempre te pide permiso antes de ejecutar comandos).
-2. Pulsa **Arreglar todo** y espera: instala y configura OpenClaw (el "cerebro" de Brote), su personalidad, los permisos y la conexión con tus gastos. Puede tardar unos minutos.
-3. Si algún paso dice **Iniciar sesión** o **Instalar**, pulsa su botón, sigue las instrucciones y vuelve a la ventana.
-4. Cuando veas **¡Todo listo!**, pulsa **Empezar**.
+1. **Preparar.** Una barra muestra cuánto falta. Si te pide algo, aparece una tarjeta:
+   - **Node:** si tienes [Homebrew](https://brew.sh), pulsa **Instalar con Homebrew** (se abre una terminal con `brew install node`); si no, **Descargar Node**.
+   - **Claude Code:** **Iniciar sesión** abre una terminal con `claude` para que entres con tu cuenta.
+   - **Agente de OpenClaw:** marca la casilla (aceptas que OpenClaw pueda usar tu computador para ayudarte; Brote siempre te pide permiso antes de ejecutar comandos).
 
-El paso **Búsqueda por significado** es opcional: hace que Brote encuentre mejor lo que recuerda. Puedes saltarlo.
+   Después pulsa **Preparar Brote** y espera: instala y configura OpenClaw (el "cerebro" de Brote), su personalidad, los permisos y la conexión con tus gastos. Puede tardar unos minutos. Si quieres ver cada paso por dentro, abre **Detalles técnicos**.
+2. **Qué quieres que haga Brote.** Elige un punto de partida (**Estudiante**, **Programador**, **Todo** o **Lo mínimo**) y prende o apaga cada función. Cada tarjeta dice qué hace y qué permiso de macOS pide. Lo que necesita datos (la dirección de tu calendario, tu aula, el modo programador) se configura dentro de su tarjeta al prenderla; también puedes hacerlo después.
+3. **Listo.** Pulsa **Empezar**.
+
+Lo que apagas no corre por detrás, no pide permisos y no aparece en la isla. Si le pides algo de una función apagada, Brote te dice "Eso está apagado: actívalo en Configurar Brote ⚙️".
+
+**Después**, 🌱 → **Configurar Brote** abre una ventana con secciones a la izquierda:
+
+| Sección | Para qué |
+|---|---|
+| **Estado** | "Brote está funcionando" o qué le falta, con **Reparar** |
+| **Funciones** | Prender y apagar funciones, y elegir qué tarjetas ves en la isla y en qué orden |
+| **Conectores** | Todoist, Notion, GitHub, Canva (abajo) |
+| **Aula** | Canvas o Moodle (abajo) |
+| **Permisos** | Cada permiso de macOS: qué función lo usa, si está dado y cuáles ya no hacen falta (con cómo quitarlos) |
+| **Memoria** | Abre **Lo que sé de ti** |
+
+La función **Búsqueda por significado** es opcional: hace que Brote encuentre mejor lo que recuerda. Puedes dejarla apagada.
 
 ## 4. Usar Brote
 
-- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega.
+- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega. Arriba hay tres pestañas: **Brote** (lo que pasa ahora y la conversación: mientras te responde, las tarjetas se encogen a una fila de píldoras como "🍅 18:20 · 📅 en 25 min"; tócalas para verlas de nuevo), **Claude** (tus sesiones de Claude Code, si usas el modo programador) y **Equipo** (batería, CPU, memoria y disco).
 - **Windows:** Brote vive en la esquina inferior derecha. Pasa el cursor por encima y aparece el panel. Puedes arrastrarlo a donde quieras.
 
 Prueba decirle:
@@ -83,24 +100,24 @@ Prueba decirle:
 
 Si usas [Claude Code](https://claude.com/claude-code) para programar, Brote puede mostrar en la isla tus sesiones en vivo ("⌨️ tarea-rust · Editando lib.rs…"), trabajar mientras ellas trabajan y celebrar cuando terminan. Cuando una sesión pide permiso, puedes responder en la terminal como siempre **o** con **Permitir / Rechazar** en la isla; si no respondes en la isla, todo sigue igual que antes.
 
-Para activarlo: 🌱 → **Configurar Brote** → **Modo programador** → marca la casilla y pulsa **Instalar**. Brote agrega sus "hooks" (avisos oficiales de Claude Code) a `~/.claude/settings.json`:
+Para activarlo: 🌱 → **Configurar Brote** → **Funciones** → prende **Modo programador**, marca la casilla de su tarjeta y pulsa **Instalar**. Brote agrega sus "hooks" (avisos oficiales de Claude Code) a `~/.claude/settings.json`:
 
 - Antes guarda una copia del archivo (`settings.json.brote-<fecha>.bak`) y no toca tus otros hooks.
 - No lee tus credenciales ni el texto de tus mensajes: solo qué herramienta usa Claude y sobre qué archivo o comando.
 - Las sesiones que usa el propio Brote (OpenClaw) no aparecen ahí: ya las ves en la isla.
 - El uso de tu plan no se muestra (Claude Code no lo entrega por los hooks).
-- Para quitarlo: el mismo paso → **Desinstalar**.
+- Para quitarlo: la misma tarjeta → **Desinstalar**. Si solo apagas la función, los hooks siguen instalados (Brote los ignora) y la tarjeta te ofrece desinstalarlos.
 
 ### Conectar tu calendario (opcional)
 
-En 🌱 → **Configurar Brote**, al final:
+En 🌱 → **Configurar Brote** → **Funciones** → **Calendario** (prendido):
 
 - **Calendario del Mac:** pulsa **Permitir acceso** y acepta el aviso de macOS. Brote verá los calendarios que tengas en la app Calendario (iCloud, Google, Outlook…). No abre la app ni cambia nada.
 - **Dirección iCal (Mac y Windows):** en [Google Calendar](https://calendar.google.com) → ⚙️ Configuración → tu calendario → **Integrar el calendario** → copia la **dirección secreta en formato iCal** y pégala en Brote. Es secreta (quien la tenga ve tu calendario): Brote la guarda solo en tu computador, en un archivo que únicamente tu usuario puede leer. Con **Quitar** la borras.
 
 ### Conectar tu aula: Canvas o Moodle (opcional)
 
-En 🌱 → **Configurar Brote** → **Aula**: elige Canvas o Moodle, pega la dirección de tu campus (por ejemplo `https://campus.tu-universidad.cl`) y un **token personal**. Nunca tu contraseña.
+En 🌱 → **Configurar Brote** → **Aula** (o dentro de la tarjeta **Aula** de Funciones): elige Canvas o Moodle, pega la dirección de tu campus (por ejemplo `https://campus.tu-universidad.cl`) y un **token personal**. Nunca tu contraseña.
 
 - **Canvas:** en el campus, **Cuenta → Configuración → + Nuevo token de acceso**. Ponle un nombre ("Brote") y copia el token: se muestra una sola vez.
 - **Moodle:** tu nombre (arriba a la derecha) → **Preferencias → Claves de seguridad** y copia la clave del servicio **Moodle mobile web service**. Si no aparece, tu universidad no tiene activada la app móvil y Brote no puede leerlo.
@@ -119,7 +136,7 @@ Al conectar, la IA lo puede usar desde tu próximo mensaje. Lo que solo lee (bus
 
 ### Permisos que tu Mac te va a preguntar
 
-macOS pide permiso la primera vez que Brote necesita algo. Puedes cambiarlos después en **Configuración del Sistema → Privacidad y seguridad**.
+macOS pide permiso la primera vez que Brote necesita algo, y solo para las funciones que tengas prendidas. Puedes cambiarlos después en **Configuración del Sistema → Privacidad y seguridad**; **Configurar Brote → Permisos** te dice cuáles usa cada función y cuáles ya no hacen falta.
 
 | Aviso | Por qué | Si dices que no |
 |---|---|---|
@@ -145,8 +162,10 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 
 | Problema | Qué hacer |
 |---|---|
-| El campo dice "Sin OpenClaw: solo gastos…" | Abre 🌱 → **Configurar Brote** y revisa qué falta |
-| La configuración dice que falta Node | Instala Node 24 o superior y pulsa **Revisar de nuevo** |
+| El campo dice "Sin OpenClaw: solo gastos…" | Abre 🌱 → **Configurar Brote** → **Estado** y pulsa **Reparar** |
+| La configuración dice que falta Node | Pulsa **Instalar con Homebrew** o **Descargar Node** (24 o superior) y vuelve a la ventana: revisa sola |
+| Brote dice "Eso está apagado" | Prende esa función en **Configurar Brote → Funciones** |
+| No veo una tarjeta en la isla (la música, las descargas…) | Revisa en **Configurar Brote → Funciones** que su función esté prendida y que la tarjeta esté marcada en **Tarjetas de Inicio** |
 | Brote no responde preguntas, solo gastos | Revisa que Claude Code tenga tu sesión iniciada (`claude` en una terminal) |
 | La tarjeta de Entregas dice "No pude leer tu aula" | El token venció o lo borraste: crea uno nuevo y pégalo en **Configurar Brote → Aula** |
 | Un conector dice "Guardado, pero falta autorizar" | Pulsa **Autorizar** (o pega un token nuevo, en GitHub) |

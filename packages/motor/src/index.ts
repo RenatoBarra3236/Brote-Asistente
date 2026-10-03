@@ -11,3 +11,4 @@ export { interpretarCon, type Accion } from "./motor.ts";
 export { POMODORO, Temporizadores, type AvisoTemporizador, type Fase, type Temporizador, type TipoTemporizador } from "./temporizadores.ts";
 export { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
 export { MedidorCpu, UMBRALES, Vigilante, describirEquipo, formatearBytes, interpretarPs, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados, type Memoria, type Proceso, type Animo, type AvisoEquipo, type Bateria, type LecturaEquipo } from "./sistema.ts";
+export { SeguidorDescargas, carpetaDescargas, describirDescargas, formatearTamano, hace, listarCarpeta, recientes, sePuedeAbrir, vigilarCarpeta, type Descarga, type DescargaEnCurso, type EntradaCarpeta } from "./descargas.ts";

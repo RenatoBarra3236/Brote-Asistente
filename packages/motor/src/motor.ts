@@ -7,6 +7,7 @@ import type { Gastos } from "./gastos.ts";
 import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
+import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
@@ -18,6 +19,8 @@ export interface Resultado {
   plantilla: string;
   /** La respuesta para mostrar en la burbuja. */
   texto: string;
+  /** Lo que la isla necesita para terminar el pedido (por ejemplo, qué descarga abrir). */
+  datos?: unknown;
 }
 
 /** Lo que el motor entendió de una frase, antes de hacer nada. */
@@ -32,7 +35,10 @@ export type Accion =
   | { intencion: "cancelar-pomodoro" }
   | { intencion: "cancelar-temporizador" }
   | { intencion: "consultar-temporizador" }
-  | { intencion: "estado-equipo" };
+  | { intencion: "estado-equipo" }
+  | { intencion: "ver-descargas" }
+  | { intencion: "abrir-ultima-descarga" }
+  | { intencion: "mostrar-ultima-descarga" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -67,6 +73,9 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "cancelar-temporizador":
     case "consultar-temporizador":
     case "estado-equipo":
+    case "ver-descargas":
+    case "abrir-ultima-descarga":
+    case "mostrar-ultima-descarga":
       return { intencion };
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
@@ -87,6 +96,7 @@ export class Motor {
   private readonly reloj: () => Date;
   private readonly temporizadores: Temporizadores | null;
   private readonly equipo: (() => LecturaEquipo | null) | null;
+  private readonly descargas: (() => Descarga[] | null) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -97,8 +107,11 @@ export class Motor {
       temporizadores?: Temporizadores;
       /** La última lectura del computador (la mantiene el puente). */
       equipo?: () => LecturaEquipo | null;
+      /** Las últimas descargas, de la más nueva a la más vieja (`null` si no se pudo leer la carpeta). */
+      descargas?: () => Descarga[] | null;
     } = {},
   ) {
+    this.descargas = opciones.descargas ?? null;
     this.equipo = opciones.equipo ?? null;
     this.gastos = gastos;
     this.temporizadores = opciones.temporizadores ?? null;
@@ -123,7 +136,26 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (esDeDescargas(accion)) {
+      const lista = this.descargas?.();
+      if (!lista) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, ...this.descargar(accion.intencion, lista) };
+    }
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  /** "Mis descargas" y "abre la última descarga". Abrir o mostrar lo hace la isla (Rust valida la ruta). */
+  private descargar(intencion: Intencion, lista: Descarga[]): { texto: string; datos?: unknown } {
+    if (intencion === "ver-descargas") return { texto: describirDescargas(lista.slice(0, 5), this.reloj().getTime()) };
+    const ultima = lista[0];
+    if (!ultima) return { texto: "No encontré descargas en tu carpeta de Descargas." };
+    const abrir = intencion === "abrir-ultima-descarga" && sePuedeAbrir(ultima.nombre);
+    const texto = abrir
+      ? `📂 Abro ${ultima.nombre}.`
+      : intencion === "abrir-ultima-descarga"
+        ? `📂 ${ultima.nombre} es un programa o un archivo que no abro solo: te lo muestro en ${explorador()}.`
+        : `📂 Te muestro ${ultima.nombre} en ${explorador()}.`;
+    return { texto, datos: { ruta: ultima.ruta, abrir } };
   }
 
   private ejecutar(accion: Accion): string {
@@ -147,6 +179,8 @@ export class Motor {
         return this.temporizar(accion);
       case "estado-equipo":
         return describirEquipo(this.equipo!()!);
+      default:
+        throw new Error(`El motor no ejecuta «${accion.intencion}» aquí`);
     }
   }
 
@@ -223,6 +257,10 @@ export class Motor {
 /** "un café" → "café", "el almuerzo" → "almuerzo". */
 function sinArticulo(texto: string): string {
   return texto.replace(/^(un|una|unos|unas|el|la|los|las)\s+/i, "");
+}
+
+function esDeDescargas(accion: Accion): boolean {
+  return ["ver-descargas", "abrir-ultima-descarga", "mostrar-ultima-descarga"].includes(accion.intencion);
 }
 
 function esDeTemporizador(accion: Accion): boolean {

@@ -5,7 +5,7 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
-import type { TemporizadorActivo } from "./agente/puente";
+import type { Descarga, DescargaEnCurso, TemporizadorActivo } from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
@@ -44,6 +44,8 @@ export class Panel {
   private readonly noAprender: HTMLButtonElement;
   private readonly temporizadores: HTMLDivElement;
   private readonly avisoDestacado: HTMLParagraphElement;
+  private readonly descargas: HTMLDivElement;
+  private readonly alMostrarDescarga?: (ruta: string) => void;
   private filasTemporizador: { fin: number; tiempo: HTMLSpanElement }[] = [];
   private avisoHasta = 0;
   private readonly alCancelarTemporizador?: (id: number) => void;
@@ -63,7 +65,12 @@ export class Panel {
   constructor(
     agente: Agente,
     contenedor: HTMLElement,
-    opciones: { alAbrirMemoria?: () => void; flotante?: boolean; alCancelarTemporizador?: (id: number) => void } = {},
+    opciones: {
+      alAbrirMemoria?: () => void;
+      flotante?: boolean;
+      alCancelarTemporizador?: (id: number) => void;
+      alMostrarDescarga?: (ruta: string) => void;
+    } = {},
   ) {
     this.agente = agente;
     this.raiz = crear("div", opciones.flotante ? "panel flotante" : "panel");
@@ -131,8 +138,11 @@ export class Panel {
     this.temporizadores.hidden = true;
     this.avisoDestacado = crear("p", "aviso-destacado");
     this.avisoDestacado.hidden = true;
+    this.alMostrarDescarga = opciones.alMostrarDescarga;
+    this.descargas = crear("div", "filas descargas");
+    this.descargas.hidden = true;
 
-    this.raiz.append(this.avisoDestacado, this.temporizadores, this.burbuja, this.aprobacion, this.propuesta, formulario);
+    this.raiz.append(this.avisoDestacado, this.temporizadores, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -204,6 +214,49 @@ export class Panel {
     );
     this.temporizadores.hidden = lista.length === 0;
     this.actualizarRelojes();
+  }
+
+  /**
+   * Las descargas en curso ("📥 Descargando apunte.pdf…") y las que terminaron hace poco ("Lista ✓",
+   * con un botón para mostrarla en el Finder o el Explorador).
+   */
+  mostrarDescargas(enCurso: DescargaEnCurso[], listas: Descarga[]): void {
+    const filas = [
+      ...enCurso.map((d) => {
+        const fila = crear("div", "fila descarga en-curso");
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `📥 Descargando ${d.nombre ?? "un archivo"}…`;
+        const tamano = crear("span", "fila-dato");
+        tamano.textContent = tamanoCorto(d.tamano);
+        fila.append(nombre, tamano);
+        return fila;
+      }),
+      ...listas.map((d) => {
+        const fila = crear("div", "fila descarga lista");
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `📥 ${d.nombre}`;
+        nombre.title = d.nombre;
+        const lista = crear("span", "fila-dato");
+        lista.textContent = "Lista ✓";
+        fila.append(nombre, lista);
+        if (this.alMostrarDescarga) {
+          const mostrar = crear("button", "boton boton-fila");
+          mostrar.type = "button";
+          mostrar.textContent = "Mostrar";
+          mostrar.title = navigator.userAgent.includes("Windows") ? "Mostrar en el Explorador" : "Mostrar en el Finder";
+          mostrar.addEventListener("click", () => this.alMostrarDescarga?.(d.ruta));
+          fila.append(mostrar);
+        }
+        return fila;
+      }),
+    ];
+    this.descargas.replaceChildren(...filas);
+    this.descargas.hidden = filas.length === 0;
+  }
+
+  /** Mantiene la isla abierta un rato (por ejemplo, al terminar una descarga). */
+  retener(ms = AVISO_DESTACADO_MS): void {
+    this.avisoHasta = Math.max(this.avisoHasta, Date.now() + ms);
   }
 
   /** Avanza las cuentas regresivas (se llama en cada cuadro). */
@@ -361,6 +414,13 @@ function pintarMarkdown(contenedor: HTMLElement, texto: string): void {
       return parrafo;
     }),
   );
+}
+
+/** "830 KB", "12 MB", "1,2 GB": el tamaño de una descarga en curso. */
+function tamanoCorto(bytes: number): string {
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1).replace(".", ",")} GB`;
 }
 
 /** "12:34" o "1:02:03". */

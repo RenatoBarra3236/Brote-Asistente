@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
 import { Gastos } from "../src/gastos.ts";
 import { atender } from "../src/mcp.ts";
@@ -23,7 +26,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "motor_proponer_plantilla"],
     );
   });
 
@@ -65,5 +68,21 @@ describe("servidor MCP de gastos", () => {
     assert.deepEqual(lista.map((t: any) => t.tipo).sort(), ["pomodoro", "temporizador"]);
     assert.equal(llamar("temporizador_cancelar", { tipo: "pomodoro" }).texto, "Cancelados: 1.");
     assert.equal(llamar("temporizador_cancelar", {}).texto, "Cancelados: 1.");
+  });
+
+  it("lista las descargas recientes sin abrirlas", () => {
+    const carpeta = mkdtempSync(join(tmpdir(), "descargas-mcp-"));
+    const antes = process.env.ASISTENTE_DESCARGAS;
+    process.env.ASISTENTE_DESCARGAS = carpeta;
+    try {
+      writeFileSync(join(carpeta, "apunte.pdf"), "x".repeat(2048));
+      writeFileSync(join(carpeta, "a medias.zip.crdownload"), "x");
+      const { descargas } = JSON.parse(llamar("descargas_recientes", {}).texto);
+      assert.deepEqual(descargas.map((d: any) => [d.nombre, d.tamano]), [["apunte.pdf", "2 KB"]]);
+    } finally {
+      if (antes === undefined) delete process.env.ASISTENTE_DESCARGAS;
+      else process.env.ASISTENTE_DESCARGAS = antes;
+      rmSync(carpeta, { recursive: true, force: true });
+    }
   });
 });

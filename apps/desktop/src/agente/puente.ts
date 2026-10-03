@@ -20,6 +20,21 @@ export interface TemporizadorActivo {
   duracionMs: number;
 }
 
+/** Una descarga terminada en la carpeta de descargas. */
+export interface Descarga {
+  nombre: string;
+  ruta: string;
+  tamano: number;
+  fechaMs: number;
+}
+
+/** Una descarga en curso (`nombre` es `null` si el navegador todavía no sabe cómo se llamará). */
+export interface DescargaEnCurso {
+  id: string;
+  nombre: string | null;
+  tamano: number;
+}
+
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
 export type Animo = "cansado" | "acalorado" | null;
 
@@ -36,6 +51,8 @@ type Aviso =
   | { tipo: "temporizador-aviso"; texto: string }
   | { tipo: "equipo-aviso"; texto: string; celebrar: boolean }
   | { tipo: "animo"; animo: Animo }
+  | { tipo: "descargas"; enCurso: DescargaEnCurso[] }
+  | { tipo: "descarga-lista"; descarga: Descarga }
   | {
       tipo: "respuesta";
       id: string;
@@ -63,6 +80,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAvisoTemporizador = new Set<(texto: string) => void>();
   private readonly oyentesEquipo = new Set<(aviso: { texto: string; celebrar: boolean }) => void>();
   private readonly oyentesAnimo = new Set<(animo: Animo) => void>();
+  private readonly oyentesDescargas = new Set<(enCurso: DescargaEnCurso[]) => void>();
+  private readonly oyentesDescargaLista = new Set<(descarga: Descarga) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -119,6 +138,18 @@ export class TransportePuente implements Transporte {
   alCambiarAnimo(oyente: (animo: Animo) => void): () => void {
     this.oyentesAnimo.add(oyente);
     return () => this.oyentesAnimo.delete(oyente);
+  }
+
+  /** Las descargas en curso, cada vez que cambian. */
+  alCambiarDescargas(oyente: (enCurso: DescargaEnCurso[]) => void): () => void {
+    this.oyentesDescargas.add(oyente);
+    return () => this.oyentesDescargas.delete(oyente);
+  }
+
+  /** Cuando termina una descarga. */
+  alDescargaLista(oyente: (descarga: Descarga) => void): () => void {
+    this.oyentesDescargaLista.add(oyente);
+    return () => this.oyentesDescargaLista.delete(oyente);
   }
 
   async cancelarTemporizador(id: number): Promise<void> {
@@ -202,6 +233,12 @@ export class TransportePuente implements Transporte {
         return;
       case "animo":
         for (const oyente of this.oyentesAnimo) oyente(aviso.animo);
+        return;
+      case "descargas":
+        for (const oyente of this.oyentesDescargas) oyente(aviso.enCurso);
+        return;
+      case "descarga-lista":
+        for (const oyente of this.oyentesDescargaLista) oyente(aviso.descarga);
         return;
       case "conexion": {
         const estado = { conectado: aviso.conectado, detalle: aviso.detalle };

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
-import { TransportePuente, type TemporizadorActivo } from "./agente/puente";
+import { TransportePuente, type Descarga, type DescargaEnCurso, type TemporizadorActivo } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
@@ -34,6 +34,14 @@ const personaje = new Personaje();
 /** Modo flotante: cuánto sigue abierto el panel después de que el cursor se va (ms). */
 const ESPERA_CIERRE_MS = 800;
 
+/** Cuánto sigue a la vista una descarga terminada, con su botón "Mostrar" (ms). */
+const DESCARGA_A_LA_VISTA_MS = 60_000;
+
+/** Muestra una descarga en el Finder o el Explorador, o la abre si es un documento. Rust valida la ruta. */
+function mostrarDescarga(ruta: string, abrir = false): void {
+  invoke("mostrar_descarga", { ruta, abrir }).catch((error) => console.error(`No pude mostrar la descarga: ${error}`));
+}
+
 /** Cuánto dura la cara de error antes de volver al reposo; el mensaje sigue en la burbuja (ms). */
 const DURACION_ERROR = 6000;
 
@@ -49,8 +57,13 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
   await puente.iniciar();
   // "¿Qué sabes de mí?" lo resuelve el motor sin IA y abre la ventana "Lo que sé de ti".
   const agente = new Agente(puente, {
-    alResolverSinIA: (intencion) => {
+    alResolverSinIA: (intencion, datos) => {
       if (intencion === "ver-memoria") void invoke("abrir_memoria");
+      // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
+      const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
+      if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
+        mostrarDescarga(descarga.ruta, descarga.abrir === true);
+      }
     },
   });
   return { agente, puente };
@@ -67,6 +80,7 @@ async function iniciar(): Promise<void> {
       ? {
           alAbrirMemoria: () => void invoke("abrir_memoria"),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
+          alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
         }
       : {}),
   });
@@ -74,6 +88,7 @@ async function iniciar(): Promise<void> {
   // Temporizadores y pomodoro: la lista viene del puente cada vez que cambia (y al iniciar, por
   // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
   let temporizadores: TemporizadorActivo[] = [];
+  let descargasEnCurso: DescargaEnCurso[] = [];
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
@@ -94,6 +109,27 @@ async function iniciar(): Promise<void> {
       .consultar<{ animo: "cansado" | "acalorado" | null }>({ tipo: "equipo-estado" })
       .then(({ animo }) => personaje.setAnimo(animo), () => {});
     void puente.consultar<TemporizadorActivo[]>({ tipo: "temporizadores-listar" }).then(mostrarTemporizadores, () => {});
+
+    // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
+    let listas: { descarga: Descarga; hasta: number }[] = [];
+    const pintarDescargas = () => {
+      const ahora = Date.now();
+      listas = listas.filter((l) => l.hasta > ahora);
+      panel.mostrarDescargas(descargasEnCurso, listas.map((l) => l.descarga));
+    };
+    puente.alCambiarDescargas((enCurso) => {
+      descargasEnCurso = enCurso;
+      pintarDescargas();
+    });
+    puente.alDescargaLista((descarga) => {
+      listas = [{ descarga, hasta: Date.now() + DESCARGA_A_LA_VISTA_MS }, ...listas.filter((l) => l.descarga.ruta !== descarga.ruta)].slice(0, 3);
+      pintarDescargas();
+      panel.retener();
+      personaje.setEstado("listo");
+    });
+    setInterval(() => {
+      if (listas.some((l) => l.hasta <= Date.now())) pintarDescargas();
+    }, 5000);
   }
   if (puente) {
     panel.mostrarConexion(puente.estadoConexion);
@@ -195,7 +231,8 @@ async function iniciar(): Promise<void> {
 
     personaje.actualizar(dt);
     panel.actualizarRelojes();
-    const reloj = relojPrincipal(temporizadores);
+    // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador o una descarga.
+    const reloj = relojPrincipal(temporizadores) ?? (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {

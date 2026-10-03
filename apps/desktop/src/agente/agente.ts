@@ -11,7 +11,7 @@ export class Agente {
   private readonly transporte: Transporte;
   private readonly silencioMaximoMs: number;
   private readonly reloj: () => number;
-  private readonly alResolverSinIA?: (intencion: string) => void;
+  private readonly alResolverSinIA?: (intencion: string, datos?: unknown) => void;
   private actual: Conversacion = CONVERSACION_INICIAL;
   private readonly oyentes = new Set<(c: Conversacion) => void>();
   private dejarDeEscuchar: (() => void) | null = null;
@@ -20,7 +20,7 @@ export class Agente {
 
   constructor(
     transporte: Transporte,
-    opciones: { silencioMaximoMs?: number; reloj?: () => number; alResolverSinIA?: (intencion: string) => void } = {},
+    opciones: { silencioMaximoMs?: number; reloj?: () => number; alResolverSinIA?: (intencion: string, datos?: unknown) => void } = {},
   ) {
     this.transporte = transporte;
     this.alResolverSinIA = opciones.alResolverSinIA;
@@ -114,7 +114,7 @@ export class Agente {
       const resultado = await this.transporte.enviar(limpio);
       if (resultado?.local) {
         this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });
-        this.alResolverSinIA?.(resultado.local.intencion);
+        this.alResolverSinIA?.(resultado.local.intencion, resultado.local.datos);
       }
       return true;
     } catch (error) {

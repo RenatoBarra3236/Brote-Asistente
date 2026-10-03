@@ -35,6 +35,12 @@
 //   aviso { "tipo": "equipo-aviso", "texto": "…", "celebrar": false }     batería baja, CPU alta, disco lleno…
 //   pedido { "tipo": "equipo-estado" }                                      → "datos": { animo, lectura }
 //
+// Descargas (carpeta de descargas, con fs.watch y una revisión cada 4 s por si el aviso no llega):
+//   aviso { "tipo": "descargas", "enCurso": [{ id, nombre, tamano }] }      cuando cambia
+//   aviso { "tipo": "descarga-lista", "descarga": { nombre, ruta, tamano, fechaMs } }
+//   pedido { "tipo": "descargas-listar" }                                   → "datos": las últimas 10
+//   Mostrar o abrir un archivo lo hace Rust (`mostrar_descarga`), que valida que esté en Descargas.
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
@@ -47,7 +53,12 @@ import {
   PLANTILLAS_BASE,
   MedidorCpu,
   RUTA_BASE,
+  SeguidorDescargas,
   Temporizadores,
+  carpetaDescargas,
+  listarCarpeta,
+  recientes,
+  vigilarCarpeta,
   UMBRALES,
   Vigilante,
   type Animo,
@@ -92,6 +103,7 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__temporizador_listar",
   "mcp__gastos__temporizador_cancelar",
   "mcp__gastos__equipo_estado",
+  "mcp__gastos__descargas_recientes",
 ]);
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
@@ -149,7 +161,38 @@ const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
   equipo: () => lecturaEquipo,
+  descargas: () => {
+    const listado = listarCarpeta(CARPETA_DESCARGAS);
+    return listado ? recientes(listado, CARPETA_DESCARGAS) : null;
+  },
 });
+
+// Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,
+// porque fs.watch no siempre avisa (carpetas en la nube, algunos sistemas de archivos).
+const CARPETA_DESCARGAS = carpetaDescargas();
+const seguidorDescargas = new SeguidorDescargas();
+let ultimasEnCurso = "";
+let revisionDescargas: ReturnType<typeof setTimeout> | undefined;
+function revisarDescargas(): void {
+  const listado = listarCarpeta(CARPETA_DESCARGAS);
+  if (!listado) return;
+  const { enCurso, listas } = seguidorDescargas.revisar(listado, CARPETA_DESCARGAS);
+  const texto = JSON.stringify(enCurso);
+  if (texto !== ultimasEnCurso) {
+    ultimasEnCurso = texto;
+    avisar({ tipo: "descargas", enCurso });
+  }
+  for (const descarga of listas) {
+    registrar("descarga lista");
+    avisar({ tipo: "descarga-lista", descarga });
+  }
+}
+vigilarCarpeta(CARPETA_DESCARGAS, () => {
+  clearTimeout(revisionDescargas);
+  revisionDescargas = setTimeout(revisarDescargas, 300);
+});
+setInterval(revisarDescargas, 4000);
+revisarDescargas();
 
 // Brote reacciona al computador. La CPU se mide cada 5 s; la batería cada 15 s y el disco cada
 // 10 min (cuestan más y cambian lento). El programa culpable solo se busca con la CPU alta.
@@ -355,7 +398,7 @@ const cliente = (() => {
 })();
 
 /** Lo que se agrega a la respuesta: con `local`, el motor resolvió el pedido sin IA. */
-type Extra = { local?: { texto: string; intencion: string }; mensaje?: string; datos?: unknown };
+type Extra = { local?: { texto: string; intencion: string; datos?: unknown }; mensaje?: string; datos?: unknown };
 
 async function atender(pedido: any): Promise<Extra> {
   if (pedido?.tipo === "enviar" && typeof pedido.texto === "string" && pedido.texto.trim()) {
@@ -364,7 +407,7 @@ async function atender(pedido: any): Promise<Extra> {
     if (resuelto) {
       gastos.registrarUso("motor", resuelto.intencion, new Date());
       registrar(`resuelto sin IA (${resuelto.plantilla})`);
-      return { local: { texto: resuelto.texto, intencion: resuelto.intencion } };
+      return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
     if (!conectado) throw new Error("OpenClaw no está conectado; sin él solo funcionan los comandos de gastos");
     ultimoMensajeAlAgente = texto;
@@ -423,6 +466,10 @@ async function atender(pedido: any): Promise<Extra> {
       return {};
     case "equipo-estado":
       return { datos: { animo, lectura: lecturaEquipo } };
+    case "descargas-listar": {
+      const listado = listarCarpeta(CARPETA_DESCARGAS);
+      return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };
+    }
     case "temporizadores-listar":
       return { datos: temporizadores.activos() };
     case "conversacion-nueva":

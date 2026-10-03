@@ -65,6 +65,22 @@ Prueba decirle:
 | Una forma tuya de anotar un gasto que Brote no entienda | La IA lo resuelve y Brote te pregunta si aprende esa frase. La próxima vez, sin IA |
 | `¿qué sabes de mí?` | Abre **Lo que sé de ti**: todo lo que recuerda, para corregirlo u olvidarlo |
 
+### Más cosas que sabe hacer
+
+| Escribe | Qué pasa |
+|---|---|
+| `pomodoro de 30 para cálculo` · `recuérdame en 10 minutos sacar la ropa` · `¿cuánto falta?` | Temporizadores y pomodoro, sin IA ⚡ (la cuenta regresiva se ve en la isla) |
+| `¿cómo está el computador?` · `¿cuánta batería me queda?` | Batería, CPU, memoria y disco, sin IA ⚡. Brote también se cansa con poca batería y suda con la CPU al máximo |
+| `mis descargas` · `abre la última descarga` · `muéstrame la última descarga` | Tus últimas descargas, sin IA ⚡. Mientras algo se descarga, la isla dice "📥 Descargando…" y al terminar "Lista ✓" con un botón **Mostrar**. Solo abre documentos (PDF, Word, imágenes…): un programa o instalador te lo muestra en el Finder / Explorador, nunca lo ejecuta |
+
+### Permisos que tu Mac te va a preguntar
+
+macOS pide permiso la primera vez que Brote necesita algo. Puedes cambiarlos después en **Configuración del Sistema → Privacidad y seguridad**.
+
+| Aviso | Por qué | Si dices que no |
+|---|---|---|
+| "Brote quiere acceder a archivos de la carpeta Descargas" | Para avisarte cuando termina una descarga y responder "mis descargas" | Brote no ve tus descargas; lo demás funciona igual |
+
 Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos botones: **Permitir** o **Rechazar**. Si se demora, el botón ■ lo detiene.
 
 **El menú 🌱** (en la barra de menú del Mac, arriba a la derecha; en Windows, junto al reloj) tiene: Lo que sé de ti, Configurar Brote y **Salir de Brote**.
@@ -72,6 +88,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 ## Tus datos
 
 - Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
+- Los nombres de tus descargas no salen del computador; solo los ve la IA si le preguntas por ellas.
 - Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code.
 - En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
 

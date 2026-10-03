@@ -22,6 +22,7 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
+import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
 const VERSION_PROTOCOLO = "2025-06-18";
@@ -123,6 +124,18 @@ const HERRAMIENTAS = [
       "pregunta por su computador, si anda lento o antes de algo pesado.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Estado del computador", readOnlyHint: true },
+  },
+  {
+    name: "descargas_recientes",
+    description:
+      "Las últimas descargas terminadas del usuario (su carpeta de Descargas): nombre, tamaño y fecha, de la más " +
+      "nueva a la más vieja. Úsala si pregunta qué descargó o por un archivo que acaba de bajar. No abre ni lee los archivos.",
+    inputSchema: {
+      type: "object",
+      properties: { limite: { type: "integer", minimum: 1, maximum: 30, default: 10 } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Descargas recientes", readOnlyHint: true },
   },
   {
     name: "motor_proponer_plantilla",
@@ -278,6 +291,19 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       ]
         .filter(Boolean)
         .join("\n");
+    }
+    case "descargas_recientes": {
+      const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 30) : 10;
+      const listado = listarCarpeta(carpetaDescargas());
+      if (!listado) return "No pude leer la carpeta de Descargas.";
+      return JSON.stringify({
+        descargas: recientes(listado, carpetaDescargas(), limite).map((d) => ({
+          nombre: d.nombre,
+          tamano: formatearTamano(d.tamano),
+          bytes: d.tamano,
+          fecha: new Date(d.fechaMs).toISOString(),
+        })),
+      });
     }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {

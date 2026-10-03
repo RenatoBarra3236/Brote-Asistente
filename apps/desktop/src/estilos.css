@@ -307,3 +307,42 @@ body {
   line-height: 22px;
   padding: 0;
 }
+
+/* Filas de estado (descargas, música, calendario, sesiones de Claude Code). */
+.filas {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.fila-nombre {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fila-dato {
+  flex: none;
+  color: rgba(255, 255, 255, 0.6);
+  font: 600 11px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.descarga.lista {
+  background: rgba(98, 214, 138, 0.14);
+}
+.descarga.lista .fila-dato {
+  color: rgb(132, 226, 160);
+}
+.boton-fila {
+  padding: 2px 9px;
+  font-size: 11px;
+}

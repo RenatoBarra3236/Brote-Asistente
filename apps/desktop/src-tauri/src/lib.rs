@@ -1,6 +1,7 @@
 #[cfg(target_os = "macos")]
 mod notch;
 mod configuracion;
+mod descargas;
 mod entorno;
 mod puente;
 
@@ -259,7 +260,8 @@ pub fn run() {
             configuracion::configuracion,
             configuracion::abrir_terminal,
             configuracion::abrir_enlace,
-            configuracion::reiniciar
+            configuracion::reiniciar,
+            descargas::mostrar_descarga
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la app del personaje")

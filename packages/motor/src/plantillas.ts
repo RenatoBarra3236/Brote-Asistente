@@ -25,7 +25,10 @@ export type Intencion =
   | "cancelar-pomodoro"
   | "cancelar-temporizador"
   | "consultar-temporizador"
-  | "estado-equipo";
+  | "estado-equipo"
+  | "ver-descargas"
+  | "abrir-ultima-descarga"
+  | "mostrar-ultima-descarga";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
 
@@ -180,6 +183,8 @@ const EQUIPO = "computador|computadora|compu|pc|notebook|mac|equipo";
 const INICIAR = "empieza|inicia|comienza|pon|ponme|activa|arranca|crea|crear";
 const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apaga|apagar|quita|quitar|borra";
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
+const ABRIR = "abre|abreme|abrir|abri";
+const MOSTRAR = "muestrame|muestra|mostrar|ensename|donde esta|donde quedo";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
@@ -235,4 +240,10 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "estado-equipo-corto", intencion: "estado-equipo", patron: `[el] estado (del|de la|de mi) (${EQUIPO})` },
   { id: "bateria", intencion: "estado-equipo", patron: "cuanta bateria [(me queda|tengo|queda|tiene|hay)]" },
   { id: "espacio", intencion: "estado-equipo", patron: "cuanto espacio (me queda|tengo|queda|hay) [(en el disco|libre)]" },
+  { id: "descargas", intencion: "ver-descargas", patron: "[(muestrame|ver|dame|cuales son|revisa)] [mis|las] [ultimas] descargas" },
+  { id: "descargas-que", intencion: "ver-descargas", patron: "(que|lo que) (descargue|he descargado|baje|he bajado) [(hoy|ultimamente|recien)]" },
+  { id: "abrir-descarga", intencion: "abrir-ultima-descarga", patron: `(${ABRIR}) [la|mi] ultima descarga` },
+  { id: "abrir-descarga-ultimo", intencion: "abrir-ultima-descarga", patron: `(${ABRIR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
+  { id: "mostrar-descarga", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) [la|mi] ultima descarga [en el (finder|explorador)]` },
+  { id: "mostrar-descarga-ultimo", intencion: "mostrar-ultima-descarga", patron: `(${MOSTRAR}) (lo ultimo|el ultimo archivo) que (descargue|baje)` },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

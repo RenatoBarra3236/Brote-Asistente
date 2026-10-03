@@ -107,6 +107,12 @@ export function describirIntencion(intencion: Intencion): string {
       return "ver cuánto queda";
     case "estado-equipo":
       return "ver cómo está el computador";
+    case "ver-descargas":
+      return "mostrar tus descargas";
+    case "abrir-ultima-descarga":
+      return "abrir la última descarga";
+    case "mostrar-ultima-descarga":
+      return "mostrar la última descarga";
   }
 }
 

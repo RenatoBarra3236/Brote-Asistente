@@ -26,7 +26,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "programador_sesiones", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "motor_proponer_plantilla"],
     );
   });
 
@@ -83,6 +83,16 @@ describe("servidor MCP de gastos", () => {
     const respuesta = (await atender(gastos, { jsonrpc: "2.0", id: 99, method: "tools/call", params: { name: "calendario_proximos", arguments: {} } })) as any;
     assert.equal(respuesta.id, 99);
     if (process.platform === "linux") assert.match(respuesta.result.content[0].text, /No hay calendario conectado|No pude leer/);
+  });
+
+  it("crear eventos valida la fecha y, fuera del Mac, lo dice", () => {
+    assert.equal(llamar("calendario_crear", { titulo: "Cálculo", inicio: "2026-02-31 10:00" }).error, true);
+    assert.equal(llamar("calendario_crear", { titulo: "Cálculo", inicio: "mañana" }).error, true);
+    assert.equal(llamar("calendario_crear", { titulo: " ", inicio: "2026-10-05 10:00" }).error, true);
+    if (process.platform !== "darwin") {
+      const r = llamar("calendario_crear", { titulo: "Cálculo", inicio: "2026-12-05 10:00" });
+      assert.deepEqual([r.error, /Calendario del Mac/.test(r.texto)], [true, true]);
+    }
   });
 
   it("lista las descargas recientes sin abrirlas", () => {

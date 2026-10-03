@@ -8,12 +8,12 @@ import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
-import { describirDia, describirProximo, type EventoCalendario } from "./calendario.ts";
+import { describirCreacion, describirDia, describirProximo, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
 import { describirSesiones, type SesionClaude } from "./programador.ts";
 import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
-import { describirDuracion, leerDuracion, reloj } from "./tiempo.ts";
+import { UNIDADES, describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 
 export interface Resultado {
@@ -44,6 +44,12 @@ export type Accion =
   | { intencion: "mostrar-ultima-descarga" }
   | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" }
   | { intencion: "calendario-hoy" | "calendario-manana" | "calendario-proximo" }
+  | {
+      intencion: "calendario-crear" | "calendario-crear-manana";
+      titulo: string;
+      /** Dentro de cuánto ("en 12 minutos") o a qué hora ("a las 15:30"). */
+      cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean };
+    }
   | { intencion: "programador-sesiones" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
@@ -92,6 +98,17 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "calendario-proximo":
     case "programador-sesiones":
       return { intencion };
+    case "calendario-crear":
+    case "calendario-crear-manana": {
+      const titulo = originales.cosa ? sinArticulo(originales.cosa.trim()).slice(0, 200) || "Evento" : "Evento";
+      if (ranuras.tiempo !== undefined) {
+        const enMs = leerDuracion(ranuras.tiempo);
+        return enMs === null ? null : { intencion, titulo: capitalizar(titulo), cuando: { enMs } };
+      }
+      const hora = ranuras.hora === undefined ? null : leerHora(ranuras.hora);
+      if (!hora) return null;
+      return { intencion, titulo: capitalizar(titulo), cuando: { ...hora, manana: intencion === "calendario-crear-manana" } };
+    }
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
       if (estudioMs === null) return null;
@@ -115,6 +132,7 @@ export class Motor {
   private readonly musica: Musica | null;
   private readonly calendario: (() => EventoCalendario[] | null) | null;
   private readonly sesionesClaude: (() => SesionClaude[]) | null;
+  private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -133,8 +151,11 @@ export class Motor {
       calendario?: () => EventoCalendario[] | null;
       /** Las sesiones de Claude Code que se ven por los hooks (modo programador). */
       sesionesClaude?: () => SesionClaude[];
+      /** Crea un evento en el Calendario del Mac (lo hace el puente con EventKit). */
+      crearEvento?: (evento: NuevoEvento) => ResultadoCreacion;
     } = {},
   ) {
+    this.crearEvento = opciones.crearEvento ?? null;
     this.sesionesClaude = opciones.sesionesClaude ?? null;
     this.calendario = opciones.calendario ?? null;
     this.musica = opciones.musica ?? null;
@@ -167,6 +188,10 @@ export class Motor {
       if (!this.sesionesClaude) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
     }
+    if (accion.intencion === "calendario-crear" || accion.intencion === "calendario-crear-manana") {
+      if (!this.crearEvento) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agendar(accion) };
+    }
     if (accion.intencion.startsWith("calendario-")) {
       if (!this.calendario) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agenda(accion.intencion) };
@@ -181,6 +206,31 @@ export class Motor {
       return { intencion: accion.intencion, plantilla: plantilla.id, ...this.descargar(accion.intencion, lista) };
     }
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  /**
+   * "Pon un evento en 12 minutos", "agenda estudiar cálculo mañana a las 10". Dura una hora. Si no se
+   * puede crear en el Calendario (sin permiso, fuera del Mac), deja un recordatorio para esa hora.
+   */
+  private agendar(accion: Extract<Accion, { intencion: "calendario-crear" | "calendario-crear-manana" }>): string {
+    const ahora = this.reloj();
+    let inicioMs: number;
+    if ("enMs" in accion.cuando) {
+      inicioMs = ahora.getTime() + accion.cuando.enMs;
+    } else {
+      const { horas, minutos, manana } = accion.cuando;
+      const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + (manana ? 1 : 0), horas, minutos);
+      // "A las 9" cuando ya pasaron las 9: es mañana.
+      if (!manana && fecha.getTime() < ahora.getTime() - UNIDADES.MINUTO) fecha.setDate(fecha.getDate() + 1);
+      inicioMs = fecha.getTime();
+    }
+    const evento: NuevoEvento = { titulo: accion.titulo, lugar: null, inicioMs, finMs: inicioMs + UNIDADES.HORA };
+    const resultado = this.crearEvento!(evento);
+    const texto = describirCreacion(evento, resultado, ahora.getTime());
+    const faltan = inicioMs - ahora.getTime();
+    if (resultado.ok || resultado.motivo === "invalido" || !this.temporizadores || faltan <= 0 || faltan > 12 * UNIDADES.HORA) return texto;
+    this.temporizadores.crear(faltan, accion.titulo, ahora);
+    return `${texto} Mientras, te dejé un recordatorio ⏰ para esa hora.`;
   }
 
   /** "¿Qué tengo hoy?", "¿qué tengo mañana?", "mi próxima clase". */

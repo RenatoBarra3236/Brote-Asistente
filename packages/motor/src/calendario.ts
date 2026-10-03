@@ -234,7 +234,13 @@ function main() {
   }
   return JSON.stringify({ permiso: permiso, eventos: eventos });
 }
-main();`;
+let salida;
+try {
+  salida = main();
+} catch (error) {
+  salida = JSON.stringify({ permiso: -1, error: String(error) });
+}
+salida;`;
 }
 
 export function comandoEventKit(desdeMs: number, hastaMs: number, pedir = false): Comando {
@@ -242,16 +248,20 @@ export function comandoEventKit(desdeMs: number, hastaMs: number, pedir = false)
 }
 
 export interface LecturaMac {
-  /** 3 = acceso completo; 0 = sin decidir; 2 = negado; 4 = solo escritura; 1 = restringido. */
+  /** 3 = acceso completo; 0 = sin decidir; 2 = negado; 4 = solo escritura; 1 = restringido; -1 = falló el script. */
   permiso: number;
   eventos: EventoCalendario[] | null;
+  /** Si el script falló adentro de EventKit, el motivo (para el registro del puente). */
+  error?: string;
 }
 
 export function interpretarEventKit(salida: string): LecturaMac | null {
   try {
     const datos = JSON.parse(salida.trim());
     if (typeof datos?.permiso !== "number") return null;
-    if (!Array.isArray(datos.eventos)) return { permiso: datos.permiso, eventos: null };
+    if (!Array.isArray(datos.eventos)) {
+      return typeof datos.error === "string" ? { permiso: datos.permiso, eventos: null, error: datos.error.slice(0, 300) } : { permiso: datos.permiso, eventos: null };
+    }
     const eventos: EventoCalendario[] = [];
     for (const e of datos.eventos) {
       if (typeof e?.inicio !== "number" || typeof e?.fin !== "number") continue;
@@ -287,5 +297,121 @@ export function leerCalendarioMacAhora(ahoraMs: number, pedir = false): LecturaM
     return interpretarEventKit(salida);
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------- crear eventos (macOS)
+
+export interface NuevoEvento {
+  titulo: string;
+  lugar: string | null;
+  inicioMs: number;
+  finMs: number;
+}
+
+export type ResultadoCreacion =
+  | { ok: true; calendario: string | null }
+  | { ok: false; motivo: "sin-permiso" | "no-disponible" | "invalido" | "fallo"; detalle?: string };
+
+const DURACION_MAXIMA_MS = DIA;
+
+/** Revisa un evento antes de crearlo: título razonable, empieza a futuro (hasta un año) y dura hasta un día. */
+export function validarEvento(e: NuevoEvento, ahoraMs: number): string | null {
+  if (!e.titulo.trim() || e.titulo.length > 200) return "El título debe tener entre 1 y 200 letras";
+  if (e.lugar !== null && e.lugar.length > 200) return "El lugar es demasiado largo";
+  if (!Number.isFinite(e.inicioMs) || !Number.isFinite(e.finMs)) return "Fecha inválida";
+  if (e.inicioMs < ahoraMs - DIA || e.inicioMs > ahoraMs + 366 * DIA) return "El evento debe ser desde ayer hasta dentro de un año";
+  if (e.finMs <= e.inicioMs || e.finMs - e.inicioMs > DURACION_MAXIMA_MS) return "El evento debe durar entre 1 minuto y 24 horas";
+  return null;
+}
+
+/**
+ * JXA que crea el evento en el calendario por defecto del Mac. Los datos van como un literal JSON
+ * (nunca pegados como código). Con permiso 3 (completo) o 4 (solo escritura); nunca pide permiso.
+ */
+function scriptCrear(e: NuevoEvento): string {
+  const datos = JSON.stringify({ titulo: e.titulo, lugar: e.lugar, inicio: e.inicioMs / 1000, fin: e.finMs / 1000 });
+  return `
+ObjC.import("EventKit");
+const DATOS = ${datos};
+function main() {
+  const permiso = Number($.EKEventStore.authorizationStatusForEntityType($.EKEntityTypeEvent || 0));
+  if (permiso !== 3 && permiso !== 4) return JSON.stringify({ ok: false, permiso: permiso });
+  const almacen = $.EKEventStore.alloc.init;
+  const calendario = almacen.defaultCalendarForNewEvents;
+  if (!calendario || calendario.isNil()) return JSON.stringify({ ok: false, permiso: permiso, error: "No hay un calendario por defecto para eventos nuevos" });
+  const evento = $.EKEvent.eventWithEventStore(almacen);
+  evento.setTitle($(DATOS.titulo));
+  if (DATOS.lugar) evento.setLocation($(DATOS.lugar));
+  evento.setStartDate($.NSDate.dateWithTimeIntervalSince1970(DATOS.inicio));
+  evento.setEndDate($.NSDate.dateWithTimeIntervalSince1970(DATOS.fin));
+  evento.setCalendar(calendario);
+  const error = Ref();
+  const ok = almacen.saveEventSpanError(evento, $.EKSpanThisEvent || 0, error);
+  if (!ok) return JSON.stringify({ ok: false, permiso: permiso, error: error[0] ? ObjC.unwrap(error[0].localizedDescription) : "EventKit no lo guardó" });
+  return JSON.stringify({ ok: true, permiso: permiso, calendario: ObjC.unwrap(calendario.title) });
+}
+let salida;
+try {
+  salida = main();
+} catch (error) {
+  salida = JSON.stringify({ ok: false, permiso: -1, error: String(error) });
+}
+salida;`;
+}
+
+export function comandoCrearEventoMac(e: NuevoEvento): Comando {
+  return { programa: "osascript", args: ["-l", "JavaScript", "-e", scriptCrear(e)] };
+}
+
+export function interpretarCreacion(salida: string | null): ResultadoCreacion {
+  try {
+    const datos = JSON.parse((salida ?? "").trim());
+    if (datos?.ok === true) return { ok: true, calendario: typeof datos.calendario === "string" ? datos.calendario : null };
+    if (typeof datos?.permiso === "number" && datos.permiso >= 0 && datos.permiso !== 3 && datos.permiso !== 4) return { ok: false, motivo: "sin-permiso" };
+    return { ok: false, motivo: "fallo", detalle: typeof datos?.error === "string" ? datos.error.slice(0, 200) : undefined };
+  } catch {
+    return { ok: false, motivo: "fallo", detalle: "osascript no respondió" };
+  }
+}
+
+/** Crea el evento en el Calendario del Mac (síncrono: es un pedido del usuario y tarda menos de un segundo). */
+export function crearEventoMacAhora(e: NuevoEvento, ahoraMs = Date.now()): ResultadoCreacion {
+  const invalido = validarEvento(e, ahoraMs);
+  if (invalido) return { ok: false, motivo: "invalido", detalle: invalido };
+  if (process.platform !== "darwin") return { ok: false, motivo: "no-disponible" };
+  const comando = comandoCrearEventoMac(e);
+  try {
+    return interpretarCreacion(execFileSync(comando.programa, comando.args, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "pipe"] }));
+  } catch (error) {
+    const detalle = String((error as { stderr?: unknown }).stderr ?? error).trim().slice(0, 200);
+    return { ok: false, motivo: "fallo", detalle };
+  }
+}
+
+/** "hoy a las 15:42", "mañana a las 10:00", "el 2026-10-08 a las 09:00". */
+export function cuandoDia(ms: number, ahoraMs: number): string {
+  const dia = inicioDelDia(ms) === inicioDelDia(ahoraMs) ? "hoy" : inicioDelDia(ms) === inicioDelDia(ahoraMs, 1) ? "mañana" : null;
+  if (dia) return `${dia} a las ${hora(ms)}`;
+  const d = new Date(ms);
+  return `el ${d.getDate()}/${d.getMonth() + 1} a las ${hora(ms)}`;
+}
+
+/** Lo que dice Brote después de intentar crear el evento. */
+export function describirCreacion(e: NuevoEvento, resultado: ResultadoCreacion, ahoraMs: number): string {
+  const cuando = cuandoDia(e.inicioMs, ahoraMs);
+  if (resultado.ok) {
+    const donde = resultado.calendario ? ` en tu calendario «${resultado.calendario}»` : " en tu Calendario";
+    return `📅 Listo: «${e.titulo}» ${cuando}${donde}. Te aviso 10 min antes 🌱`;
+  }
+  switch (resultado.motivo) {
+    case "sin-permiso":
+      return "📅 Para crear eventos necesito permiso para tu Calendario: 🌱 → Configurar Brote → Calendario del Mac → Permitir acceso.";
+    case "no-disponible":
+      return "📅 Solo puedo crear eventos en el Calendario del Mac (la dirección iCal de Google es de solo lectura).";
+    case "invalido":
+      return `📅 No pude crear ese evento: ${resultado.detalle ?? "datos inválidos"}.`;
+    default:
+      return `📅 No pude guardar «${e.titulo}» en el Calendario${resultado.detalle ? ` (${resultado.detalle})` : ""}.`;
   }
 }

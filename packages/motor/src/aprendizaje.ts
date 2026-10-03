@@ -129,6 +129,9 @@ export function describirIntencion(intencion: Intencion): string {
       return "mostrar lo que tienes mañana";
     case "calendario-proximo":
       return "decirte qué viene en tu calendario";
+    case "calendario-crear":
+    case "calendario-crear-manana":
+      return "crear un evento en tu calendario";
     case "programador-sesiones":
       return "mostrar tus sesiones de Claude Code";
   }

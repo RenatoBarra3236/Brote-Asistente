@@ -79,6 +79,7 @@ import {
   etiquetaProximo,
   eventosDeIcal,
   leerCalendarioMac,
+  crearEventoMacAhora,
   leerUrlIcal,
   marcaConfigCalendario,
   proximoEvento,
@@ -210,6 +211,17 @@ const motor = new Motor(gastos, {
   musica: { estado: () => musica, controlar: (accion) => void pedirMusica(accion) },
   calendario: () => (eventosMac === null && icsTexto === null ? null : eventosCalendario()),
   sesionesClaude: () => sesionesClaude.visibles(Date.now()),
+  // Crear un evento es un pedido del usuario y tarda menos de un segundo: se hace al tiro y después
+  // se vuelve a leer el calendario para que aparezca en la isla.
+  crearEvento: (evento) => {
+    const resultado = crearEventoMacAhora(evento);
+    registrar(resultado.ok ? "calendario: evento creado" : `calendario: no pude crear el evento (${resultado.motivo}${resultado.detalle ? `: ${resultado.detalle}` : ""})`);
+    if (resultado.ok) {
+      proximaLecturaMac = 0;
+      void revisarCalendario();
+    }
+    return resultado;
+  },
 });
 
 // Modo programador: las sesiones de Claude Code del usuario llegan por sus hooks (hook.ts) a un
@@ -296,6 +308,7 @@ let proximaLecturaMac = 0;
 let proximaLecturaIcal = 0;
 let marcaIcal = -1;
 let leyendoCalendario = false;
+let ultimoEstadoMac = "";
 let ultimoProximo = "";
 const avisadorCalendario = new AvisadorCalendario();
 function eventosCalendario(): EventoCalendario[] {
@@ -310,6 +323,12 @@ async function leerCalendarios(): Promise<void> {
       proximaLecturaMac = ahora + 5 * 60_000;
       const lectura = await leerCalendarioMac(ahora);
       eventosMac = lectura?.permiso === 3 ? lectura.eventos : null;
+      // Para depurar en el Mac: por qué no se ven los eventos (nunca se registran los eventos mismos).
+      const estado = lectura === null ? "osascript falló" : lectura.error ? `error: ${lectura.error}` : `permiso ${lectura.permiso}`;
+      if (estado !== ultimoEstadoMac) {
+        ultimoEstadoMac = estado;
+        registrar(`calendario del Mac: ${estado}${lectura?.eventos ? ` (${lectura.eventos.length} eventos)` : ""}`);
+      }
     }
     const marca = marcaConfigCalendario();
     if (marca !== marcaIcal || ahora >= proximaLecturaIcal) {

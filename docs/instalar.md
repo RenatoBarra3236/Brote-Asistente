@@ -74,6 +74,7 @@ Prueba decirle:
 | `mis descargas` · `abre la última descarga` · `muéstrame la última descarga` | Tus últimas descargas, sin IA ⚡. Mientras algo se descarga, la isla dice "📥 Descargando…" y al terminar "Lista ✓" con un botón **Mostrar**. Solo abre documentos (PDF, Word, imágenes…): un programa o instalador te lo muestra en el Finder / Explorador, nunca lo ejecuta |
 | `pausa la música` · `siguiente canción` · `pon la anterior` · `¿qué está sonando?` | Controla Spotify o Música (en Mac) o el reproductor que estés usando (en Windows), sin IA ⚡. La isla muestra "♪ canción — artista" con ⏮ ⏯ ⏭ y Brote se balancea mientras suena. **Nunca abre una app de música**: si no hay ninguna abierta, te lo dice |
 | `¿qué tengo hoy?` · `¿qué tengo mañana?` · `¿cuál es mi próxima clase?` | Tu calendario, sin IA ⚡. La isla muestra "📅 Cálculo en 25 min" y Brote te avisa 10 minutos antes de cada evento. Hay que conectarlo primero (abajo) |
+| `pon un evento en 12 minutos` · `agenda estudiar cálculo a las 16:30` · `pon una prueba de física mañana a las 9` | Crea el evento (de 1 hora) en el Calendario del Mac, sin IA ⚡. Si Brote no tiene permiso o estás en Windows, te deja un recordatorio ⏰ para esa hora. La IA también puede crear eventos, pero te pide permiso antes |
 | `¿qué está haciendo Claude?` · `¿cómo va Claude Code?` | Si programas con Claude Code y activaste el **modo programador** (abajo): tus sesiones en vivo, sin IA ⚡ |
 
 ### Modo programador (opcional)

@@ -22,7 +22,7 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
-import { combinar, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
+import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
 import { describirSesiones, pedirSesiones, type SesionClaude } from "./programador.ts";
 import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
@@ -173,6 +173,25 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Calendario: próximos eventos", readOnlyHint: true },
+  },
+  {
+    name: "calendario_crear",
+    description:
+      "Crea un evento en el Calendario del Mac del usuario (en su calendario por defecto, que puede estar sincronizado " +
+      "con iCloud o Google). Úsala SIEMPRE en vez de osascript u otros comandos de terminal. La hora es la local del " +
+      "usuario. En Windows o sin permiso de Calendario no se puede: ofrécele un recordatorio con temporizador_crear.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        titulo: { type: "string", minLength: 1, maxLength: 200 },
+        inicio: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$", description: "Inicio en hora local: AAAA-MM-DD HH:MM" },
+        minutos: { type: "integer", minimum: 1, maximum: 1440, default: 60, description: "Duración" },
+        lugar: { type: "string", maxLength: 200 },
+      },
+      required: ["titulo", "inicio"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Calendario: crear evento", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   {
     name: "programador_sesiones",
@@ -379,6 +398,26 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       ]
         .filter(Boolean)
         .join("\n");
+    }
+    case "calendario_crear": {
+      const partes = typeof args.inicio === "string" ? args.inicio.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/) : null;
+      const inicio = partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]), Number(partes[4]), Number(partes[5])) : null;
+      if (!inicio || inicio.getMonth() !== Number(partes![2]) - 1 || inicio.getHours() !== Number(partes![4])) {
+        throw new ErrorDeUso("«inicio» debe ser una fecha y hora válidas: AAAA-MM-DD HH:MM");
+      }
+      if (typeof args.titulo !== "string" || !args.titulo.trim()) throw new ErrorDeUso("Falta «titulo»");
+      const minutos = Number.isInteger(args.minutos) ? args.minutos : 60;
+      if (minutos < 1 || minutos > 1440) throw new ErrorDeUso("«minutos» debe estar entre 1 y 1440");
+      const evento = {
+        titulo: args.titulo.trim().slice(0, 200),
+        lugar: typeof args.lugar === "string" && args.lugar.trim() ? args.lugar.trim().slice(0, 200) : null,
+        inicioMs: inicio.getTime(),
+        finMs: inicio.getTime() + minutos * 60_000,
+      };
+      const resultado = crearEventoMacAhora(evento);
+      const texto = describirCreacion(evento, resultado, Date.now());
+      if (!resultado.ok) throw new ErrorDeUso(texto);
+      return texto;
     }
     case "descargas_recientes": {
       const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 30) : 10;

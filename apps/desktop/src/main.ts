@@ -2,7 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
-import { TransportePuente, type Descarga, type DescargaEnCurso, type EstadoMusica, type TemporizadorActivo } from "./agente/puente";
+import {
+  TransportePuente,
+  type Descarga,
+  type DescargaEnCurso,
+  type EstadoCalendario,
+  type EstadoMusica,
+  type TemporizadorActivo,
+} from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
 import { Isla } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
@@ -91,6 +98,7 @@ async function iniciar(): Promise<void> {
   let temporizadores: TemporizadorActivo[] = [];
   let descargasEnCurso: DescargaEnCurso[] = [];
   let musica: EstadoMusica | null = null;
+  let proximoEvento: EstadoCalendario["proximo"] = null;
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
@@ -120,6 +128,18 @@ async function iniciar(): Promise<void> {
     };
     puente.alCambiarMusica(cambiarMusica);
     void puente.consultar<EstadoMusica | null>({ tipo: "musica-estado" }).then(cambiarMusica, () => {});
+
+    // Calendario: el próximo evento y un aviso 10 min antes (Brote da un saltito para llamar la atención).
+    const cambiarCalendario = (estado: EstadoCalendario) => {
+      proximoEvento = estado.proximo;
+      panel.mostrarCalendario(estado);
+    };
+    puente.alCambiarCalendario(cambiarCalendario);
+    void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
+    puente.alAvisoCalendario((texto) => {
+      panel.mostrarAviso(texto);
+      personaje.tocar();
+    });
 
     // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
     let listas: { descarga: Descarga; hasta: number }[] = [];
@@ -249,6 +269,7 @@ async function iniciar(): Promise<void> {
     const reloj =
       relojPrincipal(temporizadores) ??
       (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
+      relojCalendario(proximoEvento) ??
       (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
@@ -279,6 +300,14 @@ async function iniciar(): Promise<void> {
     }
   }
   requestAnimationFrame(cuadro);
+}
+
+/** Con un evento en menos de una hora, el ala muestra cuánto falta: "📅25m". */
+function relojCalendario(evento: EstadoCalendario["proximo"]): { texto: string; color: string } | null {
+  if (!evento) return null;
+  const minutos = Math.ceil((evento.inicioMs - Date.now()) / 60_000);
+  if (minutos > 60 || evento.finMs < Date.now()) return null;
+  return { texto: minutos > 0 ? `📅${minutos}m` : "📅", color: "rgb(150, 195, 255)" };
 }
 
 /** El temporizador que se muestra con la isla cerrada: el pomodoro primero, si no el que termina antes. */

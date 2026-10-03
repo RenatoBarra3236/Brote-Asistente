@@ -123,6 +123,12 @@ export function describirIntencion(intencion: Intencion): string {
       return "volver a la canción anterior";
     case "musica-estado":
       return "decirte qué está sonando";
+    case "calendario-hoy":
+      return "mostrar lo que tienes hoy";
+    case "calendario-manana":
+      return "mostrar lo que tienes mañana";
+    case "calendario-proximo":
+      return "decirte qué viene en tu calendario";
   }
 }
 

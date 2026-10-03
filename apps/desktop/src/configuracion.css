@@ -45,3 +45,21 @@
 .consentimiento.resaltada {
   background: rgba(255, 176, 33, 0.22);
 }
+
+/* La dirección iCal del calendario (paso opcional). */
+.formulario-ical {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.campo {
+  width: 100%;
+  padding: 7px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: inherit;
+}

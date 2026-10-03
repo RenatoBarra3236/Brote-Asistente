@@ -5,7 +5,7 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
-import type { AccionMusica, Descarga, DescargaEnCurso, EstadoMusica, TemporizadorActivo } from "./agente/puente";
+import type { AccionMusica, Descarga, DescargaEnCurso, EstadoCalendario, EstadoMusica, TemporizadorActivo } from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
@@ -46,6 +46,7 @@ export class Panel {
   private readonly avisoDestacado: HTMLParagraphElement;
   private readonly descargas: HTMLDivElement;
   private readonly alMostrarDescarga?: (ruta: string) => void;
+  private readonly calendario: HTMLDivElement;
   private readonly musica: HTMLDivElement;
   private readonly musicaTitulo: HTMLSpanElement;
   private readonly musicaPlay: HTMLButtonElement;
@@ -165,7 +166,10 @@ export class Panel {
       this.musica.append(boton("⏮", "Canción anterior", "anterior"), this.musicaPlay, boton("⏭", "Siguiente canción", "siguiente"));
     }
 
-    this.raiz.append(this.avisoDestacado, this.temporizadores, this.musica, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
+    this.calendario = crear("div", "fila calendario");
+    this.calendario.hidden = true;
+
+    this.raiz.append(this.avisoDestacado, this.temporizadores, this.calendario, this.musica, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -275,6 +279,17 @@ export class Panel {
     ];
     this.descargas.replaceChildren(...filas);
     this.descargas.hidden = filas.length === 0;
+  }
+
+  /** "📅 Cálculo en 25 min": el próximo evento del calendario (solo si es dentro de las próximas 12 h). */
+  mostrarCalendario(estado: EstadoCalendario): void {
+    const proximo = estado.proximo;
+    const visible = proximo !== null && estado.etiqueta !== null && proximo.inicioMs - Date.now() < 12 * 3_600_000;
+    this.calendario.hidden = !visible;
+    if (!visible) return;
+    this.calendario.textContent = `📅 ${estado.etiqueta}`;
+    this.calendario.title = proximo.lugar ? `${proximo.titulo} · ${proximo.lugar}` : proximo.titulo;
+    this.calendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
   }
 
   /** La píldora de la música, o nada si no hay un reproductor abierto. */

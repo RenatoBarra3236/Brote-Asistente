@@ -261,6 +261,7 @@ pub fn run() {
             configuracion::abrir_terminal,
             configuracion::abrir_enlace,
             configuracion::reiniciar,
+            configuracion::guardar_calendario,
             descargas::mostrar_descarga
         ])
         .build(tauri::generate_context!())

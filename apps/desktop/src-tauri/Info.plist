@@ -7,5 +7,9 @@
 	<string>Brote mira qué suena en Spotify o Música (solo si ya están abiertos) para mostrarlo en la isla y pausar o cambiar de canción cuando se lo pides.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Brote mira tu carpeta de Descargas para avisarte cuando termina una descarga. Los nombres no salen de tu computador.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Brote lee tus eventos para decirte qué tienes hoy y avisarte 10 minutos antes de cada clase. No los modifica y no salen de tu computador.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Brote lee tus eventos para decirte qué tienes hoy y avisarte 10 minutos antes de cada clase. No los modifica y no salen de tu computador.</string>
 </dict>
 </plist>

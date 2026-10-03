@@ -45,6 +45,11 @@
 //   aviso { "tipo": "musica", "estado": { app, sonando, cancion, artista } | null }   cuando cambia
 //   pedido { "tipo": "musica-control", "accion": "play-pausa" | "play" | "pausa" | "siguiente" | "anterior" }
 //
+// Calendario (Calendario del Mac con EventKit y/o la dirección iCal de ~/.asistente-prototipo/calendario.json):
+//   aviso { "tipo": "calendario", "proximo": { titulo, lugar, inicioMs, finMs } | null, "etiqueta": "Cálculo en 25 min" }
+//   aviso { "tipo": "calendario-aviso", "texto": "📅 En 10 min: Cálculo…" }
+//   pedido { "tipo": "calendario-estado" }   → "datos": { proximo, etiqueta }
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
@@ -57,6 +62,16 @@ import {
   PLANTILLAS_BASE,
   MedidorCpu,
   ACCIONES_MUSICA,
+  AvisadorCalendario,
+  combinar,
+  descargarIcal,
+  etiquetaProximo,
+  eventosDeIcal,
+  leerCalendarioMac,
+  leerUrlIcal,
+  marcaConfigCalendario,
+  proximoEvento,
+  type EventoCalendario,
   RUTA_BASE,
   SeguidorDescargas,
   controlarMusica,
@@ -117,6 +132,7 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   // Play, pausa y cambiar de canción son inofensivos (y nunca abren una app).
   "mcp__gastos__musica_estado",
   "mcp__gastos__musica_control",
+  "mcp__gastos__calendario_proximos",
 ]);
 
 /** Las conversaciones guardadas que existen ahora (para notar cuándo OpenClaw escribe una nueva). */
@@ -179,7 +195,70 @@ const motor = new Motor(gastos, {
     return listado ? recientes(listado, CARPETA_DESCARGAS) : null;
   },
   musica: { estado: () => musica, controlar: (accion) => void pedirMusica(accion) },
+  calendario: () => (eventosMac === null && icsTexto === null ? null : eventosCalendario()),
 });
+
+// Calendario: el del Mac se lee cada 5 min (nunca pide permiso aquí: eso es en "Configurar
+// Brote"); el iCal cada 15 min, o al tiro si cambió la configuración. Cada 30 s se revisa si toca
+// avisar (10 min antes) y si cambió lo próximo. La dirección iCal es secreta: nunca se registra.
+let eventosMac: EventoCalendario[] | null = null;
+let icsTexto: string | null = null;
+let proximaLecturaMac = 0;
+let proximaLecturaIcal = 0;
+let marcaIcal = -1;
+let leyendoCalendario = false;
+let ultimoProximo = "";
+const avisadorCalendario = new AvisadorCalendario();
+function eventosCalendario(): EventoCalendario[] {
+  return combinar(eventosMac, icsTexto ? eventosDeIcal(icsTexto, Date.now()) : null);
+}
+async function leerCalendarios(): Promise<void> {
+  if (leyendoCalendario) return;
+  leyendoCalendario = true;
+  try {
+    const ahora = Date.now();
+    if (process.platform === "darwin" && ahora >= proximaLecturaMac) {
+      proximaLecturaMac = ahora + 5 * 60_000;
+      const lectura = await leerCalendarioMac(ahora);
+      eventosMac = lectura?.permiso === 3 ? lectura.eventos : null;
+    }
+    const marca = marcaConfigCalendario();
+    if (marca !== marcaIcal || ahora >= proximaLecturaIcal) {
+      marcaIcal = marca;
+      proximaLecturaIcal = ahora + 15 * 60_000;
+      const url = leerUrlIcal();
+      if (!url) icsTexto = null;
+      else {
+        const texto = await descargarIcal(url);
+        if (texto) icsTexto = texto;
+        else registrar("calendario: no pude descargar el iCal");
+      }
+    }
+  } finally {
+    leyendoCalendario = false;
+  }
+}
+function estadoCalendario(): { proximo: EventoCalendario | null; etiqueta: string | null } {
+  const ahora = Date.now();
+  const proximo = proximoEvento(eventosCalendario(), ahora);
+  return { proximo, etiqueta: proximo ? etiquetaProximo(proximo, ahora) : null };
+}
+async function revisarCalendario(): Promise<void> {
+  await leerCalendarios();
+  const eventos = eventosCalendario();
+  for (const texto of avisadorCalendario.revisar(eventos, Date.now())) {
+    registrar("calendario: aviso");
+    avisar({ tipo: "calendario-aviso", texto });
+  }
+  const estado = estadoCalendario();
+  const texto = JSON.stringify(estado);
+  if (texto !== ultimoProximo) {
+    ultimoProximo = texto;
+    avisar({ tipo: "calendario", ...estado });
+  }
+}
+setInterval(() => void revisarCalendario(), 30_000);
+void revisarCalendario();
 
 // Música: se revisa cada 3 s (5 en Windows, donde PowerShell tarda más en partir), una lectura a la
 // vez. Si el usuario negó el permiso de Automatización para una app, no se le pregunta de nuevo
@@ -523,6 +602,8 @@ async function atender(pedido: any): Promise<Extra> {
       return {};
     case "musica-estado":
       return { datos: musica };
+    case "calendario-estado":
+      return { datos: estadoCalendario() };
     case "descargas-listar": {
       const listado = listarCarpeta(CARPETA_DESCARGAS);
       return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };

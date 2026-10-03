@@ -22,6 +22,7 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
+import { combinar, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
 import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
@@ -160,6 +161,19 @@ const HERRAMIENTAS = [
     annotations: { title: "Música: controlar", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   {
+    name: "calendario_proximos",
+    description:
+      "Los eventos del calendario del usuario en las próximas horas (por defecto 24, máximo 72): título, lugar, inicio y " +
+      "fin en su hora local, y si es de día completo. Lee el Calendario del Mac y/o la dirección iCal que configuró en Brote. " +
+      "Úsala para planificar su estudio alrededor de sus clases o si pregunta qué tiene.",
+    inputSchema: {
+      type: "object",
+      properties: { horas: { type: "integer", minimum: 1, maximum: 72, default: 24 } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Calendario: próximos eventos", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -215,6 +229,44 @@ function leerRango(args: any, porDefecto: Rango | undefined): Rango | undefined 
     hasta: hasta ? new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate() + 1) : new Date(8.64e15),
   };
 }
+
+/** "2026-10-05 08:30" en la hora local del usuario. */
+function fechaHora(ms: number): string {
+  const d = new Date(ms);
+  return `${fechaIso(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Las herramientas que necesitan esperar algo (descargar el iCal). */
+async function usarEsperando(nombre: string, args: any): Promise<string> {
+  switch (nombre) {
+    case "calendario_proximos": {
+      const horas = Number.isInteger(args.horas) ? Math.min(Math.max(args.horas, 1), 72) : 24;
+      const ahora = Date.now();
+      const mac = leerCalendarioMacAhora(ahora);
+      const url = leerUrlIcal();
+      const ics = url ? await descargarIcal(url) : null;
+      if (!mac?.eventos && !url) {
+        return "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+      }
+      if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
+      const eventos = proximos(combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null), ahora, horas);
+      return JSON.stringify({
+        ahora: fechaHora(ahora),
+        eventos: eventos.map((e) => ({
+          titulo: e.titulo,
+          lugar: e.lugar,
+          inicio: e.todoElDia ? fechaIso(new Date(e.inicioMs)) : fechaHora(e.inicioMs),
+          fin: e.todoElDia ? null : fechaHora(e.finMs),
+          todoElDia: e.todoElDia,
+        })),
+      });
+    }
+    default:
+      throw new ErrorDeUso(`Herramienta desconocida: ${nombre}`);
+  }
+}
+
+const ESPERAN = new Set(["calendario_proximos"]);
 
 function usar(gastos: Gastos, nombre: string, args: any): string {
   switch (nombre) {
@@ -351,8 +403,11 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
   }
 }
 
-/** Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. */
-export function atender(gastos: Gastos, mensaje: any): object | null {
+/**
+ * Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. Las
+ * herramientas que esperan algo (el calendario) devuelven una promesa de la respuesta.
+ */
+export function atender(gastos: Gastos, mensaje: any): object | null | Promise<object> {
   const { id, method, params } = mensaje ?? {};
   if (id === undefined || id === null) return null;
   const responder = (result: object) => ({ jsonrpc: "2.0", id, result });
@@ -371,6 +426,16 @@ export function atender(gastos: Gastos, mensaje: any): object | null {
     case "tools/list":
       return responder({ tools: HERRAMIENTAS });
     case "tools/call":
+      if (ESPERAN.has(String(params?.name))) {
+        return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
+          (texto) => responder({ content: [{ type: "text", text: texto }] }),
+          (error) => {
+            const motivo = error instanceof ErrorDeUso ? error.message : "No pude leer el calendario";
+            if (!(error instanceof ErrorDeUso)) process.stderr.write(`[gastos] ${String(error)}\n`);
+            return responder({ content: [{ type: "text", text: motivo }], isError: true });
+          },
+        );
+      }
       try {
         const texto = usar(gastos, String(params?.name), params?.arguments ?? {});
         return responder({ content: [{ type: "text", text: texto }] });
@@ -396,8 +461,9 @@ if (import.meta.main) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON inválido" } })}\n`);
       return;
     }
-    const respuesta = atender(gastos, mensaje);
-    if (respuesta) process.stdout.write(`${JSON.stringify(respuesta)}\n`);
+    void Promise.resolve(atender(gastos, mensaje)).then((respuesta) => {
+      if (respuesta) process.stdout.write(`${JSON.stringify(respuesta)}\n`);
+    });
   });
   entrada.on("close", () => {
     gastos.cerrar();

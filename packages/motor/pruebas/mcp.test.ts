@@ -26,7 +26,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "motor_proponer_plantilla"],
     );
   });
 
@@ -77,6 +77,12 @@ describe("servidor MCP de gastos", () => {
       assert.match(llamar("musica_estado", {}).texto, /No pude saber/);
       assert.match(llamar("musica_control", { accion: "pausa" }).texto, /No hay música abierta/);
     }
+  });
+
+  it("el calendario responde aunque no haya ninguno conectado", async () => {
+    const respuesta = (await atender(gastos, { jsonrpc: "2.0", id: 99, method: "tools/call", params: { name: "calendario_proximos", arguments: {} } })) as any;
+    assert.equal(respuesta.id, 99);
+    if (process.platform === "linux") assert.match(respuesta.result.content[0].text, /No hay calendario conectado|No pude leer/);
   });
 
   it("lista las descargas recientes sin abrirlas", () => {

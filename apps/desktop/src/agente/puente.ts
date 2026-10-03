@@ -43,6 +43,12 @@ export interface EstadoMusica {
   artista: string | null;
 }
 
+/** El próximo evento del calendario y cómo decirlo ("Cálculo en 25 min"). */
+export interface EstadoCalendario {
+  proximo: { titulo: string; lugar: string | null; inicioMs: number; finMs: number; todoElDia: boolean } | null;
+  etiqueta: string | null;
+}
+
 export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
 
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
@@ -64,6 +70,8 @@ type Aviso =
   | { tipo: "descargas"; enCurso: DescargaEnCurso[] }
   | { tipo: "descarga-lista"; descarga: Descarga }
   | { tipo: "musica"; estado: EstadoMusica | null }
+  | ({ tipo: "calendario" } & EstadoCalendario)
+  | { tipo: "calendario-aviso"; texto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -94,6 +102,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesDescargas = new Set<(enCurso: DescargaEnCurso[]) => void>();
   private readonly oyentesDescargaLista = new Set<(descarga: Descarga) => void>();
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
+  private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
+  private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -168,6 +178,18 @@ export class TransportePuente implements Transporte {
   alCambiarMusica(oyente: (estado: EstadoMusica | null) => void): () => void {
     this.oyentesMusica.add(oyente);
     return () => this.oyentesMusica.delete(oyente);
+  }
+
+  /** El próximo evento del calendario, cada vez que cambia (al menos cada minuto mientras falte poco). */
+  alCambiarCalendario(oyente: (estado: EstadoCalendario) => void): () => void {
+    this.oyentesCalendario.add(oyente);
+    return () => this.oyentesCalendario.delete(oyente);
+  }
+
+  /** El aviso 10 min antes de un evento. */
+  alAvisoCalendario(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoCalendario.add(oyente);
+    return () => this.oyentesAvisoCalendario.delete(oyente);
   }
 
   async controlarMusica(accion: AccionMusica): Promise<void> {
@@ -258,6 +280,12 @@ export class TransportePuente implements Transporte {
         return;
       case "descargas":
         for (const oyente of this.oyentesDescargas) oyente(aviso.enCurso);
+        return;
+      case "calendario":
+        for (const oyente of this.oyentesCalendario) oyente({ proximo: aviso.proximo, etiqueta: aviso.etiqueta });
+        return;
+      case "calendario-aviso":
+        for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
         return;
       case "musica":
         for (const oyente of this.oyentesMusica) oyente(aviso.estado);

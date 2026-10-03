@@ -365,3 +365,14 @@ body {
 .boton-musica:hover {
   filter: brightness(1.3);
 }
+.fila.calendario {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fila.calendario.pronto {
+  background: rgba(122, 178, 255, 0.2);
+  color: rgb(190, 215, 255);
+  font-weight: 600;
+}

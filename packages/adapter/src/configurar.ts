@@ -13,6 +13,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal } from "@asistente/motor";
 import { CONFIG_OPENCLAW } from "./rutas.ts";
 
 /** La versión de OpenClaw con la que se probó Brote (ver CLAUDE.md). */
@@ -32,7 +33,9 @@ export type Estado = "ok" | "falta" | "opcional";
 export type Accion =
   | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean }
   | { tipo: "terminal"; etiqueta: string; terminal: "login-claude" | "memoria-local" }
-  | { tipo: "enlace"; etiqueta: string; enlace: "node" | "claude-code" };
+  | { tipo: "enlace"; etiqueta: string; enlace: "node" | "claude-code" | "privacidad-calendarios" }
+  /** La dirección iCal secreta: la ventana muestra un campo y Rust la guarda (con permisos 600). */
+  | { tipo: "ical"; etiqueta: string; configurada: boolean };
 
 export interface Paso {
   id: string;
@@ -296,6 +299,50 @@ export function revisar(): Paso[] {
   return pasos;
 }
 
+/** Pasos opcionales de las funcionalidades para PC (calendario…), que necesitan esperar. */
+export async function revisarOpcionales(): Promise<Paso[]> {
+  const pasos: Paso[] = [];
+  if (process.platform === "darwin") {
+    const permiso = leerCalendarioMacAhora(Date.now())?.permiso ?? null;
+    pasos.push({
+      id: "calendario-mac",
+      titulo: "Calendario del Mac (opcional)",
+      estado: permiso === 3 ? "ok" : "opcional",
+      detalle:
+        permiso === 3
+          ? "Brote ve tus eventos (iCloud, Google, Exchange… los de la app Calendario) y te avisa 10 min antes."
+          : permiso === 2 || permiso === 1 || permiso === 4
+            ? "Brote no tiene acceso a tus calendarios. Actívalo en Privacidad y seguridad → Calendarios → Brote (acceso completo)."
+            : "Para que Brote te diga qué tienes hoy y te avise antes de cada clase. macOS te va a pedir permiso.",
+      accion:
+        permiso === 3
+          ? undefined
+          : permiso === 0 || permiso === null
+            ? { tipo: "automatica", etiqueta: "Permitir acceso" }
+            : { tipo: "enlace", etiqueta: "Abrir Privacidad", enlace: "privacidad-calendarios" },
+    });
+  }
+  const url = leerUrlIcal();
+  let detalle = "Pega la «dirección secreta en formato iCal» de Google Calendar (Configuración → tu calendario → Integrar el calendario). Queda solo en este computador.";
+  let estado: Estado = "opcional";
+  if (url) {
+    const texto = await descargarIcal(url);
+    const cuantos = texto ? eventosDeIcal(texto, Date.now()).length : null;
+    estado = texto ? "ok" : "opcional";
+    detalle = texto
+      ? `Conectado: ${cuantos === 1 ? "1 evento" : `${cuantos} eventos`} entre hoy y pasado mañana.`
+      : "Guardaste una dirección, pero no pude descargarla. Revisa que esté bien copiada y que tengas internet.";
+  }
+  pasos.push({
+    id: "calendario-ical",
+    titulo: "Calendario por dirección iCal (opcional)",
+    estado,
+    detalle,
+    accion: { tipo: "ical", etiqueta: "Guardar", configurada: url !== null },
+  });
+  return pasos;
+}
+
 /** Lo justo para decidir al iniciar si abrir el asistente, sin ejecutar programas (es rápido). */
 export function rapido(): { listo: boolean } {
   const config = leerConfig();
@@ -422,6 +469,11 @@ export function aplicar(id: string): string {
       );
       return "Tus gastos quedaron conectados con el agente.";
     }
+    case "calendario-mac": {
+      const lectura = leerCalendarioMacAhora(Date.now(), true);
+      if (lectura?.permiso !== 3) throw new Error("Brote no quedó con acceso al Calendario. Puedes activarlo en Privacidad y seguridad → Calendarios.");
+      return "Listo: Brote ve tu calendario 📅";
+    }
     case "memoria":
       exigir(openclaw(["config", "set", "memory.search.sources", '["memory"]']), "No pude ajustar la memoria");
       exigir(openclaw(["config", "set", "memory.search.rememberAcrossConversations", "false"]), "No pude ajustar la memoria");
@@ -433,16 +485,19 @@ export function aplicar(id: string): string {
 
 // ---------------------------------------------------------------- línea de comandos
 
+/** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
+const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac"];
+
 if (import.meta.main) {
   const [orden, paso] = process.argv.slice(2);
   let respuesta: unknown;
   try {
-    if (orden === "revisar") respuesta = revisar();
+    if (orden === "revisar") respuesta = [...revisar(), ...(await revisarOpcionales())];
     else if (orden === "rapido") respuesta = rapido();
     else if (orden === "aplicar" && paso) {
       const detalle = aplicar(paso);
       // Los cambios de configuración necesitan reiniciar OpenClaw para aplicarse.
-      if (!["openclaw", "gateway"].includes(paso) && leerConfig()) openclaw(["gateway", "restart"], 120_000);
+      if (!SIN_REINICIO.includes(paso) && leerConfig()) openclaw(["gateway", "restart"], 120_000);
       respuesta = { ok: true, detalle };
     } else respuesta = { ok: false, detalle: "Uso: configurar revisar | rapido | aplicar <paso>" };
   } catch (error) {

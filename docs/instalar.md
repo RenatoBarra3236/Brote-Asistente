@@ -73,6 +73,14 @@ Prueba decirle:
 | `¿cómo está el computador?` · `¿cuánta batería me queda?` | Batería, CPU, memoria y disco, sin IA ⚡. Brote también se cansa con poca batería y suda con la CPU al máximo |
 | `mis descargas` · `abre la última descarga` · `muéstrame la última descarga` | Tus últimas descargas, sin IA ⚡. Mientras algo se descarga, la isla dice "📥 Descargando…" y al terminar "Lista ✓" con un botón **Mostrar**. Solo abre documentos (PDF, Word, imágenes…): un programa o instalador te lo muestra en el Finder / Explorador, nunca lo ejecuta |
 | `pausa la música` · `siguiente canción` · `pon la anterior` · `¿qué está sonando?` | Controla Spotify o Música (en Mac) o el reproductor que estés usando (en Windows), sin IA ⚡. La isla muestra "♪ canción — artista" con ⏮ ⏯ ⏭ y Brote se balancea mientras suena. **Nunca abre una app de música**: si no hay ninguna abierta, te lo dice |
+| `¿qué tengo hoy?` · `¿qué tengo mañana?` · `¿cuál es mi próxima clase?` | Tu calendario, sin IA ⚡. La isla muestra "📅 Cálculo en 25 min" y Brote te avisa 10 minutos antes de cada evento. Hay que conectarlo primero (abajo) |
+
+### Conectar tu calendario (opcional)
+
+En 🌱 → **Configurar Brote**, al final:
+
+- **Calendario del Mac:** pulsa **Permitir acceso** y acepta el aviso de macOS. Brote verá los calendarios que tengas en la app Calendario (iCloud, Google, Outlook…). No abre la app ni cambia nada.
+- **Dirección iCal (Mac y Windows):** en [Google Calendar](https://calendar.google.com) → ⚙️ Configuración → tu calendario → **Integrar el calendario** → copia la **dirección secreta en formato iCal** y pégala en Brote. Es secreta (quien la tenga ve tu calendario): Brote la guarda solo en tu computador, en un archivo que únicamente tu usuario puede leer. Con **Quitar** la borras.
 
 ### Permisos que tu Mac te va a preguntar
 
@@ -82,6 +90,7 @@ macOS pide permiso la primera vez que Brote necesita algo. Puedes cambiarlos des
 |---|---|---|
 | "Brote quiere acceder a archivos de la carpeta Descargas" | Para avisarte cuando termina una descarga y responder "mis descargas" | Brote no ve tus descargas; lo demás funciona igual |
 | "Brote quiere controlar Spotify" / "…controlar Música" (Automatización) | Para mostrar la canción y pausar o cambiarla. Solo aparece si esa app está abierta | Brote no muestra esa música (no vuelve a preguntar hasta dentro de un rato). Se cambia en **Privacidad y seguridad → Automatización → Brote** |
+| "Brote quiere acceder a tus calendarios" | Al pulsar **Permitir acceso** en Configurar Brote: para decirte qué tienes y avisarte antes de cada clase | Brote no ve el Calendario del Mac (la dirección iCal sigue sirviendo). Se cambia en **Privacidad y seguridad → Calendarios** |
 | Lo mismo, pero a nombre de **node** u **OpenClaw** | Cuando se lo pides a la IA ("pausa la música" escrito de otra forma), la herramienta corre dentro de OpenClaw | La IA no puede ver ni controlar la música; las frases sin IA siguen funcionando |
 
 Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos botones: **Permitir** o **Rechazar**. Si se demora, el botón ■ lo detiene.
@@ -91,7 +100,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 ## Tus datos
 
 - Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
-- Los nombres de tus descargas y lo que escuchas no salen del computador; solo los ve la IA si le preguntas por ellos.
+- Los nombres de tus descargas, lo que escuchas y tus eventos no salen del computador; solo los ve la IA si le preguntas por ellos. La dirección iCal se usa solo para descargar tu calendario directo de Google.
 - Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code.
 - En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
 

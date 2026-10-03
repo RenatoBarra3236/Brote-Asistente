@@ -33,7 +33,10 @@ export type Intencion =
   | "musica-play"
   | "musica-siguiente"
   | "musica-anterior"
-  | "musica-estado";
+  | "musica-estado"
+  | "calendario-hoy"
+  | "calendario-manana"
+  | "calendario-proximo";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
 
@@ -190,6 +193,9 @@ const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apag
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
 const ABRIR = "abre|abreme|abrir|abri";
 const MOSTRAR = "muestrame|muestra|mostrar|ensename|donde esta|donde quedo";
+const AGENDA = "agenda|calendario|horario";
+const ACTIVIDADES = "clases|clase|pruebas|prueba|reuniones|reunion|eventos|evento|ayudantias|ayudantia";
+const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
 const MUSICA = "musica|cancion|tema|spotify";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
@@ -263,4 +269,14 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "musica-anterior-corto", intencion: "musica-anterior", patron: "(pon|ponme|dale|vuelve a) [la] anterior" },
   { id: "musica-estado", intencion: "musica-estado", patron: "(que|cual) (cancion|tema|musica) (esta sonando|suena|es esta|es|estoy escuchando)" },
   { id: "musica-estado-corto", intencion: "musica-estado", patron: "(que|quien) (esta sonando|suena|canta)" },
+  { id: "calendario-hoy", intencion: "calendario-hoy", patron: "(que|que cosas) tengo [para] hoy [dia]" },
+  { id: "calendario-hoy-agenda", intencion: "calendario-hoy", patron: `[(muestrame|ver|dame)] [mi|el] (${AGENDA}) [(de|para)] hoy` },
+  { id: "calendario-hoy-tengo", intencion: "calendario-hoy", patron: `tengo (algo|${ACTIVIDADES}) hoy` },
+  { id: "calendario-hoy-que", intencion: "calendario-hoy", patron: `(que|cuales) (${ACTIVIDADES}) tengo hoy` },
+  { id: "calendario-manana", intencion: "calendario-manana", patron: "(que|que cosas) tengo [para] manana" },
+  { id: "calendario-manana-agenda", intencion: "calendario-manana", patron: `[(muestrame|ver|dame)] [mi|el] (${AGENDA}) [(de|para)] manana` },
+  { id: "calendario-manana-tengo", intencion: "calendario-manana", patron: `tengo (algo|${ACTIVIDADES}) manana` },
+  { id: "calendario-manana-que", intencion: "calendario-manana", patron: `(que|cuales) (${ACTIVIDADES}) tengo manana` },
+  { id: "calendario-proximo", intencion: "calendario-proximo", patron: `[(cual es|cuando es|a que hora es|donde es)] [mi|la] (proxima|siguiente) (${ACTIVIDAD})` },
+  { id: "calendario-proximo-que", intencion: "calendario-proximo", patron: "que (viene|sigue|tengo) ahora" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

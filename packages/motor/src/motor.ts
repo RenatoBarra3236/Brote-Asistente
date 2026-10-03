@@ -8,6 +8,7 @@ import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
+import { describirDia, describirProximo, type EventoCalendario } from "./calendario.ts";
 import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
@@ -40,7 +41,8 @@ export type Accion =
   | { intencion: "ver-descargas" }
   | { intencion: "abrir-ultima-descarga" }
   | { intencion: "mostrar-ultima-descarga" }
-  | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" };
+  | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" }
+  | { intencion: "calendario-hoy" | "calendario-manana" | "calendario-proximo" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -83,6 +85,9 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "musica-siguiente":
     case "musica-anterior":
     case "musica-estado":
+    case "calendario-hoy":
+    case "calendario-manana":
+    case "calendario-proximo":
       return { intencion };
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
@@ -105,6 +110,7 @@ export class Motor {
   private readonly equipo: (() => LecturaEquipo | null) | null;
   private readonly descargas: (() => Descarga[] | null) | null;
   private readonly musica: Musica | null;
+  private readonly calendario: (() => EventoCalendario[] | null) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -119,8 +125,11 @@ export class Motor {
       descargas?: () => Descarga[] | null;
       /** Lo que suena y cómo pedirle algo (lo mantiene el puente). */
       musica?: Musica;
+      /** Los eventos de hoy a pasado mañana (`null` si no hay calendario configurado o sin permiso). */
+      calendario?: () => EventoCalendario[] | null;
     } = {},
   ) {
+    this.calendario = opciones.calendario ?? null;
     this.musica = opciones.musica ?? null;
     this.descargas = opciones.descargas ?? null;
     this.equipo = opciones.equipo ?? null;
@@ -147,6 +156,10 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (accion.intencion.startsWith("calendario-")) {
+      if (!this.calendario) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agenda(accion.intencion) };
+    }
     if (accion.intencion.startsWith("musica-")) {
       if (!this.musica) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.tocar(accion.intencion) };
@@ -157,6 +170,17 @@ export class Motor {
       return { intencion: accion.intencion, plantilla: plantilla.id, ...this.descargar(accion.intencion, lista) };
     }
     return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ejecutar(accion) };
+  }
+
+  /** "¿Qué tengo hoy?", "¿qué tengo mañana?", "mi próxima clase". */
+  private agenda(intencion: Intencion): string {
+    const eventos = this.calendario!();
+    if (!eventos) {
+      return "📅 Todavía no veo tu calendario. Conéctalo en 🌱 → Configurar Brote (el Calendario del Mac o la dirección iCal de Google Calendar).";
+    }
+    const ahora = this.reloj().getTime();
+    if (intencion === "calendario-proximo") return describirProximo(eventos, ahora);
+    return describirDia(eventos, ahora, intencion === "calendario-hoy" ? 0 : 1);
   }
 
   /** "Pausa la música", "siguiente canción", "¿qué está sonando?". Nunca abre una app de música. */

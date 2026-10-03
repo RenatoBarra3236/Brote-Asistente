@@ -9,7 +9,8 @@ type Estado = "ok" | "falta" | "opcional";
 type Accion =
   | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean }
   | { tipo: "terminal"; etiqueta: string; terminal: string }
-  | { tipo: "enlace"; etiqueta: string; enlace: string };
+  | { tipo: "enlace"; etiqueta: string; enlace: string }
+  | { tipo: "ical"; etiqueta: string; configurada: boolean };
 
 interface Paso {
   id: string;
@@ -34,6 +35,8 @@ let pasos: Paso[] = [];
 let ocupado = false;
 /** El usuario aceptó que OpenClaw se configure (requisito del paso "agente"). */
 let consentimiento = false;
+/** Lo escrito en el campo de la dirección iCal (sobrevive a que la ventana se vuelva a pintar). */
+let borradorIcal = "";
 
 function crear<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase?: string, texto?: string): HTMLElementTagNameMap[K] {
   const elemento = document.createElement(etiqueta);
@@ -71,6 +74,10 @@ function pintar(): void {
 
       const accion = paso.accion;
       if (!accion) return tarjeta;
+      if (accion.tipo === "ical") {
+        tarjeta.append(formularioIcal(accion.configurada));
+        return tarjeta;
+      }
       const botones = crear("div", "botones");
       if (accion.tipo === "automatica" && accion.requiereConsentimiento) {
         const etiqueta = crear("label", "consentimiento");
@@ -99,6 +106,55 @@ function pintar(): void {
       return tarjeta;
     }),
   );
+}
+
+/**
+ * La dirección iCal secreta: un campo (oculto, como una contraseña) y los botones para guardarla o
+ * quitarla. La guarda Rust (`guardar_calendario`), que la valida y la deja con permisos 600.
+ */
+function formularioIcal(configurada: boolean): HTMLElement {
+  const formulario = crear("form", "formulario-ical");
+  const campo = crear("input", "campo");
+  campo.type = "password";
+  campo.autocomplete = "off";
+  campo.spellcheck = false;
+  campo.placeholder = configurada ? "Dirección guardada (oculta). Pega otra para cambiarla" : "https://calendar.google.com/calendar/ical/…/basic.ics";
+  campo.value = borradorIcal;
+  campo.setAttribute("aria-label", "Dirección secreta en formato iCal");
+  const guardar = crear("button", "boton boton-primario", "Guardar");
+  guardar.type = "submit";
+  guardar.disabled = ocupado || borradorIcal.trim() === "";
+  campo.addEventListener("input", () => {
+    borradorIcal = campo.value;
+    guardar.disabled = ocupado || borradorIcal.trim() === "";
+  });
+  const botones = crear("div", "botones");
+  if (configurada) {
+    const quitar = crear("button", "boton", "Quitar");
+    quitar.type = "button";
+    quitar.disabled = ocupado;
+    quitar.addEventListener("click", () => void guardarIcal(null));
+    botones.append(quitar);
+  }
+  botones.append(guardar);
+  formulario.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    void guardarIcal(borradorIcal);
+  });
+  formulario.append(campo, botones);
+  return formulario;
+}
+
+async function guardarIcal(url: string | null): Promise<void> {
+  try {
+    await invoke("guardar_calendario", { url });
+    borradorIcal = "";
+    mostrarAviso(url ? "Guardé la dirección. Reviso que funcione…" : "Quité la dirección del calendario.");
+  } catch (error) {
+    mostrarAviso(`Calendario: ${mensajeDe(error)}`, true);
+    return;
+  }
+  await revisar();
 }
 
 async function revisar(): Promise<void> {

@@ -22,9 +22,9 @@ import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
-import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
-import { describirSesiones, pedirSesiones, type SesionClaude } from "./programador.ts";
-import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
+import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
+import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
+import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 
@@ -264,20 +264,27 @@ function fechaHora(ms: number): string {
   return `${fechaIso(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** Las herramientas que necesitan esperar algo (descargar el iCal). */
+/** Las herramientas que necesitan esperar algo (el puente de Brote, el iCal, osascript). */
 async function usarEsperando(nombre: string, args: any): Promise<string> {
   switch (nombre) {
     case "calendario_proximos": {
       const horas = Number.isInteger(args.horas) ? Math.min(Math.max(args.horas, 1), 72) : 24;
       const ahora = Date.now();
-      const mac = leerCalendarioMacAhora(ahora);
-      const url = leerUrlIcal();
-      const ics = url ? await descargarIcal(url) : null;
-      if (!mac?.eventos && !url) {
-        return "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario" });
+      let todos: EventoCalendario[];
+      if (deBrote) {
+        if (!Array.isArray(deBrote.eventos)) return SIN_CALENDARIO;
+        todos = deBrote.eventos;
+      } else {
+        // Brote no está abierto: se lee aquí (el Calendario del Mac solo si este proceso tiene permiso).
+        const mac = await leerCalendarioMac(ahora);
+        const url = leerUrlIcal();
+        const ics = url ? await descargarIcal(url) : null;
+        if (!mac?.eventos && !url) return SIN_CALENDARIO;
+        if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
+        todos = combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null);
       }
-      if (!mac?.eventos && ics === null) return "No pude leer el calendario del usuario (¿sin internet?).";
-      const eventos = proximos(combinar(mac?.eventos ?? null, ics ? eventosDeIcal(ics, ahora) : null), ahora, horas);
+      const eventos = proximos(todos, ahora, horas);
       return JSON.stringify({
         ahora: fechaHora(ahora),
         eventos: eventos.map((e) => ({
@@ -289,6 +296,35 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         })),
       });
     }
+    case "calendario_crear": {
+      const evento = leerNuevoEvento(args);
+      // Lo crea Brote, que tiene el permiso de Calendario; si no está abierto, se intenta aquí.
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario-crear", evento }, { limiteMs: 20_000 });
+      const resultado: ResultadoCreacion = deBrote?.resultado ?? crearEventoMacAhora(evento);
+      const texto = describirCreacion(evento, resultado, Date.now());
+      if (!resultado.ok) throw new ErrorDeUso(texto);
+      return texto;
+    }
+    case "musica_estado": {
+      const estado = await musicaActual();
+      return estado === undefined ? "No pude saber qué suena (en este sistema no se puede, o falta el permiso)." : describirMusica(estado);
+    }
+    case "musica_control": {
+      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
+      const accion = args.accion as AccionMusica;
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-control", accion });
+      let estado: EstadoMusica | null | undefined;
+      let hecho: boolean;
+      if (deBrote) {
+        estado = deBrote.musica ?? null;
+        hecho = deBrote.hecho === true;
+      } else {
+        estado = (await leerMusica())?.estado ?? null;
+        hecho = estado ? await controlarMusica(accion, estado) : false;
+      }
+      if (!estado) return "No hay música abierta (no abro apps de música).";
+      return hecho ? `Hecho: ${accion} en ${estado.app}.` : "No pude controlar la música.";
+    }
     case "programador_sesiones": {
       const sesiones = await pedirSesiones();
       if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
@@ -299,7 +335,36 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
   }
 }
 
-const ESPERAN = new Set(["calendario_proximos", "programador_sesiones"]);
+const ESPERAN = new Set(["calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
+
+/** Los argumentos de `calendario_crear` → el evento, o un error de uso. */
+function leerNuevoEvento(args: any): NuevoEvento {
+  const partes = typeof args.inicio === "string" ? args.inicio.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/) : null;
+  const inicio = partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]), Number(partes[4]), Number(partes[5])) : null;
+  if (!inicio || inicio.getMonth() !== Number(partes![2]) - 1 || inicio.getHours() !== Number(partes![4])) {
+    throw new ErrorDeUso("«inicio» debe ser una fecha y hora válidas: AAAA-MM-DD HH:MM");
+  }
+  if (typeof args.titulo !== "string" || !args.titulo.trim()) throw new ErrorDeUso("Falta «titulo»");
+  const minutos = Number.isInteger(args.minutos) ? args.minutos : 60;
+  if (minutos < 1 || minutos > 1440) throw new ErrorDeUso("«minutos» debe estar entre 1 y 1440");
+  return {
+    titulo: args.titulo.trim().slice(0, 200),
+    lugar: typeof args.lugar === "string" && args.lugar.trim() ? args.lugar.trim().slice(0, 200) : null,
+    inicioMs: inicio.getTime(),
+    finMs: inicio.getTime() + minutos * 60_000,
+  };
+}
+
+const SIN_CALENDARIO =
+  "No hay calendario conectado. El usuario puede conectarlo en Brote: 🌱 → Configurar Brote (Calendario del Mac o la dirección iCal de Google Calendar).";
+
+/** Lo que suena según Brote (que tiene el permiso de Automatización) o, si no está abierto, leído aquí. `undefined` si no se pudo saber. */
+async function musicaActual(): Promise<EstadoMusica | null | undefined> {
+  const deBrote = await pedirAlPuente("/consulta", { tipo: "musica-estado" });
+  if (deBrote) return deBrote.musica ?? null;
+  const lectura = await leerMusica();
+  return lectura ? lectura.estado : undefined;
+}
 
 function usar(gastos: Gastos, nombre: string, args: any): string {
   switch (nombre) {
@@ -399,26 +464,6 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         .filter(Boolean)
         .join("\n");
     }
-    case "calendario_crear": {
-      const partes = typeof args.inicio === "string" ? args.inicio.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/) : null;
-      const inicio = partes ? new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]), Number(partes[4]), Number(partes[5])) : null;
-      if (!inicio || inicio.getMonth() !== Number(partes![2]) - 1 || inicio.getHours() !== Number(partes![4])) {
-        throw new ErrorDeUso("«inicio» debe ser una fecha y hora válidas: AAAA-MM-DD HH:MM");
-      }
-      if (typeof args.titulo !== "string" || !args.titulo.trim()) throw new ErrorDeUso("Falta «titulo»");
-      const minutos = Number.isInteger(args.minutos) ? args.minutos : 60;
-      if (minutos < 1 || minutos > 1440) throw new ErrorDeUso("«minutos» debe estar entre 1 y 1440");
-      const evento = {
-        titulo: args.titulo.trim().slice(0, 200),
-        lugar: typeof args.lugar === "string" && args.lugar.trim() ? args.lugar.trim().slice(0, 200) : null,
-        inicioMs: inicio.getTime(),
-        finMs: inicio.getTime() + minutos * 60_000,
-      };
-      const resultado = crearEventoMacAhora(evento);
-      const texto = describirCreacion(evento, resultado, Date.now());
-      if (!resultado.ok) throw new ErrorDeUso(texto);
-      return texto;
-    }
     case "descargas_recientes": {
       const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 30) : 10;
       const listado = listarCarpeta(carpetaDescargas());
@@ -431,16 +476,6 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
           fecha: new Date(d.fechaMs).toISOString(),
         })),
       });
-    }
-    case "musica_estado": {
-      const lectura = leerMusicaAhora();
-      return lectura ? describirMusica(lectura.estado) : "No pude saber qué suena (en este sistema no se puede, o falta el permiso).";
-    }
-    case "musica_control": {
-      if (!ACCIONES_MUSICA.includes(args.accion)) throw new ErrorDeUso(`«accion» debe ser una de: ${ACCIONES_MUSICA.join(", ")}`);
-      const estado = leerMusicaAhora()?.estado ?? null;
-      if (!estado) return "No hay música abierta (no abro apps de música).";
-      return controlarMusicaAhora(args.accion as AccionMusica, estado) ? `Hecho: ${args.accion} en ${estado.app}.` : "No pude controlar la música.";
     }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {
@@ -458,7 +493,7 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
 
 /**
  * Atiende un mensaje JSON-RPC. Devuelve la respuesta, o `null` si era una notificación. Las
- * herramientas que esperan algo (el calendario) devuelven una promesa de la respuesta.
+ * herramientas que esperan algo (el calendario, la música, el puente) devuelven una promesa de la respuesta.
  */
 export function atender(gastos: Gastos, mensaje: any): object | null | Promise<object> {
   const { id, method, params } = mensaje ?? {};
@@ -483,7 +518,7 @@ export function atender(gastos: Gastos, mensaje: any): object | null | Promise<o
         return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
           (texto) => responder({ content: [{ type: "text", text: texto }] }),
           (error) => {
-            const motivo = error instanceof ErrorDeUso ? error.message : "No pude leer el calendario";
+            const motivo = error instanceof ErrorDeUso ? error.message : "No pude completar la consulta";
             if (!(error instanceof ErrorDeUso)) process.stderr.write(`[gastos] ${String(error)}\n`);
             return responder({ content: [{ type: "text", text: motivo }], isError: true });
           },

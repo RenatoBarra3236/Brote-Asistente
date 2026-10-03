@@ -12,7 +12,7 @@ export { POMODORO, Temporizadores, type AvisoTemporizador, type Fase, type Tempo
 export { describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 export { MedidorCpu, UMBRALES, Vigilante, describirEquipo, formatearBytes, interpretarPs, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados, type Memoria, type Proceso, type Animo, type AvisoEquipo, type Bateria, type LecturaEquipo } from "./sistema.ts";
 export { SeguidorDescargas, carpetaDescargas, describirDescargas, formatearTamano, hace, listarCarpeta, recientes, sePuedeAbrir, vigilarCarpeta, type Descarga, type DescargaEnCurso, type EntradaCarpeta } from "./descargas.ts";
-export { ACCIONES_MUSICA, controlarMusica, controlarMusicaAhora, describirMusica, leerMusica, leerMusicaAhora, tituloCancion, type AccionMusica, type AppMusica, type EstadoMusica, type LecturaMusica } from "./musica.ts";
+export { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, tituloCancion, type AccionMusica, type AppMusica, type EstadoMusica, type LecturaMusica } from "./musica.ts";
 export { type Musica } from "./motor.ts";
 export { AvisadorCalendario, combinar, descargarIcal, etiquetaProximo, eventosDeIcal, leerCalendarioMac, leerCalendarioMacAhora, leerUrlIcal, marcaConfigCalendario, normalizarUrlIcal, proximoEvento, proximos, hora, RUTA_CONFIG_CALENDARIO, crearEventoMacAhora, describirCreacion, validarEvento, type NuevoEvento, type ResultadoCreacion, type EventoCalendario, type LecturaMac } from "./calendario.ts";
-export { RUTA_CONEXION_HOOKS, SesionesClaude, describirHerramienta, describirSesiones, esDeOpenClaw, leerEventoHook, pedirSesiones, type EventoHook, type Reaccion, type SesionClaude } from "./programador.ts";
+export { RUTA_CONEXION_HOOKS, SesionesClaude, describirHerramienta, describirSesiones, esDeOpenClaw, leerEventoHook, pedirAlPuente, pedirSesiones, type EventoHook, type Reaccion, type SesionClaude } from "./programador.ts";

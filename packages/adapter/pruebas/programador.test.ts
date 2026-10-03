@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { esDeOpenClaw, esInteractiva, resumir, salidaPermiso } from "../src/hook.ts";
 import { MARCA, agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks } from "../src/hooks-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "../src/servidor-hooks.ts";
+import { pedirAlPuente } from "@asistente/motor";
 
 const HOOK = fileURLToPath(new URL("../src/hook.ts", import.meta.url));
 const temporales: string[] = [];
@@ -95,6 +96,30 @@ describe("hook de Claude Code", () => {
       assert.equal(otro.status, 401);
       const bien = await fetch(`http://127.0.0.1:${puerto}/sesiones`, { headers: { authorization: `Bearer ${token}` } });
       assert.deepEqual(await bien.json(), { sesiones: [] });
+    } finally {
+      servidor.close();
+    }
+  });
+
+  it("responde las consultas del servidor MCP (música y calendario) solo con el token", async () => {
+    const home = carpeta();
+    const conexion = join(home, ".asistente-prototipo", "hooks.json");
+    const { servidor, puerto, token } = await iniciarServidorHooks({
+      alEvento: () => ({}),
+      sesiones: () => [],
+      consultar: (d: any) => {
+        if (d?.tipo !== "musica-estado") throw new Error("consulta desconocida");
+        return { musica: { app: "Spotify", sonando: true, cancion: "Canción", artista: "Artista" } };
+      },
+    });
+    try {
+      guardarConexion(puerto, token, conexion);
+      assert.equal((await pedirAlPuente("/consulta", { tipo: "musica-estado" }, { conexion })).musica.cancion, "Canción");
+      assert.equal(await pedirAlPuente("/consulta", { tipo: "borrar-todo" }, { conexion }), null);
+      const sinToken = await fetch(`http://127.0.0.1:${puerto}/consulta`, { method: "POST", body: JSON.stringify({ tipo: "musica-estado" }) });
+      assert.equal(sinToken.status, 401);
+      // Sin Brote abierto (no hay archivo de conexión), `null` al tiro.
+      assert.equal(await pedirAlPuente("/consulta", { tipo: "musica-estado" }, { conexion: join(home, "no-existe.json") }), null);
     } finally {
       servidor.close();
     }

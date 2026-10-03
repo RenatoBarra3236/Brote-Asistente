@@ -80,6 +80,8 @@ import {
   eventosDeIcal,
   leerCalendarioMac,
   crearEventoMacAhora,
+  type NuevoEvento,
+  type ResultadoCreacion,
   leerUrlIcal,
   marcaConfigCalendario,
   proximoEvento,
@@ -213,16 +215,19 @@ const motor = new Motor(gastos, {
   sesionesClaude: () => sesionesClaude.visibles(Date.now()),
   // Crear un evento es un pedido del usuario y tarda menos de un segundo: se hace al tiro y después
   // se vuelve a leer el calendario para que aparezca en la isla.
-  crearEvento: (evento) => {
-    const resultado = crearEventoMacAhora(evento);
-    registrar(resultado.ok ? "calendario: evento creado" : `calendario: no pude crear el evento (${resultado.motivo}${resultado.detalle ? `: ${resultado.detalle}` : ""})`);
-    if (resultado.ok) {
-      proximaLecturaMac = 0;
-      void revisarCalendario();
-    }
-    return resultado;
-  },
+  crearEvento: (evento) => crearEvento(evento),
 });
+
+/** Crea un evento en el Calendario del Mac (para el motor y para el MCP) y vuelve a leer el calendario. */
+function crearEvento(evento: NuevoEvento): ResultadoCreacion {
+  const resultado = crearEventoMacAhora(evento);
+  registrar(resultado.ok ? "calendario: evento creado" : `calendario: no pude crear el evento (${resultado.motivo}${resultado.detalle ? `: ${resultado.detalle}` : ""})`);
+  if (resultado.ok) {
+    proximaLecturaMac = 0;
+    void revisarCalendario();
+  }
+  return resultado;
+}
 
 // Modo programador: las sesiones de Claude Code del usuario llegan por sus hooks (hook.ts) a un
 // servidor local con token. Las de OpenClaw (que corren en su carpeta) se ignoran. Un permiso se
@@ -291,7 +296,11 @@ async function alEventoClaude(datos: unknown): Promise<object> {
   });
 }
 setInterval(avisarSesiones, 30_000);
-void iniciarServidorHooks({ alEvento: alEventoClaude, sesiones: () => sesionesClaude.visibles(Date.now()) }).then(
+void iniciarServidorHooks({
+  alEvento: alEventoClaude,
+  sesiones: () => sesionesClaude.visibles(Date.now()),
+  consultar: consultarDelMcp,
+}).then(
   ({ puerto, token }) => {
     guardarConexion(puerto, token);
     registrar(`modo programador escuchando en 127.0.0.1:${puerto}`);
@@ -394,14 +403,45 @@ async function revisarMusica(): Promise<void> {
     leyendoMusica = false;
   }
 }
-async function pedirMusica(accion: AccionMusica): Promise<void> {
-  if (!(await controlarMusica(accion, musica))) registrar(`música: no pude hacer ${accion}`);
+async function pedirMusica(accion: AccionMusica): Promise<boolean> {
+  const hecho = await controlarMusica(accion, musica);
+  if (!hecho) registrar(`música: no pude hacer ${accion}`);
   // La app tarda un momento en cambiar de canción.
   setTimeout(() => void revisarMusica(), 400);
+  return hecho;
 }
 if (process.platform === "darwin" || process.platform === "win32") {
   setInterval(() => void revisarMusica(), process.platform === "win32" ? 5000 : 3000);
   void revisarMusica();
+}
+
+// Consultas del servidor MCP (por el servidor local con token): la música y el calendario se leen
+// aquí, dentro de Brote, que tiene los permisos de macOS; el MCP corre dentro de OpenClaw, sin ellos.
+async function consultarDelMcp(datos: unknown): Promise<object> {
+  const consulta = (datos ?? {}) as { tipo?: unknown; accion?: unknown };
+  switch (consulta.tipo) {
+    case "musica-estado":
+      return { musica };
+    case "musica-control": {
+      if (!ACCIONES_MUSICA.includes(consulta.accion as AccionMusica)) throw new Error("acción inválida");
+      if (!musica) return { hecho: false, musica: null };
+      const estado = musica;
+      return { hecho: await pedirMusica(consulta.accion as AccionMusica), musica: estado };
+    }
+    case "calendario-crear": {
+      const e = (datos as { evento?: Record<string, unknown> }).evento ?? {};
+      const lugar = e.lugar === null || e.lugar === undefined ? null : e.lugar;
+      if (typeof e.titulo !== "string" || typeof e.inicioMs !== "number" || typeof e.finMs !== "number" || (lugar !== null && typeof lugar !== "string")) {
+        throw new Error("evento inválido");
+      }
+      return { resultado: crearEvento({ titulo: e.titulo, lugar, inicioMs: e.inicioMs, finMs: e.finMs }) };
+    }
+    case "calendario":
+      await leerCalendarios();
+      return { eventos: eventosMac === null && icsTexto === null ? null : eventosCalendario() };
+    default:
+      throw new Error("consulta desconocida");
+  }
 }
 
 // Descargas: fs.watch avisa al tiro (agrupando los avisos seguidos) y cada 4 s se revisa igual,

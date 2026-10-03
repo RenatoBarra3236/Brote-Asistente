@@ -49,6 +49,28 @@ export interface EstadoCalendario {
   etiqueta: string | null;
 }
 
+/** Una sesión de Claude Code del usuario (modo programador). */
+export interface SesionClaude {
+  id: string;
+  proyecto: string;
+  estado: "pensando" | "trabajando" | "permiso" | "esperando" | "lista" | "error";
+  actividad: string;
+  ultimaActividadMs: number;
+}
+
+/** Un permiso que pide una sesión de Claude Code y se puede responder desde la isla. */
+export interface PermisoClaude {
+  id: string;
+  proyecto: string;
+  titulo: string;
+  detalle: string;
+}
+
+export interface EstadoProgramador {
+  sesiones: SesionClaude[];
+  permisos: PermisoClaude[];
+}
+
 export type AccionMusica = "play-pausa" | "play" | "pausa" | "siguiente" | "anterior";
 
 /** El ánimo de Brote según el computador (batería baja, CPU alta). */
@@ -72,6 +94,8 @@ type Aviso =
   | { tipo: "musica"; estado: EstadoMusica | null }
   | ({ tipo: "calendario" } & EstadoCalendario)
   | { tipo: "calendario-aviso"; texto: string }
+  | ({ tipo: "programador" } & EstadoProgramador)
+  | { tipo: "programador-reaccion"; reaccion: "termino" | "fallo"; proyecto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -104,6 +128,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
+  private readonly oyentesReaccion = new Set<(reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -190,6 +216,22 @@ export class TransportePuente implements Transporte {
   alAvisoCalendario(oyente: (texto: string) => void): () => void {
     this.oyentesAvisoCalendario.add(oyente);
     return () => this.oyentesAvisoCalendario.delete(oyente);
+  }
+
+  /** Las sesiones de Claude Code y sus permisos pendientes, cada vez que cambian. */
+  alCambiarProgramador(oyente: (estado: EstadoProgramador) => void): () => void {
+    this.oyentesProgramador.add(oyente);
+    return () => this.oyentesProgramador.delete(oyente);
+  }
+
+  /** Cuando una sesión de Claude Code termina su turno (o falla). */
+  alReaccionProgramador(oyente: (reaccion: { reaccion: "termino" | "fallo"; proyecto: string }) => void): () => void {
+    this.oyentesReaccion.add(oyente);
+    return () => this.oyentesReaccion.delete(oyente);
+  }
+
+  async decidirPermisoClaude(id: string, decision: "allow" | "deny"): Promise<void> {
+    await this.pedir({ tipo: "programador-decidir", permiso: id, decision });
   }
 
   async controlarMusica(accion: AccionMusica): Promise<void> {
@@ -286,6 +328,12 @@ export class TransportePuente implements Transporte {
         return;
       case "calendario-aviso":
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
+        return;
+      case "programador":
+        for (const oyente of this.oyentesProgramador) oyente({ sesiones: aviso.sesiones, permisos: aviso.permisos });
+        return;
+      case "programador-reaccion":
+        for (const oyente of this.oyentesReaccion) oyente({ reaccion: aviso.reaccion, proyecto: aviso.proyecto });
         return;
       case "musica":
         for (const oyente of this.oyentesMusica) oyente(aviso.estado);

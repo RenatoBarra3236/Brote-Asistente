@@ -9,6 +9,7 @@ import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
 import { describirDia, describirProximo, type EventoCalendario } from "./calendario.ts";
+import { describirSesiones, type SesionClaude } from "./programador.ts";
 import { describirMusica, respuestaControl, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
@@ -42,7 +43,8 @@ export type Accion =
   | { intencion: "abrir-ultima-descarga" }
   | { intencion: "mostrar-ultima-descarga" }
   | { intencion: "musica-pausa" | "musica-play" | "musica-siguiente" | "musica-anterior" | "musica-estado" }
-  | { intencion: "calendario-hoy" | "calendario-manana" | "calendario-proximo" };
+  | { intencion: "calendario-hoy" | "calendario-manana" | "calendario-proximo" }
+  | { intencion: "programador-sesiones" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -88,6 +90,7 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "calendario-hoy":
     case "calendario-manana":
     case "calendario-proximo":
+    case "programador-sesiones":
       return { intencion };
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
@@ -111,6 +114,7 @@ export class Motor {
   private readonly descargas: (() => Descarga[] | null) | null;
   private readonly musica: Musica | null;
   private readonly calendario: (() => EventoCalendario[] | null) | null;
+  private readonly sesionesClaude: (() => SesionClaude[]) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -127,8 +131,11 @@ export class Motor {
       musica?: Musica;
       /** Los eventos de hoy a pasado mañana (`null` si no hay calendario configurado o sin permiso). */
       calendario?: () => EventoCalendario[] | null;
+      /** Las sesiones de Claude Code que se ven por los hooks (modo programador). */
+      sesionesClaude?: () => SesionClaude[];
     } = {},
   ) {
+    this.sesionesClaude = opciones.sesionesClaude ?? null;
     this.calendario = opciones.calendario ?? null;
     this.musica = opciones.musica ?? null;
     this.descargas = opciones.descargas ?? null;
@@ -156,6 +163,10 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (accion.intencion === "programador-sesiones") {
+      if (!this.sesionesClaude) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
+    }
     if (accion.intencion.startsWith("calendario-")) {
       if (!this.calendario) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.agenda(accion.intencion) };

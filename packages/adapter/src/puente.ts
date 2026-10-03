@@ -50,11 +50,18 @@
 //   aviso { "tipo": "calendario-aviso", "texto": "📅 En 10 min: Cálculo…" }
 //   pedido { "tipo": "calendario-estado" }   → "datos": { proximo, etiqueta }
 //
+// Modo programador (sesiones de Claude Code del usuario, por sus hooks; servidor-hooks.ts):
+//   aviso { "tipo": "programador", "sesiones": [...], "permisos": [{ id, proyecto, titulo, detalle }] }   cuando cambian
+//   aviso { "tipo": "programador-reaccion", "reaccion": "termino" | "fallo", "proyecto": "…" }
+//   pedido { "tipo": "programador-decidir", "permiso": "…", "decision": "allow" | "deny" }
+//   pedido { "tipo": "programador-estado" }   → "datos": { sesiones, permisos }
+//
 // Cada mensaje pasa primero por el motor de comandos (sin IA): si calza con una plantilla,
 // se responde aquí mismo con `local` y no llega al agente. Funciona aunque OpenClaw no esté.
 //
 // Al cerrarse la entrada (la app terminó), el puente se desconecta y sale.
 
+import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import {
   Gastos,
@@ -62,6 +69,10 @@ import {
   PLANTILLAS_BASE,
   MedidorCpu,
   ACCIONES_MUSICA,
+  SesionesClaude,
+  describirHerramienta,
+  esDeOpenClaw,
+  leerEventoHook,
   AvisadorCalendario,
   combinar,
   descargarIcal,
@@ -110,6 +121,8 @@ import {
 } from "./conexion.ts";
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { esDeMemoria } from "./permisos.ts";
+import { CARPETA_OPENCLAW, WORKSPACE } from "./rutas.ts";
+import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
 const IGNORADOS = new Set(["tick", "health", "presence", "heartbeat", "cron"]);
@@ -196,7 +209,83 @@ const motor = new Motor(gastos, {
   },
   musica: { estado: () => musica, controlar: (accion) => void pedirMusica(accion) },
   calendario: () => (eventosMac === null && icsTexto === null ? null : eventosCalendario()),
+  sesionesClaude: () => sesionesClaude.visibles(Date.now()),
 });
+
+// Modo programador: las sesiones de Claude Code del usuario llegan por sus hooks (hook.ts) a un
+// servidor local con token. Las de OpenClaw (que corren en su carpeta) se ignoran. Un permiso se
+// muestra en la isla y el hook espera la respuesta; si el usuario contesta en la terminal (llega otro
+// evento de esa sesión) o nadie contesta en 45 s, se suelta sin decisión y todo sigue como siempre.
+const sesionesClaude = new SesionesClaude();
+const CARPETAS_OPENCLAW = [CARPETA_OPENCLAW, WORKSPACE];
+const ESPERA_PERMISO_CLAUDE_MS = 45_000;
+interface PermisoClaude {
+  id: string;
+  sesion: string;
+  proyecto: string;
+  titulo: string;
+  detalle: string;
+  soltar: (respuesta: object) => void;
+}
+const permisosClaude = new Map<string, PermisoClaude>();
+let ultimasSesiones = "";
+function estadoProgramador() {
+  return {
+    sesiones: sesionesClaude.visibles(Date.now()),
+    permisos: [...permisosClaude.values()].map(({ id, proyecto, titulo, detalle }) => ({ id, proyecto, titulo, detalle })),
+  };
+}
+function avisarSesiones(): void {
+  const estado = estadoProgramador();
+  const texto = JSON.stringify(estado);
+  if (texto === ultimasSesiones) return;
+  ultimasSesiones = texto;
+  avisar({ tipo: "programador", ...estado });
+}
+function soltarPermisos(sesion: string): void {
+  for (const permiso of permisosClaude.values()) if (permiso.sesion === sesion) permiso.soltar({});
+}
+async function alEventoClaude(datos: unknown): Promise<object> {
+  const evento = leerEventoHook(datos);
+  if (!evento || esDeOpenClaw(evento.cwd, CARPETAS_OPENCLAW)) return {};
+  // Otro evento de la sesión (no la notificación del mismo permiso) = el permiso ya se respondió.
+  if (evento.evento !== "PermissionRequest" && evento.evento !== "Notification") soltarPermisos(evento.sesion);
+  const reaccion = sesionesClaude.aplicar(evento, Date.now());
+  if (reaccion) avisar({ tipo: "programador-reaccion", reaccion, proyecto: sesionesClaude.visibles(Date.now()).find((s) => s.id === evento.sesion)?.proyecto ?? "" });
+  if (evento.evento !== "PermissionRequest" || !evento.interactiva) {
+    avisarSesiones();
+    return {};
+  }
+  const proyecto = sesionesClaude.visibles(Date.now()).find((s) => s.id === evento.sesion)?.proyecto ?? "Claude Code";
+  return new Promise((listo) => {
+    const id = randomUUID();
+    const plazo = setTimeout(() => permiso.soltar({}), ESPERA_PERMISO_CLAUDE_MS);
+    const permiso: PermisoClaude = {
+      id,
+      sesion: evento.sesion,
+      proyecto,
+      titulo: `${proyecto}: ${describirHerramienta(evento.herramienta, evento.entrada).replace(/…$/, "")}`,
+      detalle: evento.entrada?.comando ?? evento.entrada?.archivo ?? evento.entrada?.url ?? evento.herramienta ?? "",
+      soltar: (respuesta) => {
+        clearTimeout(plazo);
+        if (!permisosClaude.delete(id)) return;
+        listo(respuesta);
+        avisarSesiones();
+      },
+    };
+    permisosClaude.set(id, permiso);
+    registrar(`claude code pide permiso (${evento.herramienta ?? "?"})`);
+    avisarSesiones();
+  });
+}
+setInterval(avisarSesiones, 30_000);
+void iniciarServidorHooks({ alEvento: alEventoClaude, sesiones: () => sesionesClaude.visibles(Date.now()) }).then(
+  ({ puerto, token }) => {
+    guardarConexion(puerto, token);
+    registrar(`modo programador escuchando en 127.0.0.1:${puerto}`);
+  },
+  (error) => registrar(`no pude abrir el servidor del modo programador: ${mensajeDe(error)}`),
+);
 
 // Calendario: el del Mac se lee cada 5 min (nunca pide permiso aquí: eso es en "Configurar
 // Brote"); el iCal cada 15 min, o al tiro si cambió la configuración. Cada 30 s se revisa si toca
@@ -604,6 +693,16 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: musica };
     case "calendario-estado":
       return { datos: estadoCalendario() };
+    case "programador-estado":
+      return { datos: estadoProgramador() };
+    case "programador-decidir": {
+      const permiso = typeof pedido.permiso === "string" ? permisosClaude.get(pedido.permiso) : undefined;
+      if (pedido.decision !== "allow" && pedido.decision !== "deny") break;
+      if (!permiso) throw new Error("Ese permiso ya se respondió en la terminal");
+      registrar(`permiso de claude code: ${pedido.decision}`);
+      permiso.soltar({ decision: pedido.decision });
+      return {};
+    }
     case "descargas-listar": {
       const listado = listarCarpeta(CARPETA_DESCARGAS);
       return { datos: listado ? recientes(listado, CARPETA_DESCARGAS) : [] };

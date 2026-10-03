@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal } from "@asistente/motor";
+import { agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks, rutaSettings } from "./hooks-claude.ts";
 import { CONFIG_OPENCLAW } from "./rutas.ts";
 
 /** La versión de OpenClaw con la que se probó Brote (ver CLAUDE.md). */
@@ -31,7 +32,7 @@ export type Estado = "ok" | "falta" | "opcional";
  *   enlace:     hay que instalar algo a mano desde una página oficial
  */
 export type Accion =
-  | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean }
+  | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean; textoConsentimiento?: string }
   | { tipo: "terminal"; etiqueta: string; terminal: "login-claude" | "memoria-local" }
   | { tipo: "enlace"; etiqueta: string; enlace: "node" | "claude-code" | "privacidad-calendarios" }
   /** La dirección iCal secreta: la ventana muestra un campo y Rust la guarda (con permisos 600). */
@@ -43,6 +44,8 @@ export interface Paso {
   estado: Estado;
   detalle: string;
   accion?: Accion;
+  /** Un segundo botón para deshacer el paso (por ejemplo, desinstalar los hooks). */
+  quitar?: { paso: string; etiqueta: string };
 }
 
 /** Dónde quedan los archivos que OpenClaw usa de Brote (el servidor de gastos), fuera de la app. */
@@ -53,7 +56,7 @@ const CARPETA_APP = join(homedir(), ".asistente-prototipo", "app");
  * `mcp` son los archivos del servidor de gastos que hay que copiar fuera de la app (vacío en
  * desarrollo, donde se registra el `.ts` del repo tal cual porque importa otros módulos).
  */
-function recursos(): { mcp: string[]; servidor: string; skill: string; plantillas: string } {
+function recursos(): { mcp: string[]; servidor: string; skill: string; plantillas: string; hook: { origen: string | null; destino: string } } {
   const aqui = dirname(fileURLToPath(import.meta.url));
   if (existsSync(join(aqui, "mcp.mjs"))) {
     return {
@@ -62,6 +65,7 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
       servidor: join(CARPETA_APP, "mcp.mjs"),
       skill: join(aqui, "skill", "gastos"),
       plantillas: join(aqui, "plantillas"),
+      hook: { origen: join(aqui, "hook.mjs"), destino: join(CARPETA_APP, "hook.mjs") },
     };
   }
   const repo = join(aqui, "..", "..", "..");
@@ -70,6 +74,8 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
     servidor: join(repo, "packages", "motor", "src", "mcp.ts"),
     skill: join(repo, "packages", "motor", "skill", "gastos"),
     plantillas: join(repo, "packages", "adapter", "plantillas"),
+    // En desarrollo se usa el .ts del repo tal cual (Node lo corre sin compilar).
+    hook: { origen: null, destino: join(repo, "packages", "adapter", "src", "hook.ts") },
   };
 }
 
@@ -322,6 +328,37 @@ export async function revisarOpcionales(): Promise<Paso[]> {
             : { tipo: "enlace", etiqueta: "Abrir Privacidad", enlace: "privacidad-calendarios" },
     });
   }
+  let settings: any = null;
+  let errorSettings: string | null = null;
+  try {
+    settings = leerSettings();
+  } catch (error) {
+    errorSettings = (error as Error).message;
+  }
+  const conHooks = settings !== null && hooksInstalados(settings);
+  pasos.push({
+    id: "programador",
+    titulo: "Modo programador (opcional)",
+    estado: conHooks ? "ok" : "opcional",
+    detalle: errorSettings
+      ? errorSettings
+      : conHooks
+        ? "Brote muestra tus sesiones de Claude Code en vivo y te deja responder sus permisos desde la isla."
+        : "Si programas con Claude Code, Brote muestra en la isla qué está haciendo cada sesión (\"Editando lib.rs…\"), celebra cuando termina y te deja responder sus permisos.",
+    accion:
+      conHooks || errorSettings
+        ? undefined
+        : {
+            tipo: "automatica",
+            etiqueta: "Instalar",
+            requiereConsentimiento: true,
+            textoConsentimiento:
+              ` Acepto que Brote agregue sus hooks a mi configuración de Claude Code (${rutaSettings()}). Se respalda el archivo, ` +
+              "no se tocan mis otros hooks, no se leen mis credenciales ni el texto de mis mensajes, y puedo desinstalarlo cuando quiera.",
+          },
+    quitar: conHooks ? { paso: "programador-quitar", etiqueta: "Desinstalar" } : undefined,
+  });
+
   const url = leerUrlIcal();
   let detalle = "Pega la «dirección secreta en formato iCal» de Google Calendar (Configuración → tu calendario → Integrar el calendario). Queda solo en este computador.";
   let estado: Estado = "opcional";
@@ -469,6 +506,21 @@ export function aplicar(id: string): string {
       );
       return "Tus gastos quedaron conectados con el agente.";
     }
+    case "programador": {
+      const { hook } = recursos();
+      if (hook.origen) {
+        mkdirSync(CARPETA_APP, { recursive: true });
+        copyFileSync(hook.origen, hook.destino);
+      }
+      const respaldo = escribirSettings(agregarHooks(leerSettings(), comandoHook(process.execPath, hook.destino)));
+      return `Modo programador instalado. ${respaldo ? `Respaldé tu configuración en ${respaldo}. ` : ""}Las sesiones nuevas de Claude Code ya aparecen en la isla.`;
+    }
+    case "programador-quitar": {
+      const actual = leerSettings();
+      if (!hooksInstalados(actual) && JSON.stringify(quitarHooks(actual)) === JSON.stringify(actual)) return "El modo programador no estaba instalado.";
+      const respaldo = escribirSettings(quitarHooks(actual));
+      return `Desinstalé los hooks de Brote; tus otros hooks quedaron igual.${respaldo ? ` Respaldo: ${respaldo}` : ""}`;
+    }
     case "calendario-mac": {
       const lectura = leerCalendarioMacAhora(Date.now(), true);
       if (lectura?.permiso !== 3) throw new Error("Brote no quedó con acceso al Calendario. Puedes activarlo en Privacidad y seguridad → Calendarios.");
@@ -486,7 +538,7 @@ export function aplicar(id: string): string {
 // ---------------------------------------------------------------- línea de comandos
 
 /** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
-const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac"];
+const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac", "programador", "programador-quitar"];
 
 if (import.meta.main) {
   const [orden, paso] = process.argv.slice(2);

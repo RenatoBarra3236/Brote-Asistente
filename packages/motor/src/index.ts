@@ -15,3 +15,4 @@ export { SeguidorDescargas, carpetaDescargas, describirDescargas, formatearTaman
 export { ACCIONES_MUSICA, controlarMusica, controlarMusicaAhora, describirMusica, leerMusica, leerMusicaAhora, tituloCancion, type AccionMusica, type AppMusica, type EstadoMusica, type LecturaMusica } from "./musica.ts";
 export { type Musica } from "./motor.ts";
 export { AvisadorCalendario, combinar, descargarIcal, etiquetaProximo, eventosDeIcal, leerCalendarioMac, leerCalendarioMacAhora, leerUrlIcal, marcaConfigCalendario, normalizarUrlIcal, proximoEvento, proximos, hora, RUTA_CONFIG_CALENDARIO, type EventoCalendario, type LecturaMac } from "./calendario.ts";
+export { RUTA_CONEXION_HOOKS, SesionesClaude, describirHerramienta, describirSesiones, esDeOpenClaw, leerEventoHook, pedirSesiones, type EventoHook, type Reaccion, type SesionClaude } from "./programador.ts";

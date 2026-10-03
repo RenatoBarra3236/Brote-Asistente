@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 type Estado = "ok" | "falta" | "opcional";
 
 type Accion =
-  | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean }
+  | { tipo: "automatica"; etiqueta: string; requiereConsentimiento?: boolean; textoConsentimiento?: string }
   | { tipo: "terminal"; etiqueta: string; terminal: string }
   | { tipo: "enlace"; etiqueta: string; enlace: string }
   | { tipo: "ical"; etiqueta: string; configurada: boolean };
@@ -18,6 +18,7 @@ interface Paso {
   estado: Estado;
   detalle: string;
   accion?: Accion;
+  quitar?: { paso: string; etiqueta: string };
 }
 
 const ICONOS: Record<Estado, string> = { ok: "✅", falta: "⚠️", opcional: "○" };
@@ -33,8 +34,10 @@ const empezar = document.querySelector<HTMLButtonElement>("#empezar")!;
 
 let pasos: Paso[] = [];
 let ocupado = false;
-/** El usuario aceptó que OpenClaw se configure (requisito del paso "agente"). */
-let consentimiento = false;
+/** Los pasos que el usuario aceptó explícitamente (configurar OpenClaw, instalar el modo programador…). */
+const consentimientos = new Set<string>();
+const TEXTO_CONSENTIMIENTO =
+  " Entiendo que OpenClaw podrá usar este computador para ayudarme, y que Brote me pedirá permiso antes de ejecutar comandos.";
 /** Lo escrito en el campo de la dirección iCal (sobrevive a que la ventana se vuelva a pintar). */
 let borradorIcal = "";
 
@@ -56,7 +59,7 @@ function mensajeDe(error: unknown): string {
 }
 
 function puedeAutomatico(paso: Paso): boolean {
-  return paso.estado === "falta" && paso.accion?.tipo === "automatica" && (!paso.accion.requiereConsentimiento || consentimiento);
+  return paso.estado === "falta" && paso.accion?.tipo === "automatica" && (!paso.accion.requiereConsentimiento || consentimientos.has(paso.id));
 }
 
 function pintar(): void {
@@ -72,6 +75,16 @@ function pintar(): void {
       cabeza.append(crear("h3", undefined, `${ICONOS[paso.estado]}  ${paso.titulo}`));
       tarjeta.append(cabeza, crear("p", "tarjeta-texto", paso.detalle));
 
+      if (paso.quitar) {
+        const quitar = paso.quitar;
+        const botones = crear("div", "botones");
+        const boton = crear("button", "boton", quitar.etiqueta);
+        boton.type = "button";
+        boton.disabled = ocupado;
+        boton.addEventListener("click", () => void deshacer(paso.titulo, quitar.paso));
+        botones.append(boton);
+        tarjeta.append(botones);
+      }
       const accion = paso.accion;
       if (!accion) return tarjeta;
       if (accion.tipo === "ical") {
@@ -83,23 +96,19 @@ function pintar(): void {
         const etiqueta = crear("label", "consentimiento");
         const casilla = crear("input");
         casilla.type = "checkbox";
-        casilla.checked = consentimiento;
+        casilla.checked = consentimientos.has(paso.id);
         casilla.addEventListener("change", () => {
-          consentimiento = casilla.checked;
+          if (casilla.checked) consentimientos.add(paso.id);
+          else consentimientos.delete(paso.id);
           aviso.hidden = true;
           pintar();
         });
-        etiqueta.append(
-          casilla,
-          document.createTextNode(
-            " Entiendo que OpenClaw podrá usar este computador para ayudarme, y que Brote me pedirá permiso antes de ejecutar comandos.",
-          ),
-        );
+        etiqueta.append(casilla, document.createTextNode(accion.textoConsentimiento ?? TEXTO_CONSENTIMIENTO));
         tarjeta.append(etiqueta);
       }
       const boton = crear("button", "boton boton-primario", accion.etiqueta);
       boton.type = "button";
-      boton.disabled = ocupado || (accion.tipo === "automatica" && accion.requiereConsentimiento === true && !consentimiento);
+      boton.disabled = ocupado || (accion.tipo === "automatica" && accion.requiereConsentimiento === true && !consentimientos.has(paso.id));
       boton.addEventListener("click", () => void actuar(paso));
       botones.append(boton);
       tarjeta.append(botones);
@@ -181,6 +190,20 @@ async function aplicar(paso: Paso): Promise<boolean> {
   return resultado.ok;
 }
 
+/** El segundo botón de un paso (por ejemplo, desinstalar el modo programador). */
+async function deshacer(titulo: string, id: string): Promise<void> {
+  ocupado = true;
+  pintar();
+  try {
+    await aplicar({ id, titulo, estado: "ok", detalle: "" });
+  } catch (error) {
+    mostrarAviso(`${titulo}: ${mensajeDe(error)}`, true);
+  } finally {
+    ocupado = false;
+  }
+  await revisar();
+}
+
 async function actuar(paso: Paso): Promise<void> {
   const accion = paso.accion;
   if (!accion) return;
@@ -209,7 +232,7 @@ async function actuar(paso: Paso): Promise<void> {
 todoBoton.addEventListener("click", async () => {
   // Configurar OpenClaw necesita el consentimiento explícito: se avisa en vez de no hacer nada.
   const sinConsentimiento = pasos.find(
-    (p) => p.estado === "falta" && p.accion?.tipo === "automatica" && p.accion.requiereConsentimiento && !consentimiento,
+    (p) => p.estado === "falta" && p.accion?.tipo === "automatica" && p.accion.requiereConsentimiento && !consentimientos.has(p.id),
   );
   if (sinConsentimiento && !pasos.some(puedeAutomatico)) {
     mostrarAviso("Primero marca la casilla de «Agente de OpenClaw» para aceptar que se configure.", true);

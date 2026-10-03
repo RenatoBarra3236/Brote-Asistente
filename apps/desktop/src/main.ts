@@ -8,6 +8,7 @@ import {
   type DescargaEnCurso,
   type EstadoCalendario,
   type EstadoMusica,
+  type EstadoProgramador,
   type TemporizadorActivo,
 } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
@@ -89,6 +90,8 @@ async function iniciar(): Promise<void> {
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
+          alDecidirPermisoClaude: (id, decision) =>
+            void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
       : {}),
   });
@@ -99,6 +102,9 @@ async function iniciar(): Promise<void> {
   let descargasEnCurso: DescargaEnCurso[] = [];
   let musica: EstadoMusica | null = null;
   let proximoEvento: EstadoCalendario["proximo"] = null;
+  let programador: EstadoProgramador = { sesiones: [], permisos: [] };
+  /** Si el estado actual de Brote lo puso el modo programador (y no su propio agente). */
+  let porProgramador = false;
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
@@ -141,6 +147,37 @@ async function iniciar(): Promise<void> {
       personaje.tocar();
     });
 
+    // Modo programador: las sesiones de Claude Code del usuario. Brote trabaja mientras ellas
+    // trabajan (si no está ocupado con su propio agente) y celebra cuando una termina.
+    const cambiarProgramador = (estado: EstadoProgramador) => {
+      programador = estado;
+      panel.mostrarProgramador(estado);
+    };
+    puente.alCambiarProgramador(cambiarProgramador);
+    void puente.consultar<EstadoProgramador>({ tipo: "programador-estado" }).then(cambiarProgramador, () => {});
+    puente.alReaccionProgramador(({ reaccion, proyecto }) => {
+      porProgramador = false;
+      if (reaccion === "termino") {
+        if (agente.conversacion.estado === "reposo") personaje.setEstado("listo");
+        panel.mostrarAviso(`✅ Claude Code terminó${proyecto ? ` en ${proyecto}` : ""}`);
+      } else {
+        personaje.tocar();
+        panel.mostrarAviso(`⚠️ Claude Code se detuvo por un error${proyecto ? ` en ${proyecto}` : ""}`);
+      }
+    });
+    setInterval(() => {
+      if (agente.conversacion.estado !== "reposo") return;
+      const trabajando = programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando");
+      const deseado = programador.permisos.length > 0 ? "pidiendo-permiso" : trabajando ? "trabajando" : null;
+      if (deseado && (personaje.estado === "reposo" || porProgramador) && personaje.estado !== deseado) {
+        personaje.setEstado(deseado);
+        porProgramador = true;
+      } else if (!deseado && porProgramador) {
+        porProgramador = false;
+        if (personaje.estado !== "listo") personaje.setEstado("reposo");
+      }
+    }, 500);
+
     // Descargas: las que van en curso y, por un minuto, las que terminaron (con su botón "Mostrar").
     let listas: { descarga: Descarga; hasta: number }[] = [];
     const pintarDescargas = () => {
@@ -172,6 +209,7 @@ async function iniciar(): Promise<void> {
   agente.alCambiar((c) => {
     if (c.estado === estadoAgente) return;
     estadoAgente = c.estado;
+    porProgramador = false;
     personaje.setEstado(c.estado);
     clearTimeout(temporizadorError);
     if (c.estado === "error") {
@@ -270,7 +308,8 @@ async function iniciar(): Promise<void> {
       relojPrincipal(temporizadores) ??
       (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
       relojCalendario(proximoEvento) ??
-      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null);
+      (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)" } : null) ??
+      (programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando") ? { texto: "⌨", color: "rgb(122, 178, 255)" } : null);
     ctx.clearRect(0, 0, W, H);
     const activo = personaje.estado !== "reposo" || panel.retieneIsla(ahora);
     if (isla) {

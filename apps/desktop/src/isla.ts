@@ -14,7 +14,7 @@ const ALA = 1.6;
 const OREJA = 8;
 /** Cuánto sigue abierta la isla después de que el cursor se va y el agente queda en reposo. */
 const ESPERA_CIERRE = 0.8;
-/** Ancho preferido de la isla abierta. La ventana del notch mide 440 × 220 (lib.rs). */
+/** Ancho preferido de la isla abierta. La ventana del notch mide 440 × 300 (lib.rs). */
 const ANCHO_ABIERTA = 400;
 /** Alto mínimo de la isla abierta bajo el notch: lo que ocupa el personaje. */
 const ALTO_PERSONAJE = 110;

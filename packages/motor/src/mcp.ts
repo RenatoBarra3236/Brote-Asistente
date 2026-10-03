@@ -23,6 +23,7 @@ import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
 import { combinar, descargarIcal, eventosDeIcal, leerCalendarioMacAhora, leerUrlIcal, proximos } from "./calendario.ts";
+import { describirSesiones, pedirSesiones, type SesionClaude } from "./programador.ts";
 import { ACCIONES_MUSICA, controlarMusicaAhora, describirMusica, leerMusicaAhora, type AccionMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
@@ -174,6 +175,14 @@ const HERRAMIENTAS = [
     annotations: { title: "Calendario: próximos eventos", readOnlyHint: true },
   },
   {
+    name: "programador_sesiones",
+    description:
+      "Las sesiones de Claude Code que el usuario tiene abiertas en su computador (no la tuya): proyecto y qué está " +
+      "haciendo cada una (\"Editando lib.rs…\", \"Esperando tu respuesta\"). Solo funciona si instaló el modo programador de Brote.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Sesiones de Claude Code", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -261,12 +270,17 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         })),
       });
     }
+    case "programador_sesiones": {
+      const sesiones = await pedirSesiones();
+      if (!sesiones) return "No veo las sesiones: Brote no está abierto o el modo programador no está instalado (🌱 → Configurar Brote).";
+      return describirSesiones(sesiones as SesionClaude[]);
+    }
     default:
       throw new ErrorDeUso(`Herramienta desconocida: ${nombre}`);
   }
 }
 
-const ESPERAN = new Set(["calendario_proximos"]);
+const ESPERAN = new Set(["calendario_proximos", "programador_sesiones"]);
 
 function usar(gastos: Gastos, nombre: string, args: any): string {
   switch (nombre) {

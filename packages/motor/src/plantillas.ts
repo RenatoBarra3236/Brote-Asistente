@@ -36,7 +36,8 @@ export type Intencion =
   | "musica-estado"
   | "calendario-hoy"
   | "calendario-manana"
-  | "calendario-proximo";
+  | "calendario-proximo"
+  | "programador-sesiones";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo";
 
@@ -193,6 +194,7 @@ const DETENER = "para|parar|deten|detener|cancela|cancelar|termina|terminar|apag
 const VERBO_GASTO = "gaste|gasto|gastamos|pague|pago|compre|me gaste|me compre";
 const ABRIR = "abre|abreme|abrir|abri";
 const MOSTRAR = "muestrame|muestra|mostrar|ensename|donde esta|donde quedo";
+const CLAUDE = "claude|claude code|mis claude|las sesiones de claude|mis sesiones";
 const AGENDA = "agenda|calendario|horario";
 const ACTIVIDADES = "clases|clase|pruebas|prueba|reuniones|reunion|eventos|evento|ayudantias|ayudantia";
 const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
@@ -279,4 +281,7 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "calendario-manana-que", intencion: "calendario-manana", patron: `(que|cuales) (${ACTIVIDADES}) tengo manana` },
   { id: "calendario-proximo", intencion: "calendario-proximo", patron: `[(cual es|cuando es|a que hora es|donde es)] [mi|la] (proxima|siguiente) (${ACTIVIDAD})` },
   { id: "calendario-proximo-que", intencion: "calendario-proximo", patron: "que (viene|sigue|tengo) ahora" },
+  { id: "programador-que-hace", intencion: "programador-sesiones", patron: `(que|en que) (esta haciendo|hace|anda|esta) (${CLAUDE})` },
+  { id: "programador-como-va", intencion: "programador-sesiones", patron: `como (va|van|anda|andan) (${CLAUDE})` },
+  { id: "programador-sesiones", intencion: "programador-sesiones", patron: `[(muestrame|ver)] [mis] sesiones de (${CLAUDE})` },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

@@ -52,6 +52,21 @@ body {
   display: none !important;
 }
 
+/* Las filas de estado: se encogen y hacen scroll antes que el campo de texto. */
+.estado {
+  flex: 0 3 auto;
+  min-height: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.estado:empty,
+.estado:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
 /* Temporizadores y pomodoro. */
 .temporizadores {
   flex: none;
@@ -375,4 +390,31 @@ body {
   background: rgba(122, 178, 255, 0.2);
   color: rgb(190, 215, 255);
   font-weight: 600;
+}
+/* Modo programador: sesiones de Claude Code. */
+.sesion .fila-nombre {
+  flex: 0 1 auto;
+  max-width: 45%;
+  font-weight: 600;
+}
+.fila-actividad {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.65);
+}
+.sesion.trabajando,
+.sesion.pensando {
+  background: rgba(77, 158, 255, 0.16);
+}
+.sesion.permiso {
+  background: rgba(255, 176, 33, 0.16);
+}
+.sesion.lista .fila-actividad {
+  color: rgb(132, 226, 160);
+}
+.sesion.error .fila-actividad {
+  color: rgb(255, 138, 128);
 }

@@ -74,6 +74,19 @@ Prueba decirle:
 | `mis descargas` · `abre la última descarga` · `muéstrame la última descarga` | Tus últimas descargas, sin IA ⚡. Mientras algo se descarga, la isla dice "📥 Descargando…" y al terminar "Lista ✓" con un botón **Mostrar**. Solo abre documentos (PDF, Word, imágenes…): un programa o instalador te lo muestra en el Finder / Explorador, nunca lo ejecuta |
 | `pausa la música` · `siguiente canción` · `pon la anterior` · `¿qué está sonando?` | Controla Spotify o Música (en Mac) o el reproductor que estés usando (en Windows), sin IA ⚡. La isla muestra "♪ canción — artista" con ⏮ ⏯ ⏭ y Brote se balancea mientras suena. **Nunca abre una app de música**: si no hay ninguna abierta, te lo dice |
 | `¿qué tengo hoy?` · `¿qué tengo mañana?` · `¿cuál es mi próxima clase?` | Tu calendario, sin IA ⚡. La isla muestra "📅 Cálculo en 25 min" y Brote te avisa 10 minutos antes de cada evento. Hay que conectarlo primero (abajo) |
+| `¿qué está haciendo Claude?` · `¿cómo va Claude Code?` | Si programas con Claude Code y activaste el **modo programador** (abajo): tus sesiones en vivo, sin IA ⚡ |
+
+### Modo programador (opcional)
+
+Si usas [Claude Code](https://claude.com/claude-code) para programar, Brote puede mostrar en la isla tus sesiones en vivo ("⌨️ tarea-rust · Editando lib.rs…"), trabajar mientras ellas trabajan y celebrar cuando terminan. Cuando una sesión pide permiso, puedes responder en la terminal como siempre **o** con **Permitir / Rechazar** en la isla; si no respondes en la isla, todo sigue igual que antes.
+
+Para activarlo: 🌱 → **Configurar Brote** → **Modo programador** → marca la casilla y pulsa **Instalar**. Brote agrega sus "hooks" (avisos oficiales de Claude Code) a `~/.claude/settings.json`:
+
+- Antes guarda una copia del archivo (`settings.json.brote-<fecha>.bak`) y no toca tus otros hooks.
+- No lee tus credenciales ni el texto de tus mensajes: solo qué herramienta usa Claude y sobre qué archivo o comando.
+- Las sesiones que usa el propio Brote (OpenClaw) no aparecen ahí: ya las ves en la isla.
+- El uso de tu plan no se muestra (Claude Code no lo entrega por los hooks).
+- Para quitarlo: el mismo paso → **Desinstalar**.
 
 ### Conectar tu calendario (opcional)
 

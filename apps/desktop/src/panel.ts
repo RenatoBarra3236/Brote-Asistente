@@ -5,7 +5,15 @@
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { analizarMarkdown, type Fragmento } from "./agente/markdown";
-import type { AccionMusica, Descarga, DescargaEnCurso, EstadoCalendario, EstadoMusica, TemporizadorActivo } from "./agente/puente";
+import type {
+  AccionMusica,
+  Descarga,
+  DescargaEnCurso,
+  EstadoCalendario,
+  EstadoMusica,
+  EstadoProgramador,
+  TemporizadorActivo,
+} from "./agente/puente";
 import type { EstadoConexion } from "./agente/puente";
 
 /** Cuánto se destaca un aviso de Brote (temporizador, batería…) (ms). */
@@ -47,6 +55,10 @@ export class Panel {
   private readonly descargas: HTMLDivElement;
   private readonly alMostrarDescarga?: (ruta: string) => void;
   private readonly calendario: HTMLDivElement;
+  private readonly sesiones: HTMLDivElement;
+  private readonly permisosClaude: HTMLDivElement;
+  private readonly alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
+  private hayPermisoClaude = false;
   private readonly musica: HTMLDivElement;
   private readonly musicaTitulo: HTMLSpanElement;
   private readonly musicaPlay: HTMLButtonElement;
@@ -75,6 +87,7 @@ export class Panel {
       alCancelarTemporizador?: (id: number) => void;
       alMostrarDescarga?: (ruta: string) => void;
       alControlarMusica?: (accion: AccionMusica) => void;
+      alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
     } = {},
   ) {
     this.agente = agente;
@@ -169,7 +182,18 @@ export class Panel {
     this.calendario = crear("div", "fila calendario");
     this.calendario.hidden = true;
 
-    this.raiz.append(this.avisoDestacado, this.temporizadores, this.calendario, this.musica, this.descargas, this.burbuja, this.aprobacion, this.propuesta, formulario);
+    this.alDecidirPermisoClaude = opciones.alDecidirPermisoClaude;
+    this.sesiones = crear("div", "filas sesiones");
+    this.sesiones.hidden = true;
+    this.permisosClaude = crear("div", "filas permisos-claude");
+    this.permisosClaude.hidden = true;
+
+    // Las filas de estado (temporizadores, calendario, música, descargas, sesiones) se encogen y hacen
+    // scroll si no caben: el aviso, los permisos y el campo de texto siempre quedan a la vista.
+    const estado = crear("div", "estado");
+    estado.append(this.temporizadores, this.calendario, this.musica, this.descargas, this.sesiones);
+
+    this.raiz.append(this.avisoDestacado, this.permisosClaude, estado, this.burbuja, this.aprobacion, this.propuesta, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -208,6 +232,7 @@ export class Panel {
     return (
       this.entrada.value.trim() !== "" ||
       c.aprobacion !== null ||
+      this.hayPermisoClaude ||
       c.propuesta !== null ||
       ahora < this.leerHasta ||
       Date.now() < this.avisoHasta
@@ -290,6 +315,56 @@ export class Panel {
     this.calendario.textContent = `📅 ${estado.etiqueta}`;
     this.calendario.title = proximo.lugar ? `${proximo.titulo} · ${proximo.lugar}` : proximo.titulo;
     this.calendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
+  }
+
+  /**
+   * Modo programador: una fila por sesión de Claude Code ("⌨️ tarea-rust · Editando lib.rs…", como
+   * mucho tres) y, arriba, los permisos que piden, con Permitir y Rechazar.
+   */
+  mostrarProgramador(estado: EstadoProgramador): void {
+    const sesiones = estado.sesiones.slice(0, 3);
+    this.sesiones.replaceChildren(
+      ...sesiones.map((s) => {
+        const fila = crear("div", `fila sesion ${s.estado}`);
+        const nombre = crear("span", "fila-nombre");
+        nombre.textContent = `⌨️ ${s.proyecto}`;
+        const actividad = crear("span", "fila-actividad");
+        actividad.textContent = s.actividad;
+        fila.title = `${s.proyecto}: ${s.actividad}`;
+        fila.append(nombre, actividad);
+        return fila;
+      }),
+    );
+    this.sesiones.hidden = sesiones.length === 0;
+
+    this.hayPermisoClaude = estado.permisos.length > 0;
+    this.permisosClaude.replaceChildren(
+      ...estado.permisos.map((p) => {
+        const caja = crear("div", "aprobacion permiso-claude");
+        const titulo = crear("p", "aprobacion-titulo");
+        titulo.textContent = `Claude Code · ${p.titulo}`;
+        const detalle = crear("code", "aprobacion-detalle");
+        detalle.textContent = p.detalle;
+        detalle.hidden = !p.detalle;
+        const botones = crear("div", "aprobacion-botones");
+        const rechazar = crear("button", "boton");
+        rechazar.type = "button";
+        rechazar.textContent = "Rechazar";
+        const permitir = crear("button", "boton boton-primario");
+        permitir.type = "button";
+        permitir.textContent = "Permitir";
+        for (const [boton, decision] of [[rechazar, "deny"], [permitir, "allow"]] as const) {
+          boton.addEventListener("click", () => {
+            rechazar.disabled = permitir.disabled = true;
+            this.alDecidirPermisoClaude?.(p.id, decision);
+          });
+        }
+        botones.append(rechazar, permitir);
+        caja.append(titulo, detalle, botones);
+        return caja;
+      }),
+    );
+    this.permisosClaude.hidden = estado.permisos.length === 0 || !this.alDecidirPermisoClaude;
   }
 
   /** La píldora de la música, o nada si no hay un reproductor abierto. */

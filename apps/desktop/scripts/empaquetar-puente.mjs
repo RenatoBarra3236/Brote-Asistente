@@ -3,6 +3,7 @@
 //   src-tauri/recursos/mcp.mjs     el servidor MCP de gastos
 //   src-tauri/recursos/node_modules/ws  la librería de WebSocket, que la de OpenClaw carga desde disco
 //   src-tauri/recursos/configurar.mjs   el asistente "Configurar Brote"
+//   src-tauri/recursos/hook.mjs         el hook de Claude Code del modo programador (sin dependencias)
 //   src-tauri/recursos/skill/gastos     la skill de gastos para el agente
 //   src-tauri/recursos/plantillas       la identidad de Brote (IDENTITY.md, SOUL.md)
 

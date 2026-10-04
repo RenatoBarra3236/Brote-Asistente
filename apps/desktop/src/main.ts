@@ -17,6 +17,7 @@ import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
+import type { EstadoPlata } from "./agente/plata";
 import { Isla, type Ala } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
@@ -103,6 +104,14 @@ async function iniciar(): Promise<void> {
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
+          alAnotarFrecuente: (monto: number, descripcion: string) =>
+            void puente
+              .anotarFrecuente(monto, descripcion)
+              .then((texto) => {
+                panel.mostrarAviso(texto);
+                personaje.setEstado("listo");
+              })
+              .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           alDecidirPermisoClaude: (id, decision) =>
             void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
@@ -254,6 +263,17 @@ async function iniciar(): Promise<void> {
     setInterval(() => panel.mostrarEspecialistas(), 5000);
     puente.alAvisoEspecialistas((texto) => {
       panel.mostrarAviso(`🌱 ${texto}`);
+      personaje.tocar();
+    });
+
+    // Plata: el resumen de los gastos llega con cada cambio (también lo que anota el agente) y se
+    // repinta cada minuto para que "hoy 13:05" y "ayer" no queden viejos. Los avisos del presupuesto
+    // (80 % y 100 %) se destacan con un saltito.
+    puente.alCambiarPlata((estado) => panel.mostrarPlata(estado));
+    void puente.consultar<EstadoPlata | null>({ tipo: "plata-estado" }).then((estado) => panel.mostrarPlata(estado), () => {});
+    setInterval(() => panel.mostrarPlata(), 60_000);
+    puente.alAvisoPlata((texto) => {
+      panel.mostrarAviso(texto);
       personaje.tocar();
     });
 

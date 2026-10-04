@@ -1148,3 +1148,140 @@ button.tarjeta:hover {
 .fila-equipo.termino .equipo-detalle {
   color: var(--texto-3);
 }
+
+/* ---------- Plata: los gastos del mes ---------- */
+
+.plata-cabecera,
+.plata-graficos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.panel.flotante .plata-cabecera,
+.panel.flotante .plata-graficos {
+  grid-template-columns: minmax(0, 1fr);
+}
+.plata-cifra {
+  margin-top: 2px;
+  font: 600 20px/1.15 var(--mono);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.plata-variacion {
+  color: var(--texto-2);
+  font-size: 11px;
+}
+/* Gastar más que el mes pasado no es buena noticia: ámbar; menos, verde. */
+.plata-variacion.sube {
+  color: var(--ambar);
+}
+.plata-variacion.baja {
+  color: var(--verde);
+}
+.plata-avance i {
+  background: var(--verde);
+}
+.plata-avance.ambar i {
+  background: var(--ambar);
+}
+.plata-avance.rojo i {
+  background: var(--rojo);
+}
+.plata-hoy.verde .plata-cifra {
+  color: var(--verde);
+}
+.plata-hoy.ambar .plata-cifra {
+  color: var(--ambar);
+}
+.plata-hoy.rojo .plata-cifra {
+  color: var(--rojo);
+}
+.plata-hoy.rojo {
+  box-shadow: inset 0 0 0 1px rgba(255, 112, 102, 0.35);
+}
+.plata-invita {
+  margin: 3px 0 6px;
+  color: var(--texto-2);
+  font-size: 11.5px;
+}
+.plata-grafico {
+  display: block;
+  width: 100%;
+  height: 62px;
+  margin-top: 4px;
+}
+.plata-grafico .barra-dia {
+  fill: rgba(255, 255, 255, 0.28);
+}
+.plata-grafico .barra-hoy {
+  fill: var(--verde);
+}
+.plata-grafico text {
+  font: 600 8px var(--sans);
+  text-anchor: middle;
+}
+.plata-grafico .letra-dia {
+  fill: var(--texto-3);
+}
+.plata-grafico .letra-hoy {
+  fill: var(--verde);
+}
+.plata-categoria {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.plata-categoria .avance {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 2px;
+}
+.plata-categoria-nombre {
+  overflow: hidden;
+  color: var(--texto-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.plata-categoria-valor,
+.plata-monto {
+  font: 600 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.plata-descubrimiento {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: linear-gradient(120deg, rgba(160, 132, 250, 0.14), rgba(255, 255, 255, 0.04));
+  font-size: 11.5px;
+}
+.plata-movimiento {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.plata-emoji {
+  font-size: 12px;
+  text-align: center;
+}
+.plata-frecuentes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.plata-frecuentes-titulo {
+  color: var(--texto-3);
+  font-size: 10.5px;
+}
+.plata-toque:disabled {
+  opacity: 0.5;
+}
+.plata-toque {
+  max-width: 210px;
+}
+.plata-hoy .tarjeta-detalle {
+  white-space: normal;
+}

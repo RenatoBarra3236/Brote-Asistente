@@ -4,6 +4,9 @@
 //           descargas, Claude Code) y la conversación. Al conversar, la respuesta (y los permisos o
 //           propuestas) ocupa el espacio y las tarjetas se encogen a una fila de píldoras; al terminar
 //           la lectura, vuelven.
+//   Plata   los gastos del mes (contra el mes pasado a la misma altura), cuánto puedes gastar hoy con tu
+//           presupuesto, los últimos 7 días, las categorías, los últimos movimientos, un descubrimiento
+//           sin IA y botones de un toque con los gastos más frecuentes (función "gastos")
 //   Claude  el uso del plan (sesión de 5 h y semana, tokens de hoy y 7 días con su valor API, precios)
 //           y las sesiones de Claude Code del usuario (modo programador) con sus pasos y permisos
 //   Equipo  batería, CPU, memoria y disco
@@ -34,6 +37,7 @@ import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } f
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
 import { filasEquipo, tituloEquipo, type Trabajando } from "./agente/especialistas";
+import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
 
 export { cuentaRegresiva } from "./agente/formato";
@@ -75,6 +79,8 @@ interface Opciones {
   alMostrarDescarga?: (ruta: string) => void;
   alControlarMusica?: (accion: AccionMusica) => void;
   alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
+  /** Un botón de un toque de la pestaña Plata. */
+  alAnotarFrecuente?: (monto: number, descripcion: string) => void;
 }
 
 export class Panel {
@@ -163,6 +169,10 @@ export class Panel {
   private estadoUso: EstadoUso | null = null;
   private periodoUso: "hoy" | "semana" = "hoy";
 
+  // Plata
+  private readonly plata: HTMLDivElement;
+  private estadoPlata: EstadoPlata | null = null;
+
   // Equipo
   private readonly metricas: HTMLDivElement;
   private muestrasCpu: number[] = [];
@@ -195,6 +205,7 @@ export class Panel {
     const izquierda = crear("div", "barra-grupo");
     const pestanas: [Pestana, NombreIcono, string][] = [
       ["brote", "brote", "Brote"],
+      ["plata", "plata", "Plata"],
       ["claude", "codigo", "Claude"],
       ["equipo", "equipo", "Equipo"],
     ];
@@ -345,7 +356,13 @@ export class Panel {
     this.metricas.append(midiendo);
     equipo.append(this.metricas);
 
-    this.vistas.set("brote", inicio).set("claude", codigo).set("equipo", equipo);
+    // --- Plata ---
+    this.plata = crear("div", "vista vista-plata");
+    const sinPlata = crear("p", "vacia-texto");
+    sinPlata.textContent = "Sumando tus gastos…";
+    this.plata.append(sinPlata);
+
+    this.vistas.set("brote", inicio).set("plata", this.plata).set("claude", codigo).set("equipo", equipo);
 
     // --- Campo de texto (en todas las pestañas) ---
     const formulario = crear("form", "formulario");
@@ -361,7 +378,7 @@ export class Panel {
 
     if (opciones.flotante) this.raiz.append(this.barra);
     else contenedor.append(this.barra);
-    this.raiz.append(this.avisoDestacado, inicio, codigo, equipo, formulario);
+    this.raiz.append(this.avisoDestacado, inicio, this.plata, codigo, equipo, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -648,6 +665,147 @@ export class Panel {
         return fila;
       }),
     );
+  }
+
+  /**
+   * La pestaña Plata: este mes y cuánto puedes gastar hoy arriba, los últimos 7 días y las categorías
+   * al medio (SVG y barras propias, armados solo con números), el descubrimiento, los últimos
+   * movimientos y los botones de un toque. Se repinta con cada aviso "plata" (al anotar).
+   */
+  mostrarPlata(estado: EstadoPlata | null = this.estadoPlata): void {
+    this.estadoPlata = estado;
+    if (!estado) {
+      this.plata.replaceChildren();
+      return;
+    }
+    const ahora = Date.now();
+    const partes: HTMLElement[] = [];
+
+    // Este mes y "puedes gastar hoy".
+    const cabecera = crear("div", "plata-cabecera");
+    const mes = crear("div", "tarjeta plata-mes");
+    const variacion = textoVariacion(estado.mes);
+    const total = crear("div", "plata-cifra");
+    total.textContent = formatearMonto(estado.mes.total);
+    const nota = crear("div", `plata-variacion ${variacion.tono}`);
+    nota.textContent = variacion.texto;
+    nota.title = "Comparado con lo que llevabas el mes pasado a esta misma altura del mes";
+    mes.append(etiquetaTarjeta(`Este mes · ${estado.mes.nombre}`), total, nota);
+    const p = estado.presupuesto;
+    if (p) {
+      const avance = crear("div", `avance plata-avance ${p.color}`);
+      const relleno = crear("i", "");
+      relleno.style.width = `${Math.min(100, Math.max(2, p.porcentaje))}%`;
+      avance.append(relleno);
+      const de = crear("div", "tarjeta-detalle");
+      de.textContent = `${p.porcentaje} % de ${formatearMonto(p.monto)}`;
+      mes.append(avance, de);
+    }
+    const hoy = crear("div", `tarjeta plata-hoy ${p?.color ?? "sin"}`);
+    if (p) {
+      const { monto, detalle } = textoPuedesHoy(p);
+      const cifra = crear("div", "plata-cifra");
+      cifra.textContent = monto;
+      const d = crear("div", "tarjeta-detalle");
+      d.textContent = detalle;
+      d.title = detalle;
+      hoy.append(etiquetaTarjeta("Puedes gastar hoy"), cifra, d);
+    } else {
+      const invita = crear("p", "plata-invita");
+      invita.textContent = "Ponle un presupuesto al mes y te digo cuánto puedes gastar cada día.";
+      const poner = boton("boton boton-fila", "Poner presupuesto");
+      poner.addEventListener("click", () => {
+        this.entrada.value = "mi presupuesto es ";
+        this.actualizarBotonEnviar();
+        this.entrada.focus();
+      });
+      hoy.append(etiquetaTarjeta("Puedes gastar hoy"), invita, poner);
+    }
+    cabecera.append(mes, hoy);
+    partes.push(cabecera);
+
+    if (estado.mes.cantidad === 0 && estado.ultimos.length === 0) {
+      const vacio = crear("p", "vacia-texto");
+      vacio.textContent = "Todavía no anotas gastos. Prueba: «gasté 2 lucas en almuerzo».";
+      partes.push(vacio);
+      this.plata.replaceChildren(...partes);
+      return;
+    }
+
+    // Últimos 7 días y por categoría.
+    const graficos = crear("div", "plata-graficos");
+    const semana = crear("div", "tarjeta plata-semana");
+    semana.append(etiquetaTarjeta("Últimos 7 días"), graficoSemana(estado));
+    const categorias = crear("div", "tarjeta plata-categorias");
+    categorias.append(etiquetaTarjeta("Por categoría"));
+    for (const c of estado.categorias.slice(0, 5)) {
+      const fila = crear("div", "plata-categoria");
+      fila.title = `${c.categoria}: ${formatearMonto(c.total)} (${Math.round(c.fraccion * 100)} %)`;
+      const nombre = crear("span", "plata-categoria-nombre");
+      nombre.textContent = `${c.emoji} ${c.categoria}`;
+      const valor = crear("span", "plata-categoria-valor");
+      valor.textContent = montoCorto(c.total);
+      const barra = crear("div", "avance");
+      const relleno = crear("i", "");
+      relleno.style.width = `${Math.max(3, c.fraccion * 100).toFixed(1)}%`;
+      // El color sale de una lista cerrada del motor (COLOR_CATEGORIA), nunca de texto de afuera.
+      relleno.style.background = c.color;
+      barra.append(relleno);
+      fila.append(nombre, valor, barra);
+      categorias.append(fila);
+    }
+    if (estado.categorias.length === 0) {
+      const nada = crear("p", "vacia-texto");
+      nada.textContent = "Este mes, nada todavía.";
+      categorias.append(nada);
+    }
+    graficos.append(semana, categorias);
+    partes.push(graficos);
+
+    if (estado.descubrimiento) {
+      const descubrimiento = crear("div", `tarjeta plata-descubrimiento ${estado.descubrimiento.tipo}`);
+      const texto = crear("span", "");
+      texto.textContent = estado.descubrimiento.texto;
+      descubrimiento.append(etiquetaTarjeta("Descubrí algo"), texto);
+      partes.push(descubrimiento);
+    }
+
+    const movimientos = crear("div", "tarjeta plata-movimientos");
+    movimientos.append(etiquetaTarjeta("Últimos movimientos"));
+    for (const m of estado.ultimos) {
+      const fila = crear("div", "plata-movimiento");
+      const emoji = crear("span", "plata-emoji");
+      emoji.textContent = m.emoji;
+      const que = crear("span", "fila-nombre");
+      que.textContent = m.descripcion;
+      que.title = `${m.descripcion} (${m.categoria})`;
+      const cuando = crear("span", "fila-dato");
+      cuando.textContent = cuandoMovimiento(m.fechaMs, ahora);
+      const monto = crear("span", "plata-monto");
+      monto.textContent = formatearMonto(m.monto);
+      fila.append(emoji, que, cuando, monto);
+      movimientos.append(fila);
+    }
+    partes.push(movimientos);
+
+    if (estado.frecuentes.length > 0 && this.opciones.alAnotarFrecuente) {
+      const frecuentes = crear("div", "plata-frecuentes");
+      const titulo = crear("span", "plata-frecuentes-titulo");
+      titulo.textContent = "Anotar de un toque";
+      frecuentes.append(titulo);
+      for (const f of estado.frecuentes) {
+        const b = boton("pildora plata-toque", "");
+        b.append(icono("mas"), document.createTextNode(` ${textoFrecuente(f)}`));
+        b.title = `Anotar ${formatearMonto(f.monto)} en ${f.descripcion} (lo anotaste ${f.veces} veces)`;
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          this.opciones.alAnotarFrecuente?.(f.monto, f.descripcion);
+        });
+        frecuentes.append(b);
+      }
+      partes.push(frecuentes);
+    }
+    this.plata.replaceChildren(...partes);
   }
 
   mostrarUso(estado: EstadoUso | null): void {
@@ -971,6 +1129,7 @@ export class Panel {
     this.tituloSesiones.hidden = sinSesiones;
     this.codigoVacio.hidden = sinSesiones || this.hayActividadClaude;
     this.botonesPestana.get("equipo")!.hidden = !this.funciones.activas.equipo;
+    this.botonesPestana.get("plata")!.hidden = !this.funciones.activas.gastos;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }
 
@@ -1165,6 +1324,41 @@ function botonIcono(clase: string, ic: NombreIcono, titulo: string): HTMLButtonE
   b.setAttribute("aria-label", titulo);
   b.append(icono(ic));
   return b;
+}
+
+function etiquetaTarjeta(texto: string): HTMLDivElement {
+  const etiqueta = crear("div", "tarjeta-etiqueta");
+  etiqueta.textContent = texto;
+  return etiqueta;
+}
+
+/** Las barras de los últimos 7 días (SVG armado con números; hoy resaltado) y sus letras debajo. */
+function graficoSemana(estado: EstadoPlata): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const ANCHO = 140;
+  const ALTO = 44;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "plata-grafico");
+  svg.setAttribute("viewBox", `0 0 ${ANCHO} ${ALTO + 12}`);
+  for (const b of barrasSemana(estado.semana, ANCHO, ALTO)) {
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", b.x.toFixed(1));
+    rect.setAttribute("y", b.y.toFixed(1));
+    rect.setAttribute("width", b.ancho.toFixed(1));
+    rect.setAttribute("height", b.alto.toFixed(1));
+    rect.setAttribute("rx", "2.5");
+    rect.setAttribute("class", b.hoy ? "barra-hoy" : "barra-dia");
+    const titulo = document.createElementNS(NS, "title");
+    titulo.textContent = b.titulo;
+    rect.append(titulo);
+    const letra = document.createElementNS(NS, "text");
+    letra.setAttribute("x", (b.x + b.ancho / 2).toFixed(1));
+    letra.setAttribute("y", String(ALTO + 10));
+    letra.setAttribute("class", b.hoy ? "letra-hoy" : "letra-dia");
+    letra.textContent = b.letra;
+    svg.append(rect, letra);
+  }
+  return svg;
 }
 
 /** Una fila de Equipo: nombre, valor y una barra (`fraccion` entre 0 y 1). */

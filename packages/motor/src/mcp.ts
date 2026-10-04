@@ -92,6 +92,15 @@ const HERRAMIENTAS = [
     annotations: { title: "Resumen de gastos", readOnlyHint: true },
   },
   {
+    name: "gastos_presupuesto",
+    description:
+      "El presupuesto mensual del usuario (si puso uno) y cómo va: lo gastado este mes, cuánto le queda, los días que " +
+      "faltan y cuánto puede gastar hoy. Solo lectura: el presupuesto lo pone el usuario en Brote (Configurar Brote o " +
+      "diciendo «mi presupuesto es 200 lucas»).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Presupuesto del mes", readOnlyHint: true },
+  },
+  {
     name: "temporizador_crear",
     description:
       "Crea un temporizador, un recordatorio (con etiqueta: «sacar la ropa») o un pomodoro de estudio. Brote lo " +
@@ -509,6 +518,20 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         total,
         cantidad,
         porCategoria: gastos.porCategoria(rango),
+      });
+    }
+    case "gastos_presupuesto": {
+      const p = new Motor(gastos).estadoPresupuesto();
+      if (!p) return JSON.stringify({ moneda: "CLP", presupuesto: null, nota: "El usuario no tiene presupuesto mensual puesto." });
+      return JSON.stringify({
+        moneda: "CLP",
+        presupuestoMensual: p.monto,
+        gastadoEsteMes: p.gastado,
+        porcentajeUsado: p.porcentaje,
+        queda: p.queda,
+        diasQueFaltan: p.diasQuedan,
+        porDia: p.porDia,
+        puedeGastarHoy: p.puedesHoy,
       });
     }
     case "temporizador_crear": {

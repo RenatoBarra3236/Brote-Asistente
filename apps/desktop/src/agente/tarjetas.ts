@@ -4,7 +4,7 @@
 import { FUNCIONES, type ConfigFunciones, type IdTarjeta } from "./funciones.ts";
 import { cuandoEmpieza, cuentaRegresiva, venceEn } from "./formato.ts";
 
-export type Pestana = "brote" | "claude" | "equipo";
+export type Pestana = "brote" | "plata" | "claude" | "equipo";
 
 /** Las tarjetas a la vista, en el orden elegido: con algo que mostrar, de una función prendida y no ocultas. */
 export function tarjetasVisibles(config: ConfigFunciones, conDatos: Partial<Record<IdTarjeta, boolean>>): IdTarjeta[] {

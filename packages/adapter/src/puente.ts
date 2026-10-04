@@ -96,6 +96,15 @@
 // (salen de `allowAgents`; los de otras IA siguen) y vuelven bajo 80 % (equipo.json guarda el estado).
 // Las solicitudes de permiso de un especialista siempre llegan a la isla: nunca se permiten solas.
 //
+// Plata (función "gastos"; la pestaña Plata de la isla): el resumen de los gastos, el presupuesto del
+// mes y lo que se descubre sin IA (motor/plata.ts). La base se mira cada 2 s (gastos.marca()), así
+// también aparece al tiro lo que anota el agente por MCP.
+//   aviso { "tipo": "plata", "plata": EstadoPlata | null }   al partir, al cambiar los gastos o el presupuesto, y al cambiar el día
+//   aviso { "tipo": "plata-aviso", "texto": "👀 Ojo: ya llevas el 80 %…" }   80 % y 100 % del presupuesto, una vez cada uno por mes
+//   pedido { "tipo": "plata-estado" }   → "datos": EstadoPlata | null
+//   pedido { "tipo": "plata-anotar", "monto": 1500, "descripcion": "café" }   → "mensaje"; solo uno de los botones de un toque
+//   pedido { "tipo": "presupuesto-poner", "monto": 200000 | null }   → "datos": EstadoPlata (null quita el presupuesto)
+//
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
 // `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
@@ -189,6 +198,11 @@ import {
   miembrosDeConfig,
   permitidosEquipo,
   textoFreno,
+  DIAS_PLATA,
+  avisosPresupuesto,
+  leerAvisados,
+  resumenPlata,
+  type EstadoPlata,
 } from "@asistente/motor";
 import {
   type Decision,
@@ -227,6 +241,7 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__gastos_anotar",
   "mcp__gastos__gastos_listar",
   "mcp__gastos__gastos_resumen",
+  "mcp__gastos__gastos_presupuesto",
   "mcp__gastos__temporizador_crear",
   "mcp__gastos__temporizador_listar",
   "mcp__gastos__temporizador_cancelar",
@@ -986,8 +1001,47 @@ function detenerTemporizadores(): void {
   avisar({ tipo: "temporizadores", lista: [] });
 }
 
+// Plata: el resumen se recalcula solo cuando cambia la base (o el día) y los avisos del presupuesto se
+// dan una vez cada uno por mes (lo dado queda en la tabla `ajustes`, junto al presupuesto).
+const AVISOS_PRESUPUESTO = "avisos-presupuesto";
+let marcaPlata = "";
+let ultimaPlata: EstadoPlata | null = null;
+function estadoPlata(): EstadoPlata {
+  const ahora = new Date();
+  const desde = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - DIAS_PLATA);
+  const hasta = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1);
+  const lista = gastos.entre({ desde, hasta }).map((g) => ({ id: g.id, monto: g.monto, categoria: g.categoria, descripcion: g.descripcion, fechaMs: g.fecha.getTime() }));
+  return resumenPlata(lista, gastos.presupuesto(), ahora.getTime());
+}
+function revisarPlata(forzar = false): void {
+  const hoy = new Date().toDateString();
+  const marca = `${gastos.marca()}|${hoy}`;
+  if (!forzar && marca === marcaPlata) return;
+  marcaPlata = marca;
+  ultimaPlata = estadoPlata();
+  const { textos, avisados } = avisosPresupuesto(ultimaPlata.presupuesto, Date.now(), leerAvisados(gastos.ajuste(AVISOS_PRESUPUESTO)));
+  if (avisados) gastos.guardarAjuste(AVISOS_PRESUPUESTO, JSON.stringify(avisados));
+  for (const texto of textos) {
+    registrar("plata: aviso del presupuesto");
+    avisar({ tipo: "plata-aviso", texto });
+  }
+  avisar({ tipo: "plata", plata: ultimaPlata });
+}
+function detenerPlata(): void {
+  marcaPlata = "";
+  ultimaPlata = null;
+  avisar({ tipo: "plata", plata: null });
+}
+
 /** Las tareas de fondo de cada función: solo corren las prendidas. */
 const tareas = new TareasPorFuncion({
+  gastos: () => {
+    const detener = cada(2000, () => revisarPlata());
+    return () => {
+      detener();
+      detenerPlata();
+    };
+  },
   temporizadores: () => {
     const detener = cada(1000, revisarTemporizadores);
     return () => {
@@ -1255,6 +1309,8 @@ async function atender(pedido: any): Promise<Extra> {
     if (resuelto) {
       gastos.registrarUso("motor", resuelto.intencion, new Date());
       registrar(`resuelto sin IA (${resuelto.plantilla})`);
+      // Lo anotado (o el presupuesto nuevo) aparece al tiro en la pestaña Plata.
+      if (activa("gastos")) revisarPlata();
       return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
     if (!conectado) throw new Error("OpenClaw no está conectado; sin él solo funcionan los comandos de gastos");
@@ -1353,6 +1409,27 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: activa("temporizadores") ? temporizadores.activos() : [] };
     case "funciones-estado":
       return { datos: funciones };
+    case "plata-estado":
+      return { datos: activa("gastos") ? (ultimaPlata ?? estadoPlata()) : null };
+    case "plata-anotar": {
+      if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");
+      // Solo los botones de un toque: el monto y la descripción deben ser de uno de los gastos frecuentes.
+      const frecuente = estadoPlata().frecuentes.find((f) => f.monto === pedido.monto && f.descripcion === pedido.descripcion);
+      if (!frecuente) break;
+      const mensaje = motor.anotarGasto(frecuente.monto, frecuente.descripcion);
+      gastos.registrarUso("motor", "registrar-gasto", new Date());
+      revisarPlata();
+      return { mensaje };
+    }
+    case "presupuesto-poner": {
+      if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");
+      const monto = pedido.monto;
+      if (monto !== null && !(Number.isInteger(monto) && monto >= 1000 && monto <= 100_000_000)) break;
+      gastos.ponerPresupuesto(monto);
+      registrar(monto === null ? "plata: presupuesto quitado" : "plata: presupuesto puesto");
+      revisarPlata();
+      return { datos: ultimaPlata };
+    }
     case "especialistas-estado":
       return { datos: { lista: activa("especialistas") ? filtroDelegacion.equipo() : [], frenado } };
     case "permisos-estado":

@@ -59,6 +59,8 @@ function desdeFila(fila: FilaGasto): Gasto {
   };
 }
 
+const PRESUPUESTO = "presupuesto-mensual";
+
 export class Gastos {
   private readonly db: DatabaseSync;
 
@@ -94,6 +96,11 @@ export class Gastos {
         estado text not null check (estado in ('propuesta', 'activa', 'rechazada')),
         creada_ms integer not null,
         decidida_ms integer
+      );
+      -- Ajustes sueltos del usuario (el presupuesto mensual y qué avisos de presupuesto ya se dieron).
+      create table if not exists ajustes (
+        clave text primary key,
+        valor text not null
       );
     `);
   }
@@ -143,6 +150,53 @@ export class Gastos {
         cantidad,
       ) as unknown as FilaGasto[];
     return filas.map(desdeFila);
+  }
+
+  /** Todos los gastos de un rango, del más antiguo al más reciente (para la pestaña Plata). */
+  entre(rango: Rango): Gasto[] {
+    const filas = this.db
+      .prepare("select * from gastos where fecha_ms >= ? and fecha_ms < ? order by fecha_ms, id")
+      .all(rango.desde.getTime(), rango.hasta.getTime()) as unknown as FilaGasto[];
+    return filas.map(desdeFila);
+  }
+
+  /**
+   * Algo que cambia cada vez que se anota o se borra un gasto, o cambia el presupuesto: el puente la
+   * mira cada pocos segundos para notar lo que anotó el agente desde el servidor MCP (otro proceso).
+   */
+  marca(): string {
+    const fila = this.db.prepare("select count(*) as n, coalesce(max(id), 0) as ultimo, coalesce(sum(monto), 0) as suma from gastos").get() as {
+      n: number;
+      ultimo: number;
+      suma: number;
+    };
+    return `${fila.n}:${fila.ultimo}:${fila.suma}:${this.ajuste(PRESUPUESTO) ?? ""}`;
+  }
+
+  /** El presupuesto mensual en pesos, o `null` si el usuario no puso uno. */
+  presupuesto(): number | null {
+    const valor = Number(this.ajuste(PRESUPUESTO));
+    return Number.isInteger(valor) && valor > 0 ? valor : null;
+  }
+
+  /** Pone (o quita, con `null`) el presupuesto mensual. */
+  ponerPresupuesto(monto: number | null): void {
+    if (monto === null) {
+      this.db.prepare("delete from ajustes where clave = ?").run(PRESUPUESTO);
+      return;
+    }
+    if (!Number.isInteger(monto) || monto < 1 || monto > 100_000_000) throw new Error("Presupuesto fuera de rango");
+    this.guardarAjuste(PRESUPUESTO, String(monto));
+  }
+
+  /** Un ajuste guardado (texto), o `null`. */
+  ajuste(clave: string): string | null {
+    const fila = this.db.prepare("select valor from ajustes where clave = ?").get(clave) as { valor: string } | undefined;
+    return fila?.valor ?? null;
+  }
+
+  guardarAjuste(clave: string, valor: string): void {
+    this.db.prepare("insert into ajustes (clave, valor) values (?, ?) on conflict (clave) do update set valor = excluded.valor").run(clave, valor);
   }
 
   /** Borra el último gasto anotado (para corregir un error). */

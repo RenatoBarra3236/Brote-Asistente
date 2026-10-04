@@ -202,7 +202,7 @@ export function serializarFunciones(config: ConfigFunciones): string {
 
 /** La función de la que depende una intención del motor (`null`: siempre disponible, como "ver-memoria"). */
 export function funcionDeIntencion(intencion: string): IdFuncion | null {
-  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto)$/.test(intencion)) return "gastos";
+  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto)$/.test(intencion) || intencion.startsWith("presupuesto-")) return "gastos";
   if (/^(pomodoro|temporizador|cancelar-pomodoro|cancelar-temporizador|consultar-temporizador)$/.test(intencion)) return "temporizadores";
   if (intencion.startsWith("calendario-")) return "calendario";
   if (intencion.startsWith("aula-")) return "aula";

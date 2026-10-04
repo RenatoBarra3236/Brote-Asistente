@@ -14,6 +14,8 @@ servidor `gastos`. Si no las ves, cárgalas con ToolSearch (`select:mcp__gastos_
   categoría, se deduce de la descripción.
 - `mcp__gastos__gastos_listar` y `mcp__gastos__gastos_resumen`: para preguntas sobre
   cuánto, en qué o cuándo gastó.
+- `mcp__gastos__gastos_presupuesto`: su presupuesto mensual (si puso uno), cuánto le queda y
+  cuánto puede gastar hoy. Solo lectura: el presupuesto lo pone el usuario en Brote.
 
 Son datos financieros privados: úsalos solo para responder al usuario.
 

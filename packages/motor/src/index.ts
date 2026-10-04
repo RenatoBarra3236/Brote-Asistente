@@ -1,4 +1,5 @@
-export { CATEGORIAS, categoriaDe, type Categoria } from "./categorias.ts";
+export { CATEGORIAS, COLOR_CATEGORIA, EMOJI_CATEGORIA, categoriaDe, type Categoria } from "./categorias.ts";
+export { DIAS_PLATA, UMBRALES_PRESUPUESTO, avisosPresupuesto, claveMes, describirHoy, describirQueda, leerAvisados, presupuestoDelMes, resumenPlata, type AvisadosPresupuesto, type EstadoPlata, type GastoPlano, type PresupuestoMes } from "./plata.ts";
 export { Gastos, RUTA_BASE, type Gasto, type NuevoGasto, type Via } from "./gastos.ts";
 export { leerMonto } from "./montos.ts";
 export { Motor, type Resultado } from "./motor.ts";

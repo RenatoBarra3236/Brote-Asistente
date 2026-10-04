@@ -42,7 +42,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
     );
   });
 
@@ -65,6 +65,20 @@ describe("servidor MCP de gastos", () => {
     const lista = JSON.parse(llamar("gastos_listar", { hasta: "2026-09-30" }).texto);
     assert.deepEqual(lista.gastos.map((g: any) => g.descripcion), ["zapatillas"]);
     assert.equal(lista.gastos[0].categoria, "otros");
+  });
+
+  it("le cuenta el presupuesto al agente, sin poder cambiarlo", () => {
+    assert.equal(JSON.parse(llamar("gastos_presupuesto", {}).texto).presupuesto, null);
+    gastos.ponerPresupuesto(200_000);
+    llamar("gastos_anotar", { monto: 5000, descripcion: "almuerzo" });
+    const p = JSON.parse(llamar("gastos_presupuesto", {}).texto);
+    assert.equal(p.presupuestoMensual, 200_000);
+    assert.equal(p.gastadoEsteMes, 5000);
+    assert.equal(p.queda, 195_000);
+    assert.ok(p.diasQueFaltan >= 1 && p.puedeGastarHoy <= p.porDia);
+    const herramienta = (atender(gastos, { jsonrpc: "2.0", id: 9, method: "tools/list" }) as any).result.tools.find((t: any) => t.name === "gastos_presupuesto");
+    assert.equal(herramienta.annotations.readOnlyHint, true);
+    assert.deepEqual(herramienta.inputSchema.properties, {});
   });
 
   it("valida lo que recibe", () => {

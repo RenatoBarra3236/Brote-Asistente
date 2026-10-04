@@ -31,6 +31,7 @@
 
       // ---- El estado simulado del computador.
       const sim = {
+        presupuesto: escenario === "listo" ? 250000 : null,
         node: escenario !== "nuevo",
         openclaw: escenario !== "nuevo",
         claude: escenario !== "nuevo",
@@ -313,8 +314,12 @@
               return JSON.stringify({ tipo: "conexion", conectado: true });
             case "agente_escribir": {
               const pedido = JSON.parse(args.linea);
+              // El presupuesto mensual (tarjeta Gastos) vive en la base de Brote: se pide al puente.
+              if (pedido.tipo === "presupuesto-poner") sim.presupuesto = pedido.monto;
               const datos =
-                pedido.tipo === "permisos-estado"
+                pedido.tipo === "plata-estado" || pedido.tipo === "presupuesto-poner"
+                  ? { presupuesto: sim.presupuesto ? { monto: sim.presupuesto } : null }
+                  : pedido.tipo === "permisos-estado"
                   ? {
                       descargas: escenario === "permiso" ? "sin-usar" : "concedido",
                       automatizacion: escenario === "permiso" ? { Spotify: false } : { Spotify: true },

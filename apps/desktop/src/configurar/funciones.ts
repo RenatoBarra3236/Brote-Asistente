@@ -6,7 +6,7 @@
 import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
 import { PERMISOS, type Paso } from "../agente/preparacion";
 import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, paso, pintar } from "./comun";
-import { formularioAula, formularioIcal } from "./formularios";
+import { formularioAula, formularioIcal, formularioPresupuesto } from "./formularios";
 
 /** En el asistente se guarda al final ("Empezar"); en el uso diario, al tiro. */
 async function cambiar(enAsistente: boolean): Promise<void> {
@@ -47,6 +47,20 @@ function configuracionDe(funcion: Funcion, activa: boolean): HTMLElement[] {
   }
   if (!activa) return partes.filter((p): p is HTMLElement => p !== null);
   switch (funcion.id) {
+    case "gastos": {
+      const caja = crear("div", `subpaso ${estado.presupuesto ? "ok" : "opcional"}`);
+      caja.append(crear("p", "subpaso-titulo", `${estado.presupuesto ? "✅" : "○"} Presupuesto del mes (opcional)`));
+      if (estado.presupuesto === undefined) {
+        caja.append(crear("p", "nota", "Se pone con Brote abierto: aquí, o diciéndole «mi presupuesto es 200 lucas»."));
+      } else {
+        caja.append(
+          crear("p", "nota", "Con un presupuesto, la pestaña Plata te dice cuánto puedes gastar hoy y Brote te avisa al pasar el 80 % y el 100 %."),
+          formularioPresupuesto(estado.presupuesto),
+        );
+      }
+      partes.push(caja);
+      break;
+    }
     case "calendario": {
       if (EN_MAC) partes.push(subpaso(paso("calendario-mac"), "Calendario del Mac"));
       const ical = paso("calendario-ical");

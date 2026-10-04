@@ -193,3 +193,28 @@ describe("delegación en un especialista", () => {
     assert.equal(conversacion(salen).at(-1)!.respuesta, "NO te preocupes");
   });
 });
+
+// La grabación real de la fase 0 (3-10-2026, OpenClaw 2026.9.7, anonimizada): termina cuando el
+// especialista termina, antes de que Brote responda. Es justo el momento en que la isla daba el turno
+// por terminado.
+describe("delegación: la grabación real", () => {
+  const HIJA_REAL = "agent:investigador:subagent:d7f925e7-0029-4cac-aaa6-7da6ad632bc1";
+
+  it("sin el filtro la isla daba el turno por terminado; con el filtro sigue esperando a Brote", () => {
+    const marcos = leer("delegacion-grabada");
+    assert.ok(marcos.some((m) => m.payload?.sessionKey === HIJA_REAL), "la grabación trae eventos de la hija");
+    // Antes: el fin del especialista terminaba el turno.
+    assert.ok(conversacion(marcos).some((c) => c.terminada));
+    // Ahora: a la isla solo le llega lo de la sesión principal (o lo que no es de ninguna sesión).
+    const { salen, avisos } = filtrar(marcos);
+    assert.ok(salen.every((m) => !m.payload?.sessionKey || m.payload.sessionKey === PRINCIPAL));
+    const pasos = conversacion(salen);
+    assert.ok(!pasos.some((c) => c.terminada), "Brote todavía no responde: el turno no terminó");
+    assert.notEqual(pasos.at(-1)?.estado, "listo");
+    // El equipo: el investigador trabajó y terminó.
+    const ultimo = avisos.at(-1) ?? [];
+    const investigador = ultimo.find((t) => t.id === "investigador");
+    assert.ok(investigador, "el investigador aparece en el equipo");
+    assert.equal(investigador!.estado, "termino");
+  });
+});

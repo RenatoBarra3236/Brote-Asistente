@@ -234,6 +234,11 @@ function leerConfig(): any {
   }
 }
 
+/** El id del agente de Brote en la configuración actual ("main" si todavía no hay ninguno). */
+function agenteConfigurado(): string {
+  return agente(leerConfig())?.id ?? "main";
+}
+
 /** Brote: el primer agente que no es un especialista del equipo. */
 function agente(config: any): { id: string; workspace: string } | null {
   const id = agenteDeBrote(config?.agents?.entries);
@@ -369,7 +374,9 @@ export function revisar(): Paso[] {
     accion: prudente || !configurado ? undefined : { tipo: "automatica", etiqueta: "Pedir permiso siempre" },
   });
 
-  const skills = configurado ? openclaw(["skills", "list"]).salida : "";
+  // Con varios agentes (el equipo de Brote) `skills` exige `--agent`: sin él falla ("Multiple agents are
+  // configured, but the skills command has no explicit owner").
+  const skills = configurado ? openclaw(["skills", "list", "--agent", agenteConfigurado()]).salida : "";
   const conSkill = SKILLS.every((nombre) => new RegExp(`\\b${nombre}\\b`).test(skills));
   pasos.push({
     id: "skill",
@@ -673,7 +680,7 @@ export function aplicar(id: string): string {
       return "Brote te pedirá permiso antes de ejecutar comandos.";
     case "skill":
       for (const nombre of SKILLS) {
-        exigir(openclaw(["skills", "install", join(recursos().skills, nombre), "--as", nombre, "--force"]), `No pude instalar la skill ${nombre}`);
+        exigir(openclaw(["skills", "install", join(recursos().skills, nombre), "--as", nombre, "--force", "--agent", agenteConfigurado()]), `No pude instalar la skill ${nombre}`);
       }
       return "Skills de gastos y de delegación instaladas.";
     case "mcp": {

@@ -36,7 +36,20 @@ import type {
 import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
-import { filasEquipo, tituloEquipo, type Trabajando } from "./agente/especialistas";
+import {
+  columnasTodos,
+  equipoTermino,
+  globoDe,
+  mascotasEnEscena,
+  nombreConIA,
+  pasosVisibles,
+  terminadosALaMano,
+  visualDe,
+  type PasoVisible,
+  type Trabajando,
+  type Visual,
+} from "./agente/especialistas";
+import type { Lugar } from "./mascotas";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
 
@@ -81,7 +94,26 @@ interface Opciones {
   alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
+  /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
+  alPedirHistorial?: (sesion: string) => void;
 }
+
+/** Lo que llega del historial de una sesión hija (chat.history). */
+export interface HistorialEspecialista {
+  tarea: string | null;
+  pasos: Trabajando["pasos"];
+  respuesta: string;
+}
+
+/** Cómo se dice lo que hace una mascota en la cabecera de su conversación o su columna. */
+const TEXTO_VISUAL: Record<Visual, string> = {
+  "en-espera": "Preparándose",
+  pensando: "Pensando",
+  trabajando: "Trabajando",
+  permiso: "Te pide permiso",
+  termino: "Terminó",
+  fallo: "No pudo terminar",
+};
 
 export class Panel {
   private readonly agente: Agente;
@@ -129,10 +161,27 @@ export class Panel {
 
   // Conversación
   private readonly burbuja: HTMLDivElement;
-  /** "El equipo trabajando": los especialistas en los que Brote delegó. */
-  private readonly equipoTrabajando: HTMLDivElement;
+  /** El escenario: las mascotas de los especialistas trabajando (las dibuja main.ts en sus lugares). */
+  private readonly vistaBrote: HTMLDivElement;
+  private readonly escenario: HTMLDivElement;
+  private readonly escenarioTitulo: HTMLSpanElement;
+  private readonly escenarioFila: HTMLDivElement;
+  private readonly botonVerTodos: HTMLButtonElement;
+  private readonly lugares = new Map<string, { boton: HTMLButtonElement; globo: HTMLSpanElement; nombre: HTMLSpanElement; ia: HTMLSpanElement; hueco: HTMLSpanElement }>();
+  /** Los que terminaron y ya se escondieron: fichas para ver su conversación (un minuto). */
+  private readonly fichasEquipo: HTMLDivElement;
+  private fichasPintadas = "";
   private especialistas: Trabajando[] = [];
-  private equipoPintado = "";
+  private enEscena: Trabajando[] = [];
+  /** La sesión del especialista cuya conversación se ve en la pestaña Brote. */
+  private abierto: string | null = null;
+  private readonly conversacionEquipo: HTMLDivElement;
+  private readonly historiales = new Map<string, HistorialEspecialista>();
+  private readonly historialPedido = new Set<string>();
+  /** "Ver a todos": columnas con Brote y hasta 3 especialistas. */
+  private verTodosActivo = false;
+  private readonly vistaTodos: HTMLDivElement;
+  private readonly columnas = new Map<string, { caja: HTMLDivElement; hueco: HTMLSpanElement; estado: HTMLSpanElement; cuerpo: HTMLDivElement; pintado: string }>();
   private readonly usuario: HTMLParagraphElement;
   private readonly respuesta: HTMLDivElement;
   /** El texto ya pintado en la respuesta, para no rehacerla si no cambió. */
@@ -312,10 +361,25 @@ export class Panel {
     this.aprender = boton("boton boton-primario", "Sí, aprende");
     botonesPropuesta.append(this.noAprender, this.aprender);
     this.propuesta.append(propuestaTitulo, this.propuestaDetalle, botonesPropuesta);
-    this.equipoTrabajando = crear("div", "equipo-trabajando");
-    this.equipoTrabajando.hidden = true;
-    this.equipoTrabajando.setAttribute("aria-live", "polite");
-    inicio.append(this.cabeceraInicio, this.tarjetas, this.pildoras, this.equipoTrabajando, this.burbuja, this.aprobacion, this.propuesta);
+    // El escenario del equipo: un lugar por mascota (globito arriba, hueco para el dibujo, nombre abajo).
+    this.escenario = crear("div", "escenario");
+    this.escenario.hidden = true;
+    this.escenario.setAttribute("aria-live", "polite");
+    const cabeceraEscenario = crear("div", "escenario-cabecera");
+    this.escenarioTitulo = crear("span", "escenario-titulo");
+    this.botonVerTodos = boton("enlace-vista ver-todos", "");
+    this.botonVerTodos.append(icono("ampliar"), document.createTextNode(" Ver a todos"));
+    this.botonVerTodos.title = "Ver las conversaciones de todo el equipo, lado a lado";
+    this.botonVerTodos.addEventListener("click", () => this.verTodos(true));
+    cabeceraEscenario.append(this.escenarioTitulo, this.botonVerTodos);
+    this.escenarioFila = crear("div", "escenario-fila");
+    this.escenario.append(cabeceraEscenario, this.escenarioFila);
+    this.fichasEquipo = crear("div", "fichas-equipo");
+    this.fichasEquipo.hidden = true;
+    this.conversacionEquipo = crear("div", "conversacion-equipo");
+    this.conversacionEquipo.hidden = true;
+    this.vistaBrote = inicio;
+    inicio.append(this.cabeceraInicio, this.escenario, this.fichasEquipo, this.conversacionEquipo, this.tarjetas, this.pildoras, this.burbuja, this.aprobacion, this.propuesta);
 
     // --- Claude ---
     const codigo = crear("div", "vista vista-claude");
@@ -378,7 +442,18 @@ export class Panel {
 
     if (opciones.flotante) this.raiz.append(this.barra);
     else contenedor.append(this.barra);
-    this.raiz.append(this.avisoDestacado, inicio, this.plata, codigo, equipo, formulario);
+    // "Ver a todos": reemplaza las vistas mientras está abierta (el campo de texto sigue abajo).
+    this.vistaTodos = crear("div", "vista-todos");
+    const cabeceraTodos = crear("div", "todos-cabecera");
+    const tituloTodos = crear("span", "escenario-titulo");
+    tituloTodos.textContent = "Tu equipo, en vivo";
+    const volverTodos = boton("enlace-vista", "");
+    volverTodos.append(icono("reducir"), document.createTextNode(" Volver"));
+    volverTodos.addEventListener("click", () => this.verTodos(false));
+    cabeceraTodos.append(tituloTodos, volverTodos);
+    const filaColumnas = crear("div", "todos-columnas");
+    this.vistaTodos.append(cabeceraTodos, filaColumnas);
+    this.raiz.append(this.avisoDestacado, inicio, this.plata, codigo, equipo, this.vistaTodos, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -434,6 +509,7 @@ export class Panel {
       c.aprobacion !== null ||
       this.hayPermisoClaude ||
       c.propuesta !== null ||
+      this.verTodosActivo ||
       ahora < this.leerHasta ||
       Date.now() < this.avisoHasta
     );
@@ -629,42 +705,267 @@ export class Panel {
    * (main.ts) para que "hace 3 min" no quede viejo.
    */
   /**
-   * "El equipo trabajando" en la pestaña Brote: cada especialista con su emoji, la IA que usa ("·
-   * Gemini", en su color; sin logos de esas marcas), qué hace y si terminó. Los que terminaron se van
-   * solos después de un minuto (main repinta cada pocos segundos).
+   * El equipo de Brote en la pestaña Brote: el escenario con las mascotas (sus lugares con el globito
+   * y "🔎 Investigador · Gemini"; el dibujo lo pone main.ts), las fichas de los que ya terminaron, la
+   * conversación de uno abierta y "Ver a todos". Main lo repinta cada segundo (los que terminaron
+   * celebran un rato y se esconden).
    */
   mostrarEspecialistas(lista: Trabajando[] = this.especialistas): void {
     this.especialistas = lista;
-    const filas = filasEquipo(lista, Date.now());
-    const texto = JSON.stringify(filas);
-    if (texto === this.equipoPintado) return;
-    this.equipoPintado = texto;
-    this.equipoTrabajando.hidden = filas.length === 0;
-    if (filas.length === 0) {
-      this.equipoTrabajando.replaceChildren();
-      return;
+    const ahora = Date.now();
+    this.enEscena = mascotasEnEscena(lista, ahora);
+    this.pintarEscenario();
+    this.pintarFichas(terminadosALaMano(lista, ahora));
+    if (this.abierto && !lista.some((t) => t.sesion === this.abierto)) this.cerrarEspecialista();
+    else if (this.abierto) this.pintarConversacionEquipo();
+    if (this.verTodosActivo) this.pintarTodos();
+  }
+
+  private pintarEscenario(): void {
+    const enEscena = this.enEscena;
+    this.escenario.hidden = enEscena.length === 0;
+    const trabajando = enEscena.some((t) => t.estado === "trabajando");
+    this.escenarioTitulo.textContent = trabajando ? (enEscena.length === 1 ? "Le pasé la tarea a mi equipo" : "Mi equipo está trabajando") : "¡Mi equipo terminó! 🎉";
+    this.botonVerTodos.hidden = !trabajando;
+    const vivas = new Set(enEscena.map((t) => t.sesion));
+    for (const [clave, lugar] of this.lugares) {
+      if (!vivas.has(clave)) {
+        lugar.boton.remove();
+        this.lugares.delete(clave);
+      }
     }
-    const titulo = crear("div", "equipo-titulo");
-    titulo.textContent = tituloEquipo(filas);
-    this.equipoTrabajando.replaceChildren(
+    for (const t of enEscena) {
+      let lugar = this.lugares.get(t.sesion);
+      if (!lugar) {
+        const b = crear("button", "lugar-mascota");
+        b.type = "button";
+        const globo = crear("span", "globo");
+        const hueco = crear("span", "hueco-mascota");
+        const nombre = crear("span", "mascota-nombre");
+        const ia = crear("span", "mascota-ia");
+        b.append(globo, hueco, nombre, ia);
+        const sesion = t.sesion;
+        b.addEventListener("click", () => this.abrirEspecialista(sesion));
+        lugar = { boton: b, globo, nombre, ia, hueco };
+        this.lugares.set(t.sesion, lugar);
+      }
+      const visual = visualDe(t);
+      lugar.boton.className = `lugar-mascota ${visual}`;
+      lugar.boton.title = `${nombreConIA(t)} · ${TEXTO_VISUAL[visual]}${t.tarea ? `\n${t.tarea}` : ""}\nToca para ver su conversación`;
+      lugar.globo.textContent = globoDe(t);
+      lugar.nombre.textContent = t.nombre;
+      lugar.ia.textContent = t.ia ? `· ${t.ia}` : "";
+      lugar.ia.style.color = t.color ?? "";
+      // En el orden de la lista (los que trabajan primero).
+      this.escenarioFila.append(lugar.boton);
+    }
+  }
+
+  private pintarFichas(terminados: Trabajando[]): void {
+    const texto = JSON.stringify(terminados.map((t) => [t.sesion, t.estado]));
+    if (texto === this.fichasPintadas) return;
+    this.fichasPintadas = texto;
+    this.fichasEquipo.hidden = terminados.length === 0;
+    const titulo = crear("span", "fichas-titulo");
+    titulo.textContent = "Lo que hizo tu equipo:";
+    this.fichasEquipo.replaceChildren(
       titulo,
-      ...filas.map((f) => {
-        const fila = crear("div", `fila-equipo ${f.estado}`);
-        if (f.titulo) fila.title = f.titulo;
-        const nombre = crear("span", "equipo-nombre");
-        nombre.textContent = f.nombre;
-        const ia = crear("span", "equipo-ia");
-        ia.textContent = f.ia ? `· ${f.ia}` : "";
-        if (f.color) ia.style.color = f.color;
-        const detalle = crear("span", "equipo-detalle");
-        detalle.textContent = f.detalle;
-        const estado = crear("span", "equipo-estado");
-        if (f.estado === "trabajando") estado.append(icono("girando", "gira"));
-        else estado.textContent = f.estado === "termino" ? "✓" : "!";
-        fila.append(nombre, ia, detalle, estado);
-        return fila;
+      ...terminados.map((t) => {
+        const b = boton("pildora", `${t.emoji} ${t.nombre} ${t.estado === "termino" ? "✓" : "!"}`);
+        b.title = `Ver la conversación de ${nombreConIA(t)}`;
+        b.addEventListener("click", () => this.abrirEspecialista(t.sesion));
+        return b;
       }),
     );
+  }
+
+  /** Abre la conversación de un especialista (tarea, pasos y respuesta) en la pestaña Brote. */
+  abrirEspecialista(sesion: string): void {
+    this.abierto = sesion;
+    this.elegir("brote");
+    this.vistaBrote.classList.add("con-equipo");
+    this.conversacionEquipo.hidden = false;
+    this.pintarConversacionEquipo();
+    this.vistaBrote.scrollTop = 0;
+  }
+
+  cerrarEspecialista(): void {
+    this.abierto = null;
+    this.vistaBrote.classList.remove("con-equipo");
+    this.conversacionEquipo.hidden = true;
+    this.conversacionEquipo.replaceChildren();
+  }
+
+  /** El historial que llegó del Gateway completa lo que no trajeron los eventos. */
+  mostrarHistorial(sesion: string, historial: HistorialEspecialista): void {
+    this.historiales.set(sesion, historial);
+    if (this.abierto === sesion) this.pintarConversacionEquipo();
+    if (this.verTodosActivo) this.pintarTodos();
+  }
+
+  /** Los datos de un especialista con lo que haya llegado del historial (si los eventos no alcanzaron). */
+  private completo(t: Trabajando): { tarea: string | null; pasos: PasoVisible[]; respuesta: string } {
+    const h = this.historiales.get(t.sesion);
+    const pasos = t.pasos && t.pasos.length > 0 ? t.pasos : (h?.pasos ?? []);
+    return {
+      tarea: t.tareaCompleta ?? t.tarea ?? h?.tarea ?? null,
+      pasos: pasosVisibles({ pasos }),
+      respuesta: t.respuesta || h?.respuesta || "",
+    };
+  }
+
+  private pintarConversacionEquipo(): void {
+    const t = this.especialistas.find((e) => e.sesion === this.abierto);
+    if (!t) return;
+    const datos = this.completo(t);
+    // Terminó y no hay qué mostrar (por ejemplo, el puente partió a mitad): se pide su historial, una vez.
+    if (t.estado !== "trabajando" && datos.pasos.length === 0 && !datos.respuesta && !this.historialPedido.has(t.sesion)) {
+      this.historialPedido.add(t.sesion);
+      this.opciones.alPedirHistorial?.(t.sesion);
+    }
+    const cabecera = crear("div", "conversacion-cabecera");
+    const volver = boton("enlace-vista volver", "");
+    volver.append(icono("volver"), document.createTextNode(" volver"));
+    volver.addEventListener("click", () => this.cerrarEspecialista());
+    const titulo = crear("span", "conversacion-titulo");
+    titulo.textContent = `${t.emoji} ${t.nombre}`;
+    const ia = crear("span", "mascota-ia");
+    ia.textContent = t.ia ? `· ${t.ia}` : "";
+    ia.style.color = t.color ?? "";
+    const visual = visualDe(t);
+    const estado = crear("span", `chip ${visual === "termino" ? "lista" : visual === "fallo" ? "error" : visual === "permiso" ? "permiso" : "pensando"}`);
+    estado.textContent = TEXTO_VISUAL[visual];
+    cabecera.append(volver, titulo, ia, estado);
+    this.conversacionEquipo.replaceChildren(cabecera, ...cuerpoConversacion(datos, t.estado === "trabajando"));
+  }
+
+  /** Si "Ver a todos" está abierto. */
+  get verTodosAbierto(): boolean {
+    return this.verTodosActivo;
+  }
+
+  /** Abre o cierra "Ver a todos" (main agranda la isla y la cierra sola cuando el equipo termina). */
+  verTodos(si: boolean): void {
+    if (si === this.verTodosActivo) return;
+    this.verTodosActivo = si;
+    this.raiz.classList.toggle("todos", si);
+    if (si) this.pintarTodos();
+    else {
+      this.columnas.clear();
+      this.vistaTodos.querySelector(".todos-columnas")!.replaceChildren();
+    }
+  }
+
+  /** Las columnas: Brote y hasta 3 especialistas, con sus pasos y su respuesta en vivo. */
+  private pintarTodos(): void {
+    const fila = this.vistaTodos.querySelector<HTMLDivElement>(".todos-columnas")!;
+    const lista = columnasTodos(this.especialistas);
+    const claves = ["brote", ...lista.map((t) => t.sesion)];
+    for (const [clave, columna] of this.columnas) {
+      if (!claves.includes(clave)) {
+        columna.caja.remove();
+        this.columnas.delete(clave);
+      }
+    }
+    for (const clave of claves) {
+      let columna = this.columnas.get(clave);
+      if (!columna) {
+        const caja = crear("div", clave === "brote" ? "columna-todos brote" : "columna-todos");
+        const cabeza = crear("div", "columna-cabeza");
+        const hueco = crear("span", "hueco-mascota chico");
+        const textos = crear("div", "columna-textos");
+        const nombre = crear("span", "conversacion-titulo");
+        const estado = crear("span", "columna-estado");
+        textos.append(nombre, estado);
+        cabeza.append(hueco, textos);
+        const cuerpo = crear("div", "columna-cuerpo");
+        caja.append(cabeza, cuerpo);
+        columna = { caja, hueco, estado, cuerpo, pintado: "" };
+        this.columnas.set(clave, columna);
+      }
+      fila.append(columna.caja);
+      const nombre = columna.caja.querySelector<HTMLSpanElement>(".conversacion-titulo")!;
+      if (clave === "brote") {
+        const c = this.agente.conversacion;
+        nombre.textContent = "Brote";
+        columna.estado.textContent = c.herramienta?.etiqueta ?? (ocupado(c) ? "Coordinando al equipo…" : c.terminada ? "Listo ✓" : "En reposo");
+        const datos = { tarea: c.mensajeUsuario, pasos: [] as PasoVisible[], respuesta: c.error ?? c.respuesta };
+        this.pintarColumna(columna, datos, ocupado(c), "Tu pregunta");
+        continue;
+      }
+      const t = lista.find((e) => e.sesion === clave)!;
+      // Sin emoji: la mascota ya está al lado.
+      nombre.replaceChildren(document.createTextNode(`${t.nombre} `));
+      const ia = crear("span", "mascota-ia");
+      ia.textContent = t.ia ? `· ${t.ia}` : "";
+      ia.style.color = t.color ?? "";
+      nombre.append(ia);
+      columna.caja.className = `columna-todos ${visualDe(t)}`;
+      columna.estado.textContent = globoDe(t);
+      this.pintarColumna(columna, this.completo(t), t.estado === "trabajando");
+    }
+  }
+
+  private pintarColumna(
+    columna: { cuerpo: HTMLDivElement; pintado: string },
+    datos: { tarea: string | null; pasos: PasoVisible[]; respuesta: string },
+    escribiendo: boolean,
+    tituloTarea = "Tarea",
+  ): void {
+    const texto = JSON.stringify([datos, escribiendo]);
+    if (texto === columna.pintado) return;
+    columna.pintado = texto;
+    // Si el usuario estaba leyendo más arriba, no se le mueve; si estaba al final, sigue al final.
+    const alFinal = columna.cuerpo.scrollTop + columna.cuerpo.clientHeight >= columna.cuerpo.scrollHeight - 8;
+    columna.cuerpo.replaceChildren(...cuerpoConversacion(datos, escribiendo, tituloTarea));
+    if (alFinal) columna.cuerpo.scrollTop = columna.cuerpo.scrollHeight;
+  }
+
+  /**
+   * Dónde van las mascotas ahora (en píxeles de la ventana): en el escenario o, con "Ver a todos", en
+   * la cabecera de su columna. Vacío si el panel no se ve.
+   */
+  lugaresMascotas(): Lugar[] {
+    if (!this.visible) return [];
+    const lugar = (t: Trabajando, hueco: HTMLElement, radio: number): Lugar | null => {
+      const r = hueco.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return null;
+      return { clave: t.sesion, id: t.id, x: r.left + r.width / 2, suelo: r.bottom - 1, radio, visual: visualDe(t) };
+    };
+    if (this.verTodosActivo) {
+      return columnasTodos(this.especialistas)
+        .map((t) => {
+          const columna = this.columnas.get(t.sesion);
+          return columna ? lugar(t, columna.hueco, 10) : null;
+        })
+        .filter((l): l is Lugar => l !== null);
+    }
+    if (this.pestana !== "brote") return [];
+    return this.enEscena.map((t) => lugar(t, this.lugares.get(t.sesion)!.hueco, 15)).filter((l): l is Lugar => l !== null);
+  }
+
+  /** Con "Ver a todos", dónde va Brote (la cabecera de su columna). */
+  lugarBrote(): { x: number; suelo: number; radio: number } | null {
+    const columna = this.verTodosActivo && this.visible ? this.columnas.get("brote") : undefined;
+    if (!columna) return null;
+    const r = columna.hueco.getBoundingClientRect();
+    if (r.width === 0) return null;
+    return { x: r.left + r.width / 2, suelo: r.bottom - 1, radio: 11 };
+  }
+
+  /** Si el equipo terminó todo (main cierra "Ver a todos" un rato después). */
+  get equipoTerminado(): boolean {
+    return equipoTermino(this.especialistas);
+  }
+
+  /** Si algún especialista está trabajando (el ala de la isla cerrada lo muestra). */
+  get equipoTrabajando(): boolean {
+    return this.especialistas.some((t) => t.estado === "trabajando");
+  }
+
+  /** Si hay especialistas en el turno (trabajando o recién terminados). */
+  get hayEquipo(): boolean {
+    return this.especialistas.length > 0;
   }
 
   /**
@@ -1022,6 +1323,8 @@ export class Panel {
     estilo.top = `${zona.y}px`;
     estilo.width = `${zona.ancho}px`;
     estilo.maxHeight = `${zona.altoMax}px`;
+    // "Ver a todos" usa todo el alto (las columnas se desplazan por dentro).
+    estilo.height = this.verTodosActivo ? `${zona.altoMax}px` : "";
     if (zona.barra) {
       const b = this.barra.style;
       b.left = `${zona.barra.x}px`;
@@ -1041,6 +1344,11 @@ export class Panel {
       // Al cerrarse la isla, el foco no debe quedar en un campo que no se ve.
       if (document.activeElement && this.raiz.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
     }
+  }
+
+  /** Dónde está el panel en la ventana (modo flotante: el lienzo dibuja su caja). */
+  rect(): DOMRect | null {
+    return this.raiz.getBoundingClientRect();
   }
 
   /** Si un punto de la ventana cae sobre una zona clicable del panel o de las pestañas. */
@@ -1285,6 +1593,7 @@ export class Panel {
     this.aplicarModo();
     this.actualizarPuntos();
     this.actualizarEntrada();
+    if (this.verTodosActivo) this.pintarTodos();
   }
 
   private actualizarEntrada(): void {
@@ -1389,6 +1698,42 @@ function grafico(muestras: number[]): SVGSVGElement {
   linea.setAttribute("points", puntos);
   svg.append(linea);
   return svg;
+}
+
+/** Tarea, pasos y respuesta (con el markdown de la burbuja) de una conversación del equipo. */
+function cuerpoConversacion(datos: { tarea: string | null; pasos: PasoVisible[]; respuesta: string }, escribiendo: boolean, tituloTarea = "Tarea"): HTMLElement[] {
+  const partes: HTMLElement[] = [];
+  if (datos.tarea) {
+    partes.push(seccion(tituloTarea));
+    const tarea = crear("p", "conversacion-tarea");
+    tarea.textContent = datos.tarea;
+    partes.push(tarea);
+  }
+  if (datos.pasos.length > 0) {
+    partes.push(seccion("Pasos"));
+    const lista = crear("ul", "pasos");
+    datos.pasos.forEach((p) => {
+      const li = crear("li", p.estado === "en-curso" ? "actual" : "");
+      const texto = crear("span", "");
+      texto.textContent = p.texto;
+      li.append(p.estado === "en-curso" ? icono("girando", "gira") : p.estado === "error" ? icono("alerta") : icono("listo"), texto);
+      lista.append(li);
+    });
+    partes.push(lista);
+  }
+  partes.push(seccion("Respuesta"));
+  const respuesta = crear("div", "burbuja-respuesta conversacion-respuesta");
+  if (datos.respuesta) pintarMarkdown(respuesta, datos.respuesta);
+  else respuesta.textContent = escribiendo ? "" : "Sin respuesta.";
+  respuesta.classList.toggle("escribiendo", escribiendo && !datos.respuesta);
+  partes.push(respuesta);
+  return partes;
+}
+
+function seccion(texto: string): HTMLDivElement {
+  const titulo = crear("div", "seccion-titulo");
+  titulo.textContent = texto;
+  return titulo;
 }
 
 /** Convierte el markdown de una respuesta en elementos con texto (nunca HTML). */

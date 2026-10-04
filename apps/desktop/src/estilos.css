@@ -137,14 +137,13 @@ body {
   transform: none;
 }
 
-/* Modo flotante: sin la isla negra detrás, el panel lleva su propio fondo y las pestañas arriba. */
+/*
+ * Modo flotante: sin la isla negra detrás, el panel lleva su propia caja y las pestañas arriba. La
+ * caja la dibuja el lienzo (main.ts), debajo de las mascotas del equipo: así se ven encima de ella.
+ */
 .panel.flotante {
   padding: 8px 10px 10px;
   border-radius: 18px;
-  background: linear-gradient(160deg, #19191f, #0e0e12);
-  box-shadow:
-    0 0 0 1px var(--linea),
-    0 8px 28px rgba(0, 0, 0, 0.4);
 }
 .panel.flotante .barra {
   position: static;
@@ -1093,60 +1092,236 @@ button.tarjeta:hover {
   color: var(--texto);
 }
 
-/* ---------- El equipo de Brote trabajando (pestaña Brote) ---------- */
+/* ---------- El equipo de Brote: escenario, conversación y "Ver a todos" ---------- */
 
-.equipo-trabajando {
+/* Las mascotas las dibuja el lienzo en el hueco de cada lugar: el HTML es transparente ahí. */
+.escenario {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin: 6px 0 2px;
-  padding: 7px 10px;
+  gap: 2px;
+}
+.escenario-cabecera,
+.todos-cabecera,
+.conversacion-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.escenario-titulo {
+  flex: 1;
+  color: var(--texto-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.escenario-fila {
+  display: flex;
+  justify-content: space-around;
+  gap: 4px;
+}
+.lugar-mascota {
+  display: flex;
+  flex: 1 1 0;
+  max-width: 120px;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 0 2px 2px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--texto);
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+.lugar-mascota:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+/* El globito con lo que hace ahora, con su colita hacia la mascota. */
+.globo {
+  position: relative;
+  display: -webkit-box;
+  max-width: 100%;
+  height: 29px;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.11);
+  color: var(--texto-2);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.lugar-mascota.permiso .globo {
+  background: rgba(255, 186, 72, 0.2);
+  color: var(--ambar);
+}
+.lugar-mascota.termino .globo {
+  background: rgba(111, 207, 126, 0.16);
+  color: var(--verde);
+}
+.lugar-mascota.fallo .globo {
+  color: var(--rojo);
+}
+.hueco-mascota {
+  display: block;
+  width: 44px;
+  height: 38px;
+  flex: none;
+}
+.hueco-mascota.chico {
+  width: 30px;
+  height: 26px;
+}
+.mascota-nombre {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mascota-ia {
+  color: var(--texto-2);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lugar-mascota .mascota-ia {
+  margin-top: -2px;
+}
+.fichas-equipo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.fichas-titulo {
+  color: var(--texto-3);
+  font-size: 10.5px;
+}
+/* Con la conversación de un especialista abierta, se esconde lo demás de la pestaña Brote. */
+.vista-brote.con-equipo > .cabecera-vista,
+.vista-brote.con-equipo > .tarjetas,
+.vista-brote.con-equipo > .pildoras,
+.vista-brote.con-equipo > .burbuja,
+.vista-brote.con-equipo > .fichas-equipo {
+  display: none !important;
+}
+.conversacion-equipo {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
   border-radius: 12px;
   background: var(--tarjeta);
   box-shadow: inset 0 0 0 1px var(--linea);
 }
-.equipo-titulo {
-  color: var(--texto-3);
-  font: 10px var(--sans);
-  letter-spacing: 0.02em;
-}
-.fila-equipo {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  font: 12px var(--sans);
-  color: var(--texto);
-}
-.equipo-nombre {
-  white-space: nowrap;
-}
-.equipo-ia {
-  color: var(--texto-2);
+.conversacion-titulo {
   font-weight: 600;
   white-space: nowrap;
 }
-.equipo-detalle {
+.conversacion-cabecera .chip {
+  margin-left: auto;
+}
+.volver {
+  padding-left: 0;
+}
+.conversacion-tarea {
+  margin: 0;
+  color: var(--texto-2);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
+.conversacion-respuesta {
+  font-size: 12px;
+}
+.conversacion-equipo .pasos,
+.columna-cuerpo .pasos {
+  margin: 0;
+}
+
+/* "Ver a todos": la isla se agranda y las vistas dejan lugar a las columnas. */
+.vista-todos {
+  display: none;
+}
+.panel.todos > .vista {
+  display: none !important;
+}
+.panel.todos > .vista-todos {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.todos-columnas {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-auto-columns: minmax(150px, 1fr);
+  grid-auto-flow: column;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.panel.flotante .todos-columnas {
+  grid-auto-columns: minmax(200px, 1fr);
+  scroll-snap-type: x mandatory;
+}
+.columna-todos {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+  scroll-snap-align: start;
+}
+.columna-todos.permiso {
+  box-shadow: inset 0 0 0 1px rgba(255, 186, 72, 0.45);
+}
+.columna-cabeza {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.columna-textos {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.columna-textos .conversacion-titulo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.columna-estado {
   overflow: hidden;
   color: var(--texto-2);
-  text-overflow: ellipsis;
+  font-size: 10.5px;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.equipo-estado {
+.columna-cuerpo {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  width: 14px;
-  justify-content: center;
-  color: var(--verde);
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
-.equipo-estado svg {
-  width: 12px;
-  height: 12px;
-}
-.fila-equipo.fallo .equipo-estado {
-  color: var(--ambar);
-}
-.fila-equipo.termino .equipo-detalle {
-  color: var(--texto-3);
+.columna-cuerpo::-webkit-scrollbar,
+.todos-columnas::-webkit-scrollbar {
+  display: none;
 }
 
 /* ---------- Plata: los gastos del mes ---------- */
@@ -1284,4 +1459,8 @@ button.tarjeta:hover {
 }
 .plata-hoy .tarjeta-detalle {
   white-space: normal;
+}
+/* En el modo flotante Brote no se muda a su columna (sigue grande a la derecha). */
+.panel.flotante .columna-todos.brote .hueco-mascota {
+  display: none;
 }

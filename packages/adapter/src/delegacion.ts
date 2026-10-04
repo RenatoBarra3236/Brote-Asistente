@@ -18,6 +18,21 @@ import { agenteDeSesion, esSesionHija } from "@asistente/motor";
 export const PREFIJO_INTER_SESION = "[Inter-session message]";
 export const NO_REPLY = "NO_REPLY";
 
+/** Un paso de un especialista: una herramienta que usó (o está usando). */
+export interface PasoEspecialista {
+  id: string;
+  herramienta: string;
+  /** Solo lo que sirve para decir qué hace (dominio, búsqueda, archivo…), recortado. */
+  args: Record<string, string>;
+  estado: "en-curso" | "ok" | "error";
+}
+
+/**
+ * Qué hace ahora un especialista que trabaja (para animar su mascota): esperando que parta, pensando,
+ * trabajando (una herramienta o escribiendo la respuesta) o esperando un permiso en la isla.
+ */
+export type Actividad = "en-espera" | "pensando" | "trabajando" | "permiso";
+
 /** Lo que la isla muestra de cada especialista trabajando (aviso "especialistas"). */
 export interface Trabajando {
   /** La sesión hija ("agent:investigador:subagent:…"). */
@@ -31,9 +46,18 @@ export interface Trabajando {
   color: string | null;
   /** La tarea que le pasó Brote, recortada. */
   tarea: string | null;
+  /** La tarea completa (recortada a un largo razonable), para su conversación en la isla. */
+  tareaCompleta: string | null;
   /** La herramienta que está usando ahora ("WebSearch"), para que la isla diga "Buscando en la web…". */
   herramienta: string | null;
+  /** Los argumentos útiles de esa herramienta (dominio, búsqueda…), para el globito. */
+  args: Record<string, string> | null;
   estado: "trabajando" | "termino" | "fallo";
+  actividad: Actividad;
+  /** Las herramientas que usó, en orden (las últimas `MAX_PASOS`). */
+  pasos: PasoEspecialista[];
+  /** Lo que lleva escrito de su respuesta (recortado). */
+  respuesta: string;
   inicioMs: number;
   finMs: number | null;
 }
@@ -48,6 +72,22 @@ export interface Resultado {
 }
 
 const MAX_TAREA = 160;
+const MAX_TAREA_COMPLETA = 2000;
+const MAX_RESPUESTA = 6000;
+export const MAX_PASOS = 12;
+/** Los argumentos de una herramienta que sirven para decir qué hace; nada más se guarda. */
+const ARGS_UTILES = ["url", "query", "file_path", "path", "pattern", "command", "action", "agentId"] as const;
+
+/** Solo los argumentos útiles, como texto corto (nunca el contenido de un archivo o un mensaje). */
+export function argsUtiles(args: unknown): Record<string, string> {
+  const salida: Record<string, string> = {};
+  if (!args || typeof args !== "object") return salida;
+  for (const clave of ARGS_UTILES) {
+    const valor = (args as Record<string, unknown>)[clave];
+    if (typeof valor === "string" && valor.trim()) salida[clave] = recortar(valor, 120);
+  }
+  return salida;
+}
 const MAX_INTERNOS = 20;
 
 function textoDe(contenido: unknown): string {
@@ -84,7 +124,7 @@ function objetoDe(valor: unknown): any {
 export class FiltroDelegacion {
   private readonly trabajando = new Map<string, Trabajando>();
   /** Tareas pasadas con sessions_spawn que todavía no tienen sesión hija conocida. */
-  private pendientes: { agente: string; tarea: string; sesion: string | null }[] = [];
+  private pendientes: { agente: string; tarea: string; completa: string; sesion: string | null }[] = [];
   /** Llegó un "[Inter-session message]": el próximo turno de Brote es interno. */
   private internoPorVenir = false;
   /** Turnos internos (no se muestran) y lo que Brote fue respondiendo en cada uno. */
@@ -153,7 +193,7 @@ export class FiltroDelegacion {
 
     if (runId && this.internos.has(runId)) return { reenviar: this.interno(marco, runId), equipo: false };
 
-    const equipo = this.herramientaDeBrote(marco);
+    const equipo = this.herramientaDeBrote(marco, ahoraMs);
     return { reenviar: this.normal(marco, runId), equipo };
   }
 
@@ -227,14 +267,16 @@ export class FiltroDelegacion {
   }
 
   /** Las llamadas de Brote a sessions_spawn: de ahí sale qué tarea tiene cada especialista. */
-  private herramientaDeBrote(marco: any): boolean {
+  private herramientaDeBrote(marco: any, ahoraMs: number): boolean {
     const payload = marco.payload;
     const datos = payload.data ?? {};
     if (marco.event !== "agent" || payload.stream !== "tool" || !String(datos.name ?? "").endsWith("sessions_spawn")) return false;
     if (datos.phase === "start") {
       const agente = typeof datos.args?.agentId === "string" ? datos.args.agentId : null;
-      const tarea = typeof datos.args?.task === "string" ? recortar(datos.args.task, MAX_TAREA) : "";
-      if (agente) this.pendientes.push({ agente, tarea, sesion: null });
+      const texto = typeof datos.args?.task === "string" ? datos.args.task : "";
+      const tarea = recortar(texto, MAX_TAREA);
+      const completa = texto.trim().slice(0, MAX_TAREA_COMPLETA);
+      if (agente) this.pendientes.push({ agente, tarea, completa, sesion: null });
       return false;
     }
     if (datos.phase !== "result") return false;
@@ -247,13 +289,35 @@ export class FiltroDelegacion {
     if (yaEsta) {
       if (pendiente && !yaEsta.tarea) {
         yaEsta.tarea = pendiente.tarea || null;
+        yaEsta.tareaCompleta = pendiente.completa || null;
         this.pendientes = this.pendientes.filter((p) => p !== pendiente);
         return true;
       }
       return false;
     }
-    if (pendiente) pendiente.sesion = sesion;
-    return false;
+    // Ya se sabe su sesión: aparece "en espera" hasta que llegue su primer evento.
+    if (!agente) return false;
+    if (pendiente) this.pendientes = this.pendientes.filter((p) => p !== pendiente);
+    this.trabajando.set(sesion, this.nuevo(sesion, agente, pendiente ?? null, "en-espera", ahoraMs));
+    return true;
+  }
+
+  private nuevo(sesion: string, agente: string, pendiente: { tarea: string; completa: string } | null, actividad: Actividad, ahoraMs: number): Trabajando {
+    return {
+      sesion,
+      id: agente,
+      ...this.ficha(agente),
+      tarea: pendiente?.tarea || null,
+      tareaCompleta: pendiente?.completa || null,
+      herramienta: null,
+      args: null,
+      estado: "trabajando",
+      actividad,
+      pasos: [],
+      respuesta: "",
+      inicioMs: ahoraMs,
+      finMs: null,
+    };
   }
 
   /** Un evento de una sesión hija: actualiza al especialista. */
@@ -268,33 +332,52 @@ export class FiltroDelegacion {
       // La tarea: la del sessions_spawn que devolvió esta sesión, o la primera pendiente de ese agente.
       const pendiente = this.pendientes.find((p) => p.sesion === sesion) ?? this.pendientes.find((p) => p.agente === agente && p.sesion === null);
       if (pendiente) this.pendientes = this.pendientes.filter((p) => p !== pendiente);
-      t = {
-        sesion,
-        id: agente,
-        ...this.ficha(agente),
-        tarea: pendiente?.tarea || null,
-        herramienta: null,
-        estado: "trabajando",
-        inicioMs: ahoraMs,
-        finMs: null,
-      };
+      t = this.nuevo(sesion, agente, pendiente ?? null, "pensando", ahoraMs);
       this.trabajando.set(sesion, t);
     }
     const antes = JSON.stringify(t);
+    const fin = (estado: "termino" | "fallo") => {
+      Object.assign(t!, { estado, herramienta: null, args: null, finMs: ahoraMs });
+      for (const paso of t!.pasos) if (paso.estado === "en-curso") paso.estado = estado === "fallo" ? "error" : "ok";
+    };
     if (marco.event === "agent") {
       if (payload.stream === "lifecycle") {
-        if (datos.phase === "start") Object.assign(t, { estado: "trabajando", finMs: null });
-        else if (datos.phase === "end") Object.assign(t, { estado: datos.aborted ? "fallo" : "termino", herramienta: null, finMs: ahoraMs });
-        else if (/error|fail|abort/i.test(String(datos.phase ?? ""))) Object.assign(t, { estado: "fallo", herramienta: null, finMs: ahoraMs });
-      } else if (payload.stream === "error") Object.assign(t, { estado: "fallo", herramienta: null, finMs: ahoraMs });
-      else if (payload.stream === "tool" && t.estado === "trabajando") {
-        if (datos.phase === "start") t.herramienta = typeof datos.name === "string" ? datos.name : null;
-        else if (datos.phase === "result") t.herramienta = null;
-      }
+        if (datos.phase === "start") Object.assign(t, { estado: "trabajando", actividad: t.actividad === "en-espera" ? "pensando" : t.actividad, finMs: null });
+        else if (datos.phase === "end") fin(datos.aborted ? "fallo" : "termino");
+        else if (/error|fail|abort/i.test(String(datos.phase ?? ""))) fin("fallo");
+      } else if (payload.stream === "error") fin("fallo");
+      else if (t.estado === "trabajando") this.avance(t, payload.stream, datos);
     } else if (marco.event === "chat" && (payload.state === "error" || payload.state === "aborted") && t.estado === "trabajando") {
-      Object.assign(t, { estado: "fallo", herramienta: null, finMs: ahoraMs });
+      fin("fallo");
+    } else if (marco.event === "chat" && payload.state === "final" && !t.respuesta) {
+      // Si los trozos de texto no llegaron, la respuesta final igual queda en su conversación.
+      t.respuesta = textoDe(payload.message?.content).trim().slice(0, MAX_RESPUESTA);
     }
     return nuevo || JSON.stringify(t) !== antes;
+  }
+
+  /** Pensando, una herramienta o escribiendo: lo que se ve en el globito y en su conversación. */
+  private avance(t: Trabajando, flujo: unknown, datos: any): void {
+    if (flujo === "thinking") {
+      if (!t.herramienta && t.actividad !== "permiso") t.actividad = "pensando";
+    } else if (flujo === "assistant") {
+      const texto = typeof datos.text === "string" ? datos.text : t.respuesta + (typeof datos.delta === "string" ? datos.delta : "");
+      t.respuesta = texto.slice(0, MAX_RESPUESTA);
+      if (t.actividad !== "permiso") t.actividad = "trabajando";
+    } else if (flujo === "tool") {
+      const id = String(datos.toolCallId ?? datos.name ?? t.pasos.length);
+      if (datos.phase === "start") {
+        const nombre = typeof datos.name === "string" ? datos.name : "herramienta";
+        const args = argsUtiles(datos.args);
+        Object.assign(t, { herramienta: nombre, args, actividad: t.actividad === "permiso" ? "permiso" : "trabajando" });
+        if (!t.pasos.some((p) => p.id === id)) t.pasos = [...t.pasos, { id, herramienta: nombre, args, estado: "en-curso" as const }].slice(-MAX_PASOS);
+      } else if (datos.phase === "result") {
+        const paso = t.pasos.find((p) => p.id === id);
+        if (paso) paso.estado = datos.isError ? "error" : "ok";
+        Object.assign(t, { herramienta: null, args: null });
+        if (t.actividad !== "permiso") t.actividad = "pensando";
+      }
+    }
   }
 
   /** Las solicitudes de permiso pasan siempre; las de un especialista llevan quién pide. */
@@ -303,9 +386,17 @@ export class FiltroDelegacion {
     const sesion = [payload.sourceSessionKey, payload.sessionKey].find((s) => esSesionHija(s));
     if (!sesion) return { reenviar: [marco], equipo: false };
     const agente = agenteDeSesion(sesion)!;
-    const { nombre, emoji } = this.trabajando.get(sesion) ?? this.ficha(agente);
+    const t = this.trabajando.get(sesion);
+    const { nombre, emoji } = t ?? this.ficha(agente);
+    // Mientras espera que el usuario responda, su mascota lo muestra; al resolverse, sigue trabajando.
+    let cambio = false;
+    if (t && t.estado === "trabajando") {
+      const actividad: Actividad = payload.phase === "pending" ? "permiso" : t.herramienta ? "trabajando" : "pensando";
+      cambio = actividad !== t.actividad;
+      t.actividad = actividad;
+    }
     const presentacion = payload.approval?.presentation;
-    if (!presentacion || typeof presentacion !== "object") return { reenviar: [marco], equipo: false };
+    if (!presentacion || typeof presentacion !== "object") return { reenviar: [marco], equipo: cambio };
     return {
       reenviar: [
         {
@@ -313,7 +404,55 @@ export class FiltroDelegacion {
           payload: { ...payload, approval: { ...payload.approval, presentation: { ...presentacion, especialista: { nombre, emoji } } } },
         },
       ],
-      equipo: false,
+      equipo: cambio,
     };
   }
+}
+
+/** Lo que se reconstruye de la conversación de un especialista con `chat.history` de su sesión hija. */
+export interface Historial {
+  tarea: string | null;
+  pasos: PasoEspecialista[];
+  respuesta: string;
+}
+
+/**
+ * Lee el resultado de `chat.history` (la forma exacta no está en el protocolo: `messages` es una
+ * lista libre). Se toma lo mismo que de los eventos: la primera pregunta (la tarea), las herramientas
+ * que usó (bloques `tool_use` / `toolCall` con su nombre y solo los argumentos útiles) y su última
+ * respuesta de texto. Lo que no se reconoce se ignora. Sin probar contra el Gateway real.
+ */
+export function leerHistorial(resultado: unknown): Historial {
+  const mensajes: any[] = Array.isArray((resultado as any)?.messages) ? (resultado as any).messages : Array.isArray(resultado) ? (resultado as any[]) : [];
+  const historial: Historial = { tarea: null, pasos: [], respuesta: "" };
+  for (const crudo of mensajes) {
+    const mensaje = crudo?.message && typeof crudo.message === "object" ? crudo.message : crudo;
+    const rol = mensaje?.role;
+    const bloques: any[] = typeof mensaje?.content === "string" ? [{ type: "text", text: mensaje.content }] : Array.isArray(mensaje?.content) ? mensaje.content : [];
+    if (rol === "user") {
+      const texto = textoDe(bloques).trim();
+      if (texto && historial.tarea === null && !texto.startsWith(PREFIJO_INTER_SESION)) historial.tarea = texto.slice(0, MAX_TAREA_COMPLETA);
+      for (const b of bloques) if (b?.type === "tool_result") marcarPaso(historial, b.tool_use_id, b.is_error === true);
+      continue;
+    }
+    if (rol === "toolResult" || rol === "tool") {
+      marcarPaso(historial, mensaje.toolCallId ?? mensaje.tool_call_id, mensaje.isError === true);
+      continue;
+    }
+    if (rol !== "assistant") continue;
+    for (const b of bloques) {
+      if (b?.type === "tool_use" || b?.type === "toolCall" || b?.type === "tool_call") {
+        const id = String(b.id ?? b.toolCallId ?? historial.pasos.length);
+        historial.pasos = [...historial.pasos, { id, herramienta: String(b.name ?? "herramienta"), args: argsUtiles(b.input ?? b.arguments ?? b.args), estado: "ok" as const }].slice(-MAX_PASOS);
+      }
+    }
+    const texto = textoDe(bloques).trim();
+    if (texto && !esNoReply(texto)) historial.respuesta = texto.slice(0, MAX_RESPUESTA);
+  }
+  return historial;
+}
+
+function marcarPaso(historial: Historial, id: unknown, error: boolean): void {
+  const paso = historial.pasos.find((p) => p.id === String(id));
+  if (paso) paso.estado = error ? "error" : "ok";
 }

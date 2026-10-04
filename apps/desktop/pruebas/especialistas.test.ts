@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { filasEquipo, tituloEquipo, type Trabajando } from "../src/agente/especialistas.ts";
+import { CELEBRAR_MS, MAX_MASCOTAS, columnasTodos, equipoTermino, estadoDeMascota, globoDe, mascotasEnEscena, nombreConIA, pasosVisibles, terminadosALaMano, visualDe, type Trabajando } from "../src/agente/especialistas.ts";
 
 const base: Trabajando = {
   sesion: "agent:investigador:subagent:1",
@@ -16,30 +16,67 @@ const base: Trabajando = {
   finMs: null,
 };
 
-describe("el equipo trabajando en la isla", () => {
-  test("nombre con emoji, la IA aparte y qué hace", () => {
-    const [fila] = filasEquipo([{ ...base, herramienta: "web_search" }], 2000);
-    assert.equal(fila.nombre, "🔎 Investigador");
-    assert.equal(fila.ia, "Gemini");
-    assert.equal(fila.color, "#5b8def");
-    assert.equal(fila.detalle, "Buscando en la web…");
-    assert.equal(fila.titulo, "Explica la fotosíntesis");
-    // Sin herramienta en curso, la tarea.
-    assert.equal(filasEquipo([base], 2000)[0].detalle, "Explica la fotosíntesis");
+describe("el equipo vivo: escenario y Ver a todos", () => {
+  const vivo = (extra: Partial<Trabajando>): Trabajando => ({ ...base, actividad: "pensando", pasos: [], respuesta: "", ...extra });
+
+  test("cada actividad tiene su ánimo y su globito", () => {
+    assert.equal(globoDe(vivo({ actividad: "en-espera" })), "Preparándome…");
+    assert.equal(globoDe(vivo({})), "Pensando…");
+    assert.equal(globoDe(vivo({ actividad: "trabajando", herramienta: "web_fetch", args: { url: "https://es.wikipedia.org/wiki/Mitosis" } })), "Leyendo es.wikipedia.org…");
+    assert.equal(globoDe(vivo({ actividad: "trabajando", herramienta: "mcp__openclaw__web_search", args: { query: "mitosis" } })), "Buscando «mitosis»…");
+    assert.equal(globoDe(vivo({ actividad: "trabajando", respuesta: "La mitosis es el proceso de división celular en el cual una célula…" })), "«La mitosis es el proceso de división celula…»");
+    assert.equal(globoDe(vivo({ actividad: "permiso" })), "Te pido permiso ✋");
+    assert.equal(globoDe(vivo({ estado: "termino", finMs: 2, respuesta: "Hecho." })), "¡Listo! Hecho.");
+    assert.equal(globoDe(vivo({ estado: "fallo", finMs: 2 })), "No pude terminar 😕");
+    assert.deepEqual(
+      (["en-espera", "pensando", "trabajando", "permiso", "termino", "fallo"] as const).map(estadoDeMascota),
+      ["reposo", "pensando", "trabajando", "pidiendo-permiso", "listo", "error"],
+    );
+    // Un aviso viejo (sin actividad) igual se entiende.
+    assert.equal(visualDe({ ...base, herramienta: "Read" }), "trabajando");
   });
 
-  test("los que trabajan primero; los terminados se van después de un minuto", () => {
-    const listo: Trabajando = { ...base, sesion: "s2", nombre: "Revisor", emoji: "✅", estado: "termino", inicioMs: 500, finMs: 3000 };
-    const filas = filasEquipo([listo, base], 4000);
-    assert.deepEqual(filas.map((f) => [f.nombre, f.detalle]), [
-      ["🔎 Investigador", "Explica la fotosíntesis"],
-      ["✅ Revisor", "Listo ✓"],
-    ]);
-    assert.equal(tituloEquipo(filas), "Mi equipo está trabajando");
-    assert.deepEqual(filasEquipo([listo], 3000 + 60_000).length, 0);
-    assert.equal(tituloEquipo(filasEquipo([listo], 4000)), "Mi equipo terminó");
-    assert.equal(filasEquipo([{ ...base, estado: "fallo", finMs: 3000 }], 4000)[0].detalle, "No pudo terminar");
+  test("como mucho 4 en escena; al terminar celebran y se esconden; quedan a mano un minuto", () => {
+    const lista = ["a", "b", "c", "d", "e"].map((s, i) => vivo({ sesion: s, inicioMs: i }));
+    assert.equal(mascotasEnEscena(lista, 10).length, MAX_MASCOTAS);
+    const listos = lista.map((t) => ({ ...t, estado: "termino" as const, finMs: 1000 }));
+    assert.equal(equipoTermino(listos), true);
+    assert.equal(mascotasEnEscena(listos, 1000 + CELEBRAR_MS - 1).length, 4);
+    assert.deepEqual(mascotasEnEscena(listos, 1000 + CELEBRAR_MS), []);
+    assert.equal(terminadosALaMano(listos, 1000 + CELEBRAR_MS).length, 5);
+    assert.deepEqual(terminadosALaMano(listos, 1000 + 60_000), []);
+    assert.deepEqual(terminadosALaMano(listos, 1001), [], "mientras celebran no hay fichas");
+    assert.equal(equipoTermino([]), false);
   });
+
+  test("Ver a todos: hasta 3 columnas, los que trabajan primero", () => {
+    const lista = [vivo({ sesion: "x", estado: "termino", finMs: 5, inicioMs: 0 }), vivo({ sesion: "y", inicioMs: 1 }), vivo({ sesion: "z", inicioMs: 2 }), vivo({ sesion: "w", inicioMs: 3 })];
+    assert.deepEqual(columnasTodos(lista).map((t) => t.sesion), ["y", "z", "w"]);
+  });
+
+  test("los pasos se dicen como en la isla", () => {
+    const pasos = pasosVisibles({
+      pasos: [
+        { id: "1", herramienta: "web_search", args: { query: "mitosis" }, estado: "ok" },
+        { id: "2", herramienta: "web_fetch", args: { url: "https://www.biologia.cl/x" }, estado: "en-curso" },
+        { id: "3", herramienta: "Read", args: { file_path: "/tmp/apuntes.md" }, estado: "error" },
+      ],
+    });
+    assert.deepEqual(pasos, [
+      { texto: "Buscando «mitosis»", estado: "ok" },
+      { texto: "Leyendo biologia.cl…", estado: "en-curso" },
+      { texto: "Leyendo apuntes.md", estado: "error" },
+    ]);
+    assert.equal(nombreConIA(base), "🔎 Investigador · Gemini");
+  });
+});
+
+test("el globito no muestra marcas de markdown y la fila no cambia de orden", () => {
+  const t: Trabajando = { ...base, actividad: "trabajando", respuesta: "La **fotosíntesis** es…" };
+  assert.equal(globoDe(t), "«La fotosíntesis es…»");
+  const a = { ...base, sesion: "a", inicioMs: 1, estado: "termino" as const, finMs: 5 };
+  const b = { ...base, sesion: "b", inicioMs: 2 };
+  assert.deepEqual(mascotasEnEscena([b, a], 6).map((x) => x.sesion), ["a", "b"]);
 });
 
 describe("Configurar Brote → Equipo", async () => {
@@ -62,3 +99,4 @@ describe("Configurar Brote → Equipo", async () => {
     assert.equal(modeloInicial({ sugerido: "x", modelo: null }, cuentas.map((c) => ({ ...c, conectada: false }))), null);
   });
 });
+

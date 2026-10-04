@@ -1,6 +1,10 @@
 // El personaje: un cuerpo con forma de huevo, con un brote en la cabeza que cambia de color
 // según el estado. Se dibuja entero con Canvas 2D, sin imágenes.
 // Diseño provisional, hasta definir el personaje definitivo.
+//
+// Las mascotas del equipo de Brote son variantes del mismo personaje (`Apariencia`): otro color de
+// cuerpo y de hoja, y un accesorio dibujado aquí (birrete, lupa, lápiz, visera o reloj). Son dibujos
+// propios: nada de personajes, logos ni dibujos de otros proyectos.
 
 import { ESTADOS, type ConfigEstado, type Estado, type FormaOjos, type RGB } from "./estados";
 import { Resorte, acercar, curvas, lerp, limitar, type Curva } from "./fisica";
@@ -46,6 +50,18 @@ const RITMO = 2.4;
 
 const CREMA_ARRIBA: RGB = [1, 0.96, 0.84];
 const CREMA_ABAJO: RGB = [0.98, 0.82, 0.5];
+
+export type Accesorio = "birrete" | "lupa" | "lapiz" | "visera" | "reloj";
+
+/** Cómo se ve: Brote (por defecto) o la mascota de un especialista. */
+export interface Apariencia {
+  cuerpo: readonly [RGB, RGB];
+  /** El color de la hoja en reposo; al trabajar se mezcla con el del estado. `null`: el del estado (Brote). */
+  hoja: RGB | null;
+  accesorio: Accesorio | null;
+}
+
+export const APARIENCIA_BROTE: Apariencia = { cuerpo: [CREMA_ARRIBA, CREMA_ABAJO], hoja: null, accesorio: null };
 const TINTA = "rgb(58, 40, 30)";
 const TALLO = "rgb(96, 140, 70)";
 
@@ -58,6 +74,16 @@ const mezclar = (a: RGB, b: RGB, t: number): RGB => [lerp(a[0], b[0], t), lerp(a
 
 export class Personaje {
   estado: Estado = "reposo";
+  private readonly apariencia: Apariencia;
+  /** Transparencia de todo el dibujo (las mascotas aparecen y se van de a poco). */
+  alfa = 1;
+
+  constructor(apariencia: Apariencia = APARIENCIA_BROTE) {
+    this.apariencia = apariencia;
+    if (apariencia.hoja) this.color = apariencia.hoja;
+    // Cada mascota parpadea a su ritmo.
+    this.proximoParpadeo = 0.5 + Math.random() * 2.5;
+  }
   private cfg: ConfigEstado = ESTADOS.reposo;
 
   private valores: Record<Animable, number> = { parpado: 1, sx: 1, sy: 1, salto: 0, sacudida: 0 };
@@ -221,7 +247,10 @@ export class Personaje {
 
     const objetivoInclinacion = cfg.inclinacion + (this.estado === "pensando" ? Math.sin(this.t * 1.1) * 0.05 : 0);
     this.inclinacion = acercar(this.inclinacion, objetivoInclinacion, dt, 5);
-    this.color = mezclar(this.color, cfg.color, 1 - Math.exp(-6 * dt));
+    // La hoja de una mascota es la suya en reposo; al trabajar se tiñe a medias con el color del estado.
+    const hoja = this.apariencia.hoja;
+    const objetivoColor = hoja ? (this.estado === "reposo" ? hoja : mezclar(hoja, cfg.color, 0.6)) : cfg.color;
+    this.color = mezclar(this.color, objetivoColor, 1 - Math.exp(-6 * dt));
 
     // El brote se mece solo, cae si el estado lo pide y reacciona cuando el cuerpo salta.
     // Con música el balanceo entra y sale de a poco, y el brote se mece con un poco de retraso.
@@ -292,6 +321,8 @@ export class Personaje {
     const pulso = -Math.abs(Math.sin(t * RITMO)) * 0.025 * this.ritmo;
     const altura = (this.valores.salto + rebote + vaiven + pulso) * R;
 
+    ctx.save();
+    ctx.globalAlpha *= this.alfa;
     this.dibujarSombra(ctx, cx, suelo + R * 0.05, rx, R, altura);
 
     // El cuerpo se aplasta y estira desde la base, así se ve apoyado en el suelo.
@@ -308,6 +339,7 @@ export class Personaje {
     ctx.clip(cuerpo);
     this.dibujarCara(ctx, rx, ry, R);
     ctx.restore();
+    this.dibujarAccesorio(ctx, rx, ry, R);
     ctx.restore();
 
     const centroY = suelo + altura - ry;
@@ -316,6 +348,142 @@ export class Personaje {
     if (this.animo === "acalorado") this.dibujarSudor(ctx, cx, centroY, rx, ry, R);
     this.dibujarParticulas(ctx, cx, centroY, R);
     this.dibujarNotas(ctx, cx, centroY, ry, R);
+    ctx.restore();
+  }
+
+  /**
+   * El accesorio de una mascota, en las coordenadas del cuerpo (centro en 0,0; se inclina y se estira
+   * con él). Todo con trazos simples de Canvas.
+   */
+  private dibujarAccesorio(ctx: CanvasRenderingContext2D, rx: number, ry: number, R: number): void {
+    const accesorio = this.apariencia.accesorio;
+    if (!accesorio) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const t = this.t;
+    switch (accesorio) {
+      case "birrete": {
+        // Gorro de graduación: un cuadrado en perspectiva sobre la cabeza, con su borla que cuelga.
+        const y = -ry * 0.82;
+        ctx.fillStyle = "rgb(44, 40, 70)";
+        ctx.beginPath();
+        ctx.ellipse(0, y + R * 0.06, rx * 0.5, R * 0.13, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-rx * 0.78, y - R * 0.08);
+        ctx.lineTo(0, y - R * 0.3);
+        ctx.lineTo(rx * 0.78, y - R * 0.08);
+        ctx.lineTo(0, y + R * 0.12);
+        ctx.closePath();
+        ctx.fill();
+        const balanceo = Math.sin(t * 2.2) * 0.12;
+        ctx.strokeStyle = "rgb(255, 200, 70)";
+        ctx.lineWidth = R * 0.05;
+        ctx.beginPath();
+        ctx.moveTo(0, y - R * 0.09);
+        ctx.quadraticCurveTo(rx * 0.45, y - R * 0.12, rx * (0.62 + balanceo * 0.2), y + R * 0.22);
+        ctx.stroke();
+        ctx.fillStyle = "rgb(255, 200, 70)";
+        ctx.beginPath();
+        ctx.arc(rx * (0.62 + balanceo * 0.2), y + R * 0.27, R * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "lupa": {
+        // Una lupa que sostiene a un costado, con un brillo en el vidrio.
+        const x = rx * 0.98;
+        const y = ry * 0.12 + Math.sin(t * 1.6) * R * 0.03;
+        ctx.strokeStyle = "rgb(120, 82, 50)";
+        ctx.lineWidth = R * 0.11;
+        ctx.beginPath();
+        ctx.moveTo(x - R * 0.12, y + R * 0.12);
+        ctx.lineTo(x - R * 0.36, y + R * 0.42);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(200, 230, 255, 0.55)";
+        ctx.strokeStyle = "rgb(70, 74, 92)";
+        ctx.lineWidth = R * 0.07;
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.lineWidth = R * 0.04;
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.14, Math.PI * 1.1, Math.PI * 1.5);
+        ctx.stroke();
+        break;
+      }
+      case "lapiz": {
+        // Un lápiz detrás de la oreja, inclinado.
+        ctx.translate(rx * 0.72, -ry * 0.45);
+        ctx.rotate(-0.9 + Math.sin(t * 1.4) * 0.04);
+        const largo = R * 0.78;
+        const ancho = R * 0.14;
+        ctx.fillStyle = "rgb(255, 196, 64)";
+        ctx.fillRect(-largo / 2, -ancho / 2, largo, ancho);
+        ctx.fillStyle = "rgb(240, 130, 140)";
+        ctx.fillRect(-largo / 2 - R * 0.1, -ancho / 2, R * 0.1, ancho);
+        ctx.fillStyle = "rgb(245, 222, 180)";
+        ctx.beginPath();
+        ctx.moveTo(largo / 2, -ancho / 2);
+        ctx.lineTo(largo / 2 + R * 0.16, 0);
+        ctx.lineTo(largo / 2, ancho / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgb(58, 40, 30)";
+        ctx.beginPath();
+        ctx.arc(largo / 2 + R * 0.13, 0, R * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "visera": {
+        // Una visera verde de corrector, con su cinta alrededor de la cabeza.
+        const y = -ry * 0.55;
+        ctx.strokeStyle = "rgba(30, 90, 60, 0.9)";
+        ctx.lineWidth = R * 0.07;
+        ctx.beginPath();
+        ctx.ellipse(0, y, rx * 0.86, R * 0.16, 0, Math.PI * 1.05, Math.PI * 1.95);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(60, 170, 110, 0.82)";
+        ctx.beginPath();
+        ctx.moveTo(-rx * 0.82, y);
+        ctx.quadraticCurveTo(0, y + R * 0.42, rx * 0.82, y);
+        ctx.quadraticCurveTo(0, y + R * 0.16, -rx * 0.82, y);
+        ctx.fill();
+        break;
+      }
+      case "reloj": {
+        // Un reloj despertador chiquito a su lado, con las agujas que avanzan.
+        const x = -rx * 1.02;
+        const y = ry * 0.28;
+        ctx.fillStyle = "rgb(250, 250, 252)";
+        ctx.strokeStyle = "rgb(230, 90, 80)";
+        ctx.lineWidth = R * 0.07;
+        for (const lado of [-1, 1]) {
+          ctx.beginPath();
+          ctx.arc(x + lado * R * 0.15, y - R * 0.22, R * 0.07, 0, Math.PI * 2);
+          ctx.fillStyle = "rgb(230, 90, 80)";
+          ctx.fill();
+        }
+        ctx.fillStyle = "rgb(250, 250, 252)";
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "rgb(58, 40, 30)";
+        ctx.lineWidth = R * 0.035;
+        const a = t * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.sin(a) * R * 0.15, y - Math.cos(a) * R * 0.15);
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.sin(a / 12) * R * 0.1, y - Math.cos(a / 12) * R * 0.1);
+        ctx.stroke();
+        break;
+      }
+    }
+    ctx.restore();
   }
 
   /** Notas que salen de un costado, suben ondulando y se desvanecen. */
@@ -362,8 +530,8 @@ export class Personaje {
 
   private dibujarCuerpo(ctx: CanvasRenderingContext2D, cuerpo: Path2D, rx: number, ry: number, R: number): void {
     const degradado = ctx.createLinearGradient(0, -ry, 0, ry);
-    degradado.addColorStop(0, rgba(CREMA_ARRIBA));
-    degradado.addColorStop(1, rgba(CREMA_ABAJO));
+    degradado.addColorStop(0, rgba(this.apariencia.cuerpo[0]));
+    degradado.addColorStop(1, rgba(this.apariencia.cuerpo[1]));
     ctx.fillStyle = degradado;
     ctx.fill(cuerpo);
 

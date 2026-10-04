@@ -89,9 +89,14 @@
 // (agentes de OpenClaw, cada uno con su IA). Los eventos de sus sesiones hijas y el turno del anuncio
 // "[Inter-session message]" no se reenvían como si fueran de Brote (delegacion.ts): con ellos se arma
 // la lista del equipo trabajando. Las respuestas NO_REPLY no se muestran.
-//   aviso { "tipo": "especialistas", "lista": [{ sesion, id, nombre, emoji, ia, color, tarea, herramienta, estado, inicioMs, finMs }] }
+//   aviso { "tipo": "especialistas", "lista": [{ sesion, id, nombre, emoji, ia, color, tarea, tareaCompleta, herramienta, args, estado, actividad, pasos, respuesta, inicioMs, finMs }] }
 //   aviso { "tipo": "especialistas-aviso", "texto": "Tu plan semanal de Claude va alto…" }   una vez por cambio del freno
 //   pedido { "tipo": "especialistas-estado" }   → "datos": { lista, frenado }
+//   pedido { "tipo": "especialista-historial", "sesion": "agent:investigador:subagent:…" }   → "datos": { tarea, pasos, respuesta }
+//     (chat.history de esa sesión hija; solo de un especialista que está en la lista)
+// Cada especialista trae además su actividad (en-espera, pensando, trabajando, permiso), sus pasos (las
+// herramientas con solo los argumentos útiles), lo que lleva de su respuesta y la tarea completa: la
+// isla anima su mascota y muestra su conversación. El aviso se agrupa (cuatro por segundo como mucho).
 // Freno por plan: sobre 85 % de la semana, Brote deja de delegar en los especialistas con Claude
 // (salen de `allowAgents`; los de otras IA siguen) y vuelven bajo 80 % (equipo.json guarda el estado).
 // Las solicitudes de permiso de un especialista siempre llegan a la isla: nunca se permiten solas.
@@ -225,7 +230,7 @@ import { leerSettings } from "./hooks-claude.ts";
 import { statuslineInstalada } from "./statusline-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
-import { FiltroDelegacion } from "./delegacion.ts";
+import { FiltroDelegacion, leerHistorial } from "./delegacion.ts";
 import { argsDelegacion, correrOpenclaw, delegacionActual, guardarFreno, leerFreno } from "./equipo.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
@@ -735,8 +740,14 @@ function leerConfigOpenclaw(): unknown {
   }
 }
 
-function avisarEquipo(): void {
-  avisar({ tipo: "especialistas", lista: filtroDelegacion.equipo() });
+// Mientras un especialista escribe llega un evento por cada trozo: el aviso se agrupa (como mucho
+// cuatro por segundo) para no llenar el canal con la lista completa una y otra vez.
+let avisoEquipo: ReturnType<typeof setTimeout> | undefined;
+function avisarEquipo(alTiro = false): void {
+  clearTimeout(avisoEquipo);
+  const mandar = () => avisar({ tipo: "especialistas", lista: filtroDelegacion.equipo() });
+  if (alTiro) mandar();
+  else avisoEquipo = setTimeout(mandar, 250);
 }
 
 /**
@@ -1094,7 +1105,7 @@ const tareas = new TareasPorFuncion({
   especialistas: () => {
     revisarFreno();
     void sincronizarDelegacion();
-    avisarEquipo();
+    avisarEquipo(true);
     return () => {
       if (saliendo) return;
       void sincronizarDelegacion();
@@ -1432,6 +1443,14 @@ async function atender(pedido: any): Promise<Extra> {
     }
     case "especialistas-estado":
       return { datos: { lista: activa("especialistas") ? filtroDelegacion.equipo() : [], frenado } };
+    case "especialista-historial": {
+      // Solo la sesión de un especialista que está en la lista del equipo (nunca otra sesión cualquiera).
+      if (!activa("especialistas") || typeof pedido.sesion !== "string") break;
+      if (!filtroDelegacion.equipo().some((t) => t.sesion === pedido.sesion)) break;
+      if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
+      const resultado = await cliente.request("chat.history", { sessionKey: pedido.sesion, limit: 60, maxChars: 40_000 });
+      return { datos: leerHistorial(resultado) };
+    }
     case "permisos-estado":
       return { datos: estadoPermisos() };
     case "conversacion-nueva":

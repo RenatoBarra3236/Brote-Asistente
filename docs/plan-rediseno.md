@@ -84,6 +84,35 @@ Skill, MCP, Memoria… y después opcionales y conectores).
 - **Node con Homebrew:** si falta Node y existe `brew`, ofrecer "Instalar con Homebrew" (`brew install node`).
   Un cask de Brote en Homebrew solo vale la pena con la app firmada y notarizada (Apple Developer, 99 USD/año).
 
+## 4. Pestaña Plata
+
+> **Hecho (4 de octubre de 2026, en la nube; falta probarla en el Mac).** Detalles en CLAUDE.md ("Pestaña Plata").
+
+Una pestaña entre Brote y Claude, de la función `gastos`, con lo que un estudiante quiere saber de su plata
+sin preguntar nada:
+
+| Qué | Cómo |
+|---|---|
+| **Este mes** | Total y comparación con el mes pasado **a la misma altura** (el 13 contra lo gastado hasta el 13 del mes pasado; si el mes pasado era más corto, su último día). Subir se muestra en ámbar, bajar en verde. |
+| **Puedes gastar hoy** | (presupuesto − lo gastado antes de hoy) ÷ días que faltan contando hoy, menos lo gastado hoy. Verde, ámbar (menos de la mitad de la cuota diaria) o rojo (te pasaste). Sin presupuesto, invita a ponerlo. |
+| **Últimos 7 días** | Barras en SVG propio, hoy resaltado. |
+| **Por categoría** | Barras con un color por categoría (`COLOR_CATEGORIA` en `categorias.ts`) y su emoji. |
+| **Descubrimiento sin IA** | Primero una categoría que se disparó (≥ 50 % y ≥ $5.000 más que los 7 días anteriores), después un gasto hormiga (≤ $3.000, 4+ veces y ≥ $8.000 en 30 días) y después uno que se repite cada mes (los dos meses anteriores, ±15 %). |
+| **Últimos movimientos** | Los 5 más recientes con emoji. |
+| **Un toque** | Los 2–3 gastos más repetidos (misma descripción y monto, 60 días) como botones; anotan igual que el motor (`Motor.anotarGasto`), y el puente solo acepta uno de esos. |
+
+**Presupuesto mensual** (opcional): tabla `ajustes` de `asistente.db`. Se pone en Configurar Brote →
+Funciones → Gastos (a través del puente) o sin IA ("mi presupuesto es 200 lucas", "pon mi presupuesto en
+300 mil", "quita mi presupuesto"); se consulta con "¿cuánto me queda del presupuesto?" y "¿cuánto puedo
+gastar hoy?". El agente lo lee con la herramienta MCP `gastos_presupuesto` (solo lectura). Avisos con
+personalidad al pasar 80 % y 100 %, una vez cada uno por mes y por presupuesto (`avisos-presupuesto` en
+`ajustes`).
+
+Se actualiza al anotar: el puente mira `gastos.marca()` cada 2 s (así también aparece lo que anota el
+agente por MCP, que es otro proceso) y manda el aviso `plata`.
+
+Ideas para después: metas de ahorro, gastos compartidos con amigos, exportar el mes a CSV.
+
 ## Orden sugerido
 
 1. Unir a `main` la rama de conectores (`claude/inspiring-clarke-qq0ulj`, con los arreglos de la revisión).

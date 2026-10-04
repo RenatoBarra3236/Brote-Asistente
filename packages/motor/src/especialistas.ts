@@ -103,6 +103,18 @@ export const IAS: readonly CuentaIA[] = [
 export const IDS_ESPECIALISTAS = ["tutor", "investigador", "redactor", "revisor", "planificador"] as const;
 export type IdEspecialista = (typeof IDS_ESPECIALISTAS)[number];
 
+/** Un accesorio dibujado en canvas sobre la mascota (personaje.ts): nada copiado de otros proyectos. */
+export type Accesorio = "birrete" | "lupa" | "lapiz" | "visera" | "reloj";
+
+/** Cómo se ve la mascota de un especialista: una variante propia de Brote (colores RGB entre 0 y 1). */
+export interface Mascota {
+  /** El cuerpo, arriba y abajo (un degradado como el crema de Brote). */
+  cuerpo: readonly [readonly [number, number, number], readonly [number, number, number]];
+  /** El color de su hoja en reposo (al trabajar se mezcla con el color del estado, como en Brote). */
+  hoja: readonly [number, number, number];
+  accesorio: Accesorio;
+}
+
 export interface Especialista {
   id: IdEspecialista;
   nombre: string;
@@ -118,6 +130,11 @@ export interface Especialista {
   instrucciones: string;
   /** El modelo con que parte si su IA está conectada. */
   sugerido: string;
+  /** Su personalidad en una línea (IDENTITY.md: «Vibe»). */
+  vibe: string;
+  /** Su SOUL.md por defecto: cómo es y cómo habla. El usuario lo puede editar en Configurar Brote → Equipo. */
+  alma: string;
+  mascota: Mascota;
 }
 
 export const ESPECIALISTAS: readonly Especialista[] = [
@@ -130,6 +147,9 @@ export const ESPECIALISTAS: readonly Especialista[] = [
     instrucciones:
       "Explica paso a paso, con ejemplos simples y en español de Chile. Cuando te pidan practicar, arma ejercicios con su solución aparte. No hagas la tarea por el estudiante: guíalo.",
     sugerido: "anthropic/claude-sonnet-5-5",
+    vibe: "Paciente y socrático: pregunta antes de responder.",
+    alma: "Eres el Tutor del equipo de Brote 🌱. Paciente y socrático: antes de dar la respuesta, haces una o dos preguntas que lleven al estudiante a pensarla. Explicas con ejemplos de la vida diaria, celebras los avances chicos y nunca haces sentir tonto a nadie. Si algo es difícil, lo dices y lo partes en pasos.",
+    mascota: { cuerpo: [[0.93, 0.9, 1], [0.74, 0.66, 0.96]], hoja: [0.56, 0.44, 0.92], accesorio: "birrete" },
   },
   {
     id: "investigador",
@@ -140,6 +160,9 @@ export const ESPECIALISTAS: readonly Especialista[] = [
     instrucciones:
       "Busca en fuentes confiables, resume en pocas líneas y cita cada dato con su enlace. Si no encuentras algo, dilo; no lo inventes.",
     sugerido: "google/gemini-3.5-flash",
+    vibe: "Curioso y riguroso: cita todo.",
+    alma: "Eres el Investigador del equipo de Brote 🌱. Curioso hasta el detalle: te encanta encontrar la fuente original. Citas todo (enlace o documento), distingues lo confirmado de lo dudoso y prefieres decir «no encontré» antes que inventar. Resumes en pocas líneas, sin adornos.",
+    mascota: { cuerpo: [[0.88, 0.95, 1], [0.6, 0.79, 0.98]], hoja: [0.27, 0.56, 0.95], accesorio: "lupa" },
   },
   {
     id: "redactor",
@@ -149,6 +172,9 @@ export const ESPECIALISTAS: readonly Especialista[] = [
     rol: "Resúmenes, ensayos y correos, siempre como borrador.",
     instrucciones: "Escribe claro y breve, en el tono que te pidan. Entrega siempre un borrador para que el estudiante lo revise.",
     sugerido: "anthropic/claude-sonnet-5-5",
+    vibe: "Ordenado y creativo: borradores claros.",
+    alma: "Eres el Redactor del equipo de Brote 🌱. Ordenado y creativo: primero armas la estructura y después le das vida al texto. Escribes claro, con frases cortas, y adaptas el tono a lo que te piden (formal para un correo al profe, cercano para un mensaje). Siempre entregas un borrador, nunca la versión final.",
+    mascota: { cuerpo: [[1, 0.92, 0.9], [0.97, 0.68, 0.62]], hoja: [0.95, 0.45, 0.4], accesorio: "lapiz" },
   },
   {
     id: "revisor",
@@ -158,6 +184,9 @@ export const ESPECIALISTAS: readonly Especialista[] = [
     rol: "Corrige y verifica citas contra una rúbrica.",
     instrucciones: "Revisa ortografía, claridad y que cada cita exista. Si hay rúbrica, revisa punto por punto. Señala lo que falta sin reescribirlo todo.",
     sugerido: "google/gemini-3.5-flash",
+    vibe: "Exigente pero amable.",
+    alma: "Eres el Revisor del equipo de Brote 🌱. Exigente pero amable: encuentras los errores sin hacer sentir mal a nadie. Empiezas por lo que está bien, después señalas lo que falta en orden de importancia y explicas por qué. Revisas cada cita y cada dato; no reescribes el trabajo del estudiante.",
+    mascota: { cuerpo: [[0.9, 1, 0.93], [0.6, 0.88, 0.7]], hoja: [0.18, 0.66, 0.4], accesorio: "visera" },
   },
   {
     id: "planificador",
@@ -167,6 +196,9 @@ export const ESPECIALISTAS: readonly Especialista[] = [
     rol: "Arma planes de estudio con tus fechas y entregas.",
     instrucciones: "Arma planes realistas, en bloques de pomodoro, con las fechas y entregas que te den. No crees nada: propón el plan y Brote lo agenda si el estudiante quiere.",
     sugerido: "anthropic/claude-haiku-4-5",
+    vibe: "Práctico: planes que sí se cumplen.",
+    alma: "Eres el Planificador del equipo de Brote 🌱. Práctico y realista: armas planes que de verdad se pueden cumplir, con bloques de pomodoro, descansos y margen para imprevistos. Pones lo urgente primero, dices cuánto tiempo toma cada cosa y avisas si algo no cabe.",
+    mascota: { cuerpo: [[0.88, 0.98, 0.98], [0.52, 0.82, 0.84]], hoja: [0.12, 0.6, 0.62], accesorio: "reloj" },
   },
 ];
 
@@ -244,6 +276,48 @@ export function bloqueAgents(especialista: Especialista, instrucciones: string):
     instrucciones || especialista.instrucciones,
     MARCA_FIN,
   ].join("\n");
+}
+
+export const MAX_PERSONALIDAD = 3000;
+
+/**
+ * Valida una personalidad (el SOUL.md) escrita por el usuario: texto simple, sin caracteres de control
+ * (salvo saltos de línea) y de largo razonable. Devuelve el texto limpio o `null`.
+ */
+export function limpiarPersonalidad(texto: unknown): string | null {
+  if (typeof texto !== "string") return null;
+  const limpio = texto.replace(/\r\n?/g, "\n").trim();
+  if (!limpio || limpio.length > MAX_PERSONALIDAD) return null;
+  if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(limpio)) return null;
+  return limpio;
+}
+
+/** El SOUL.md de un especialista: su personalidad (la del catálogo o la que escribió el usuario). */
+export function soulMd(especialista: Especialista, personalidad?: string | null): string {
+  return `# ${especialista.emoji} ${especialista.nombre}\n\n${(personalidad ?? especialista.alma).trim()}\n`;
+}
+
+/** La personalidad guardada en un SOUL.md (sin el título que le pone Brote). */
+export function personalidadDeSoul(soul: string): string {
+  return soul.replace(/^# [^\n]*\n+/, "").trim();
+}
+
+/** El IDENTITY.md de un especialista, con el formato de la plantilla de OpenClaw. */
+export function identityMd(especialista: Especialista): string {
+  return [
+    `# IDENTITY.md`,
+    "",
+    `- **Name:** ${especialista.nombre}`,
+    `- **Creature:** Mascota del equipo de Brote 🌱`,
+    `- **Vibe:** ${especialista.vibe}`,
+    `- **Emoji:** ${especialista.emoji}`,
+    "",
+  ].join("\n");
+}
+
+/** La mascota de un agente (las de los especialistas del catálogo; otra cualquiera, una gris con lupa). */
+export function mascotaDe(agentId: string): Mascota {
+  return especialistaDe(agentId)?.mascota ?? { cuerpo: [[0.94, 0.94, 0.95], [0.72, 0.74, 0.78]], hoja: [0.55, 0.6, 0.66], accesorio: "lupa" };
 }
 
 /** Pone (o reemplaza) el bloque de Brote en un AGENTS.md, sin tocar lo demás (la plantilla de rol). */

@@ -224,11 +224,11 @@
           { id: "grok", nombre: "Grok", probado: false, conexion: "terminal", terminal: "login-grok", requisito: "SuperGrok o X Premium (inicio de sesión en el navegador).", aviso: null, modelos: MODELOS.grok, conectada: false },
         ],
         especialistas: [
-          { id: "tutor", nombre: "Tutor", emoji: "📚", rol: "Explica materia y arma ejercicios y quizzes.", sugerido: "anthropic/claude-sonnet-5-5", activo: true, modelo: "anthropic/claude-sonnet-5-5", instrucciones: "Explica paso a paso, con ejemplos simples y en español de Chile.", dentroDeBrote: false },
-          { id: "investigador", nombre: "Investigador", emoji: "🔎", rol: "Busca y lee fuentes, y entrega un resumen con citas.", sugerido: "google/gemini-3.5-flash", activo: true, modelo: "google/gemini-3.5-flash", instrucciones: "Busca en fuentes confiables y cita cada dato con su enlace.", dentroDeBrote: true },
-          { id: "redactor", nombre: "Redactor", emoji: "✍️", rol: "Resúmenes, ensayos y correos, siempre como borrador.", sugerido: "anthropic/claude-sonnet-5-5", activo: false, modelo: null, instrucciones: "Escribe claro y breve, en el tono que te pidan.", dentroDeBrote: false },
-          { id: "revisor", nombre: "Revisor", emoji: "✅", rol: "Corrige y verifica citas contra una rúbrica.", sugerido: "google/gemini-3.5-flash", activo: false, modelo: null, instrucciones: "Revisa ortografía, claridad y que cada cita exista.", dentroDeBrote: false },
-          { id: "planificador", nombre: "Planificador", emoji: "🗓️", rol: "Arma planes de estudio con tus fechas y entregas.", sugerido: "anthropic/claude-haiku-4-5", activo: false, modelo: null, instrucciones: "Arma planes realistas, en bloques de pomodoro.", dentroDeBrote: false },
+          { id: "tutor", vibe: "Paciente y socrático: pregunta antes de responder.", personalidad: "Eres el Tutor del equipo de Brote 🌱. Paciente y socrático: antes de dar la respuesta, haces una o dos preguntas.", nombre: "Tutor", emoji: "📚", rol: "Explica materia y arma ejercicios y quizzes.", sugerido: "anthropic/claude-sonnet-5-5", activo: true, modelo: "anthropic/claude-sonnet-5-5", instrucciones: "Explica paso a paso, con ejemplos simples y en español de Chile.", dentroDeBrote: false },
+          { id: "investigador", vibe: "Curioso y riguroso: cita todo.", personalidad: "Eres el Investigador del equipo de Brote 🌱. Curioso hasta el detalle: citas todo.", nombre: "Investigador", emoji: "🔎", rol: "Busca y lee fuentes, y entrega un resumen con citas.", sugerido: "google/gemini-3.5-flash", activo: true, modelo: "google/gemini-3.5-flash", instrucciones: "Busca en fuentes confiables y cita cada dato con su enlace.", dentroDeBrote: true },
+          { id: "redactor", vibe: "Ordenado y creativo: borradores claros.", personalidad: "Eres el Redactor del equipo de Brote 🌱. Ordenado y creativo.", nombre: "Redactor", emoji: "✍️", rol: "Resúmenes, ensayos y correos, siempre como borrador.", sugerido: "anthropic/claude-sonnet-5-5", activo: false, modelo: null, instrucciones: "Escribe claro y breve, en el tono que te pidan.", dentroDeBrote: false },
+          { id: "revisor", vibe: "Exigente pero amable.", personalidad: "Eres el Revisor del equipo de Brote 🌱. Exigente pero amable.", nombre: "Revisor", emoji: "✅", rol: "Corrige y verifica citas contra una rúbrica.", sugerido: "google/gemini-3.5-flash", activo: false, modelo: null, instrucciones: "Revisa ortografía, claridad y que cada cita exista.", dentroDeBrote: false },
+          { id: "planificador", vibe: "Práctico: planes que sí se cumplen.", personalidad: "Eres el Planificador del equipo de Brote 🌱. Práctico y realista.", nombre: "Planificador", emoji: "🗓️", rol: "Arma planes de estudio con tus fechas y entregas.", sugerido: "anthropic/claude-haiku-4-5", activo: false, modelo: null, instrucciones: "Arma planes realistas, en bloques de pomodoro.", dentroDeBrote: false },
         ],
         delegacion: ["tutor", "investigador"],
         frenado: parametros.has("freno"),
@@ -287,7 +287,7 @@
               await esperar(700);
               const e = equipo.especialistas.find((x) => x.id === args.id);
               const nuevo = !e.activo;
-              Object.assign(e, { activo: true, modelo: args.modelo, instrucciones: args.instrucciones, dentroDeBrote: false });
+              Object.assign(e, { activo: true, modelo: args.modelo, instrucciones: args.instrucciones, dentroDeBrote: false, ...(args.personalidad ? { personalidad: args.personalidad } : {}) });
               return JSON.stringify({ ok: true, detalle: `${e.emoji} ${e.nombre} ${nuevo ? "se unió al equipo" : "quedó actualizado"}.` });
             }
             case "especialista_quitar": {

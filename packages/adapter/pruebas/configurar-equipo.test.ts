@@ -273,4 +273,44 @@ describe("Configurar Brote → Cuentas de IA y Equipo", { skip: process.platform
     // El de la fase 0 quedó dentro del workspace de Brote: la ventana lo avisa.
     assert.equal(investigador.dentroDeBrote, true);
   });
+
+  it("cada especialista nace con su personalidad (SOUL.md e IDENTITY.md) y se puede editar", async () => {
+    const { estado, entorno } = preparar();
+    const respuesta = await correr(["especialista", "tutor", "anthropic/claude-sonnet-5-5"], entorno, "");
+    assert.equal(respuesta.ok, true, respuesta.detalle);
+    const carpeta = join(estado, "equipo", "tutor");
+    assert.match(readFileSync(join(carpeta, "SOUL.md"), "utf8"), /^# 📚 Tutor\n\nEres el Tutor del equipo de Brote 🌱\. Paciente y socrático/);
+    assert.match(readFileSync(join(carpeta, "IDENTITY.md"), "utf8"), /- \*\*Vibe:\*\* Paciente y socrático/);
+    const editado = await correr(
+      ["especialista", "tutor", "anthropic/claude-sonnet-5-5"],
+      entorno,
+      JSON.stringify({ instrucciones: "Usa ejemplos de fútbol.", personalidad: "Eres un tutor muy chistoso." }),
+    );
+    assert.equal(editado.ok, true, editado.detalle);
+    assert.equal(readFileSync(join(carpeta, "SOUL.md"), "utf8"), "# 📚 Tutor\n\nEres un tutor muy chistoso.\n");
+    assert.match(readFileSync(join(carpeta, "AGENTS.md"), "utf8"), /Usa ejemplos de fútbol\./);
+    const estadoJson = await correr(["equipo"], entorno);
+    assert.equal(estadoJson.especialistas.find((e: any) => e.id === "tutor").personalidad, "Eres un tutor muy chistoso.");
+    const malo = await correr(["especialista", "tutor", "anthropic/claude-sonnet-5-5"], entorno, JSON.stringify({ instrucciones: "", personalidad: "con \u0007 campana" }));
+    assert.equal(malo.ok, false);
+    assert.match(malo.detalle, /personalidad/);
+  });
+
+  it("al investigador de la fase 0 (creado a mano) solo se le agrega la personalidad que falta", async () => {
+    const { estado, entorno } = preparar();
+    const carpeta = join(estado, "workspace", "investigador");
+    mkdirSync(carpeta, { recursive: true });
+    writeFileSync(join(carpeta, "IDENTITY.md"), "mía, no tocar");
+    const c = config(estado);
+    c.agents.entries.investigador = { workspace: carpeta, model: "google/gemini-3.5-flash" };
+    writeFileSync(join(estado, "openclaw.json"), JSON.stringify(c));
+    await correr(["equipo"], entorno);
+    assert.match(readFileSync(join(carpeta, "SOUL.md"), "utf8"), /Curioso hasta el detalle/);
+    assert.equal(readFileSync(join(carpeta, "IDENTITY.md"), "utf8"), "mía, no tocar");
+    // Ni se recrea ni se borra: no hubo ningún `agents add` ni `agents delete`.
+    assert.ok(!llamadas(estado).some((l) => l[0] === "agents" && (l[1] === "add" || l[1] === "delete")));
+    writeFileSync(join(carpeta, "SOUL.md"), "# 🔎 Investigador\n\nLa mía.\n");
+    await correr(["equipo"], entorno);
+    assert.equal(readFileSync(join(carpeta, "SOUL.md"), "utf8"), "# 🔎 Investigador\n\nLa mía.\n");
+  });
 });

@@ -1,4 +1,5 @@
-export { CATEGORIAS, categoriaDe, type Categoria } from "./categorias.ts";
+export { CATEGORIAS, COLOR_CATEGORIA, EMOJI_CATEGORIA, categoriaDe, type Categoria } from "./categorias.ts";
+export { DIAS_PLATA, UMBRALES_PRESUPUESTO, avisosPresupuesto, claveMes, describirHoy, describirQueda, leerAvisados, presupuestoDelMes, resumenPlata, type AvisadosPresupuesto, type EstadoPlata, type GastoPlano, type PresupuestoMes } from "./plata.ts";
 export { Gastos, RUTA_BASE, type Gasto, type NuevoGasto, type Via } from "./gastos.ts";
 export { leerMonto } from "./montos.ts";
 export { Motor, type Resultado } from "./motor.ts";
@@ -24,4 +25,5 @@ export { DIAS_GUARDADOS, describirUso, formatearTokens, formatearUsd, leerLineaU
 export { DURACION_PLAN, UMBRALES_PLAN, avisosPlan, colorPlan, combinarPlan, cuandoReinicia, describirPlan, describirReinicio, faltaPara, haceCuanto, horaCorta, leerDatosPlan, leerEventoLimites, leerPlanApp, limpiarAvisados, normalizarLectura, paraMostrar, vigente, type FuentePlan, type LecturaPlan, type VentanaPlan, type VentanaVista } from "./plan.ts";
 export { LectorUso, NombresDeProyectos, PlanDeAppClaude, RUTA_CACHE_USO, RUTA_PLAN, rutaPlanApp, carpetaDeProyecto, rutaPlan, carpetaProyectosClaude, escribirPrivado, guardarPlan, leerPlanGuardado, type PlanGuardado } from "./uso-archivo.ts";
 export { type UsoClaude } from "./motor.ts";
+export { identityMd, limpiarPersonalidad, mascotaDe, personalidadDeSoul, soulMd, MAX_PERSONALIDAD, type Accesorio, type Mascota } from "./especialistas.ts";
 export { ESPECIALISTAS, FRENO_PLAN, IAS, IDS_ESPECIALISTAS, IDS_IAS, MARCA_FIN, MARCA_INICIO, MAX_INSTRUCCIONES, MODELOS_PERMITIDOS, NOMBRE_DELEGACION, REGLAS_EQUIPO, agenteDeSesion, bloqueAgents, conBloque, cuentaDe, esModeloClaude, esSesionHija, especialistaDe, fichaEspecialista, frenoPlan, iaDeModelo, instruccionesDeAgents, limpiarInstrucciones, miembrosDeConfig, nombreModeloIA, permitidosEquipo, textoFreno, type CuentaIA, type Especialista, type IdEspecialista, type IdIA, type MiembroEquipo, type ModeloIA } from "./especialistas.ts";

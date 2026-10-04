@@ -70,7 +70,7 @@ La función **Búsqueda por significado** es opcional: hace que Brote encuentre 
 
 ## 4. Usar Brote
 
-- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega. Arriba hay tres pestañas: **Brote** (lo que pasa ahora y la conversación: mientras te responde, las tarjetas se encogen a una fila de píldoras como "🍅 18:20 · 📅 en 25 min"; tócalas para verlas de nuevo), **Claude** (cuánto llevas de tu plan de Claude, si prendes el **uso del plan**, y tus sesiones de Claude Code, si usas el modo programador) y **Equipo** (batería, CPU, memoria y disco).
+- **Mac:** Brote vive en el notch. Pasa el cursor por encima y se despliega. Arriba hay cuatro pestañas: **Brote** (lo que pasa ahora y la conversación: mientras te responde, las tarjetas se encogen a una fila de píldoras como "🍅 18:20 · 📅 en 25 min"; tócalas para verlas de nuevo), **Plata** (tus gastos del mes, abajo), **Claude** (cuánto llevas de tu plan de Claude, si prendes el **uso del plan**, y tus sesiones de Claude Code, si usas el modo programador) y **Equipo** (batería, CPU, memoria y disco).
 - **Windows:** Brote vive en la esquina inferior derecha. Pasa el cursor por encima y aparece el panel. Puedes arrastrarlo a donde quieras.
 
 Prueba decirle:
@@ -80,9 +80,22 @@ Prueba decirle:
 | `gasté 5 lucas en almuerzo` | Lo anota al instante, sin IA ⚡ |
 | `¿cuánto llevo esta semana?` | Tu total, sin IA ⚡ |
 | `mis últimos gastos` | La lista, sin IA ⚡ |
+| `mi presupuesto es 200 lucas` · `¿cuánto me queda del presupuesto?` · `¿cuánto puedo gastar hoy?` | Tu presupuesto del mes, sin IA ⚡. Te aviso una vez al pasar el 80 % y otra al pasar el 100 % |
 | `¿en qué estoy gastando más?` | Lo responde la IA, con tus datos |
 | Una forma tuya de anotar un gasto que Brote no entienda | La IA lo resuelve y Brote te pregunta si aprende esa frase. La próxima vez, sin IA |
 | `¿qué sabes de mí?` | Abre **Lo que sé de ti**: todo lo que recuerda, para corregirlo u olvidarlo |
+
+### La pestaña Plata
+
+En la pestaña **Plata** de la isla (o del panel, en Windows) ves de un vistazo:
+
+- **Este mes:** cuánto llevas y si vas más arriba o más abajo que el mes pasado **a esta misma altura** (el 13 se compara con lo que llevabas el 13 del mes pasado).
+- **Puedes gastar hoy:** lo que te queda del presupuesto repartido entre los días que faltan, menos lo que ya gastaste hoy. Verde si vas bien, ámbar si vas justo, rojo si te pasaste. Sin presupuesto, te invita a ponerlo (en **Configurar Brote → Funciones → Gastos**, o diciéndole `mi presupuesto es 200 lucas`).
+- **Los últimos 7 días** en barras (hoy resaltado) y **por categoría**, cada una con su color.
+- **Un descubrimiento**, calculado sin IA: un "gasto hormiga" (por ejemplo, los cafés que juntos suman harto), una categoría que se disparó contra la semana pasada o un gasto que se repite cada mes (una suscripción).
+- **Tus últimos movimientos** y **botones de un toque** con tus gastos más repetidos ("🍔 café $1.500"): un toque y queda anotado, igual que si lo escribieras.
+
+Todo se calcula en tu computador; la IA solo lee tu presupuesto si se lo preguntas.
 
 ### Más cosas que sabe hacer
 
@@ -159,13 +172,15 @@ Al conectar, la IA lo puede usar desde tu próximo mensaje. Lo que solo lee (bus
 
 ### El equipo de Brote (opcional)
 
-Brote puede pasarle tareas largas a **especialistas**: 📚 Tutor (explica y arma ejercicios), 🔎 Investigador (busca fuentes y cita), ✍️ Redactor (borradores), ✅ Revisor (corrige contra una rúbrica) y 🗓️ Planificador (planes de estudio). Tú sigues hablando solo con Brote: él decide cuándo vale la pena delegar, espera y te cuenta el resultado. Mientras trabajan, la isla muestra "Mi equipo está trabajando" con cada especialista, la IA que usa y qué está haciendo.
+Brote puede pasarle tareas largas a **especialistas**: 📚 Tutor (explica y arma ejercicios), 🔎 Investigador (busca fuentes y cita), ✍️ Redactor (borradores), ✅ Revisor (corrige contra una rúbrica) y 🗓️ Planificador (planes de estudio). Tú sigues hablando solo con Brote: él decide cuándo vale la pena delegar, espera y te cuenta el resultado.
+
+Mientras trabajan, en la pestaña **Brote** las **mascotas** de los especialistas (primas de Brote, cada una con su color y su accesorio: birrete, lupa, lápiz, visera o reloj) salen de detrás de Brote y se ponen en fila, cada una con un globito que dice qué hace ("Leyendo es.wikipedia.org…", "Pensando…", el comienzo de su respuesta) y su nombre con la IA que usa ("Investigador · Gemini"). **Toca una** para ver su conversación: la tarea que le pasó Brote, sus pasos y su respuesta (con **← volver** regresas). Con **⤢ Ver a todos** la isla se agranda un rato y muestra lado a lado las conversaciones de Brote y de hasta tres especialistas, en vivo; se cierra sola cuando el equipo termina, con **⤡ Volver** o si alejas el cursor. Al terminar, las mascotas celebran y se esconden (sus conversaciones siguen a un toque un minuto más). En Windows, "Ver a todos" usa el espacio del panel: desliza de lado para ver cada columna.
 
 1. Prende **Equipo de Brote** en **Configurar Brote → Funciones**.
 2. En **Cuentas de IA**, conecta las IA que quieras usar además de Claude:
    - **Gemini:** pulsa **Crear una clave en AI Studio**, copia la clave gratis, pégala en Brote, marca la casilla y pulsa **Guardar clave** (o **Pegarla en la terminal**). Ojo: en el plan gratis, Google puede usar lo que le mandes para entrenar sus modelos; no le pases datos privados.
    - **ChatGPT** (tu cuenta de ChatGPT) y **Grok** (SuperGrok o X Premium): **Iniciar sesión en la terminal** abre una terminal con el comando de OpenClaw para entrar en el navegador. Están marcados **sin probar**: cuéntanos si te funcionan.
-3. En **Equipo**, prende a cada especialista, elige con qué IA trabaja (solo aparecen las que conectaste) y, si quieres, cambia sus instrucciones. Apagar uno lo saca del equipo (su carpeta va a la Papelera).
+3. En **Equipo**, prende a cada especialista, elige con qué IA trabaja (solo aparecen las que conectaste) y, si quieres, cambia sus instrucciones y su **personalidad** (el Tutor es paciente y socrático, el Investigador curioso y cita todo, el Redactor ordenado y creativo, el Revisor exigente pero amable y el Planificador práctico). Apagar uno lo saca del equipo (su carpeta va a la Papelera).
 
 Los especialistas con Claude gastan de tu plan, como Brote. Si tu plan semanal de Claude pasa el 85 %, Brote deja de pasarles tareas (los de otras IA siguen) y te avisa; vuelven cuando baja del 80 %. Para esto necesita la función **Uso del plan de Claude**.
 
@@ -187,7 +202,7 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 
 ## Tus datos
 
-- Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
+- Tus gastos, tu presupuesto, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
 - Los nombres de tus descargas, lo que escuchas y tus eventos no salen del computador; solo los ve la IA si le preguntas por ellos. La dirección iCal se usa solo para descargar tu calendario directo de Google.
 - Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code. Si prendes el equipo, lo que Brote le pasa a un especialista va a la IA que elegiste para él (Gemini, ChatGPT o Grok, con tu cuenta o tu clave).
 - Las claves y sesiones de Gemini, ChatGPT y Grok las guarda OpenClaw en tu computador; Brote nunca las muestra ni las anota en registros.

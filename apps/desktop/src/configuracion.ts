@@ -17,7 +17,7 @@ import { FUNCIONES, normalizarFunciones } from "./agente/funciones";
 import { filasPermisos, funcionesSinConfigurar, necesitaAsistente, permisoCalendarioDePaso, preparacion, esTecnico, type LecturaPermisos } from "./agente/preparacion";
 import { TransportePuente } from "./agente/puente";
 import { revisarConectores, vistaConectores } from "./configurar/conectores";
-import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso } from "./configurar/comun";
+import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, leerPresupuesto, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso, usarPuente } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
 import { vistaFunciones, vistaTarjetasInicio } from "./configurar/funciones";
 import { revisarEquipo, vistaCuentas, vistaEquipo } from "./configurar/equipo";
@@ -333,6 +333,12 @@ const conPuente = puente.iniciar().then(
   () => true,
   () => false,
 );
+
+void conPuente.then((hay) => {
+  if (!hay) return;
+  usarPuente((pedido) => puente.consultar(pedido));
+  void leerPresupuesto();
+});
 
 async function pedirPermisos(): Promise<void> {
   if (!(await conPuente)) return;

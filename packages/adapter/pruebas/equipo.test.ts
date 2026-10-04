@@ -75,4 +75,9 @@ describe("«Lo que sé de ti» no mezcla la memoria del equipo", () => {
     const recuerdos = listarRecuerdos(lugares);
     assert.deepEqual(recuerdos.map((r) => r.id), ["conversacion:2026-10-03-1200.md"]);
   });
+
+  it("ningún especialista abre Chrome: se les quita la herramienta browser", async () => {
+    const { argsSinNavegador } = await import("../src/equipo.ts");
+    assert.deepEqual(argsSinNavegador("investigador"), ["config", "set", "agents.entries.investigador.tools.deny", '["browser"]', "--strict-json"]);
+  });
 });

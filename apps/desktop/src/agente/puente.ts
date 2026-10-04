@@ -8,6 +8,7 @@ import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./t
 import type { ConfigFunciones } from "./funciones.ts";
 import type { EstadoUso } from "./uso.ts";
 import type { Trabajando } from "./especialistas.ts";
+import type { EstadoPlata } from "./plata.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -132,6 +133,8 @@ type Aviso =
   | { tipo: "plan-aviso"; texto: string }
   | { tipo: "especialistas"; lista: Trabajando[] }
   | { tipo: "especialistas-aviso"; texto: string }
+  | { tipo: "plata"; plata: EstadoPlata | null }
+  | { tipo: "plata-aviso"; texto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -173,6 +176,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAvisoPlan = new Set<(texto: string) => void>();
   private readonly oyentesEspecialistas = new Set<(lista: Trabajando[]) => void>();
   private readonly oyentesAvisoEspecialistas = new Set<(texto: string) => void>();
+  private readonly oyentesPlata = new Set<(estado: EstadoPlata | null) => void>();
+  private readonly oyentesAvisoPlata = new Set<(texto: string) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -315,6 +320,30 @@ export class TransportePuente implements Transporte {
     return () => this.oyentesAvisoEspecialistas.delete(oyente);
   }
 
+  /** La pestaña Plata: el resumen de los gastos, cada vez que cambian (o el presupuesto, o el día). */
+  alCambiarPlata(oyente: (estado: EstadoPlata | null) => void): () => void {
+    this.oyentesPlata.add(oyente);
+    return () => this.oyentesPlata.delete(oyente);
+  }
+
+  /** Los avisos del presupuesto (80 % y 100 %, una vez cada uno por mes). */
+  alAvisoPlata(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoPlata.add(oyente);
+    return () => this.oyentesAvisoPlata.delete(oyente);
+  }
+
+  /** Un botón de un toque de la pestaña Plata: anota ese gasto frecuente. Devuelve lo que dice Brote. */
+  async anotarFrecuente(monto: number, descripcion: string): Promise<string> {
+    const { mensaje } = await this.pedir({ tipo: "plata-anotar", monto, descripcion });
+    return mensaje ?? "Anotado.";
+  }
+
+  /** Pone (o quita, con `null`) el presupuesto mensual. */
+  async ponerPresupuesto(monto: number | null): Promise<EstadoPlata | null> {
+    const { datos } = await this.pedir({ tipo: "presupuesto-poner", monto });
+    return (datos as EstadoPlata | null) ?? null;
+  }
+
   async decidirPermisoClaude(id: string, decision: "allow" | "deny"): Promise<void> {
     await this.pedir({ tipo: "programador-decidir", permiso: id, decision });
   }
@@ -437,6 +466,12 @@ export class TransportePuente implements Transporte {
         return;
       case "especialistas-aviso":
         for (const oyente of this.oyentesAvisoEspecialistas) oyente(aviso.texto);
+        return;
+      case "plata":
+        for (const oyente of this.oyentesPlata) oyente(aviso.plata);
+        return;
+      case "plata-aviso":
+        for (const oyente of this.oyentesAvisoPlata) oyente(aviso.texto);
         return;
       case "programador-reaccion":
         for (const oyente of this.oyentesReaccion) oyente({ reaccion: aviso.reaccion, proyecto: aviso.proyecto });

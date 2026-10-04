@@ -65,3 +65,24 @@ export function categoriaDe(descripcion: string): Categoria {
   }
   return "otros";
 }
+
+/** Cómo se ve cada categoría en la isla (pestaña Plata): un emoji y un color propio. */
+export const EMOJI_CATEGORIA: Record<Categoria, string> = {
+  comida: "🍔",
+  transporte: "🚌",
+  estudio: "📚",
+  salidas: "🎉",
+  salud: "💊",
+  cuentas: "💡",
+  otros: "🧾",
+};
+
+export const COLOR_CATEGORIA: Record<Categoria, string> = {
+  comida: "#ff8a66",
+  transporte: "#5ca0ff",
+  estudio: "#a084fa",
+  salidas: "#ffba48",
+  salud: "#5fd3b8",
+  cuentas: "#f2d05b",
+  otros: "#9aa0ab",
+};

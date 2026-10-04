@@ -17,7 +17,7 @@ const ESPECIALISTAS: &[&str] = &["tutor", "investigador", "redactor", "revisor",
 /// Los modelos que se pueden elegir: solo los del catálogo de OpenClaw 2026.9.7 que validan. Deben
 /// coincidir con `MODELOS_PERMITIDOS` de especialistas.ts.
 const MODELOS: &[&str] = &[
-    "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-4-5", "google/gemini-3.5-flash", "google/gemini-3-flash-preview",
+    "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-4-5", "google/gemini-3.5-flash-lite", "google/gemini-3.5-flash", "google/gemini-3-flash-preview",
     "openai/gpt-6-astra", "openai/gpt-5.4-mini", "xai/grok-4.7",
 ];
 
@@ -25,6 +25,8 @@ const MODELOS: &[&str] = &[
 const CUENTAS_CON_CLAVE: &[&str] = &["gemini"];
 
 const MAX_INSTRUCCIONES: usize = 2000;
+/// La personalidad (SOUL.md) del especialista: debe coincidir con `MAX_PERSONALIDAD` de especialistas.ts.
+const MAX_PERSONALIDAD: usize = 3000;
 
 fn especialista_valido(id: &str) -> bool {
     ESPECIALISTAS.contains(&id)
@@ -37,6 +39,18 @@ fn modelo_valido(modelo: &str) -> bool {
 /// Texto simple: sin caracteres de control (salvo saltos de línea y tabulaciones) y de largo razonable.
 fn instrucciones_validas(texto: &str) -> bool {
     texto.chars().count() <= MAX_INSTRUCCIONES && !texto.chars().any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+}
+
+/// La personalidad: texto simple, no vacío y de largo razonable.
+fn personalidad_valida(texto: &str) -> bool {
+    !texto.trim().is_empty()
+        && texto.chars().count() <= MAX_PERSONALIDAD
+        && !texto.chars().any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+}
+
+/// Lo que va por la entrada del script: las instrucciones y, si se editó, la personalidad (JSON).
+fn entrada_especialista(instrucciones: &str, personalidad: Option<&str>) -> String {
+    serde_json::json!({ "instrucciones": instrucciones, "personalidad": personalidad }).to_string()
 }
 
 /// Una clave de Google AI Studio: letras, números, "_" y "-".
@@ -74,9 +88,16 @@ pub async fn equipo_estado(app: AppHandle) -> Result<String, String> {
     correr(app, vec!["equipo".into()], None).await
 }
 
-/// Prende o actualiza un especialista con un modelo de la lista y sus instrucciones.
+/// Prende o actualiza un especialista con un modelo de la lista, sus instrucciones y, si se editó, su
+/// personalidad (su SOUL.md).
 #[tauri::command]
-pub async fn especialista_guardar(app: AppHandle, id: String, modelo: String, instrucciones: String) -> Result<String, String> {
+pub async fn especialista_guardar(
+    app: AppHandle,
+    id: String,
+    modelo: String,
+    instrucciones: String,
+    personalidad: Option<String>,
+) -> Result<String, String> {
     if !especialista_valido(&id) {
         return Err("especialista desconocido".into());
     }
@@ -86,7 +107,11 @@ pub async fn especialista_guardar(app: AppHandle, id: String, modelo: String, in
     if !instrucciones_validas(&instrucciones) {
         return Err("las instrucciones deben ser texto simple, de hasta 2000 caracteres".into());
     }
-    correr(app, vec!["especialista".into(), id, modelo], Some(instrucciones)).await
+    if personalidad.as_deref().is_some_and(|p| !personalidad_valida(p)) {
+        return Err("la personalidad debe ser texto simple, de hasta 3000 caracteres".into());
+    }
+    let entrada = entrada_especialista(&instrucciones, personalidad.as_deref());
+    correr(app, vec!["especialista".into(), id, modelo], Some(entrada)).await
 }
 
 /// Apaga un especialista (lo borra de OpenClaw; su carpeta va a la Papelera).
@@ -126,6 +151,21 @@ mod pruebas {
         for malo in ["google/gemini-flash-latest", "google/gemini-3.8-flash", "anthropic/claude-sonnet-5-5 --x", ""] {
             assert!(!modelo_valido(malo), "{malo}");
         }
+    }
+
+    #[test]
+    fn personalidad_y_entrada() {
+        assert!(personalidad_valida("Paciente.\nSocrático."));
+        for mala in ["", "   ", "con \u{7} campana"] {
+            assert!(!personalidad_valida(mala), "{mala:?}");
+        }
+        assert!(!personalidad_valida(&"x".repeat(3001)));
+        let entrada: serde_json::Value = serde_json::from_str(&entrada_especialista("Cita.", Some("Curioso"))).unwrap();
+        assert_eq!(entrada["instrucciones"], "Cita.");
+        assert_eq!(entrada["personalidad"], "Curioso");
+        let sin: serde_json::Value = serde_json::from_str(&entrada_especialista("{raro", None)).unwrap();
+        assert!(sin["personalidad"].is_null());
+        assert_eq!(sin["instrucciones"], "{raro");
     }
 
     #[test]

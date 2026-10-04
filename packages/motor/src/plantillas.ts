@@ -44,7 +44,11 @@ export type Intencion =
   | "aula-semana"
   | "plan-uso"
   | "plan-reinicio"
-  | "plan-tokens";
+  | "plan-tokens"
+  | "presupuesto-poner"
+  | "presupuesto-quitar"
+  | "presupuesto-queda"
+  | "presupuesto-hoy";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
@@ -225,6 +229,15 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "plan-tokens", intencion: "plan-tokens", patron: "cuanto (he gastado|gaste|llevo gastado|llevo|he usado|uso|gasto) en tokens [de claude]" },
   { id: "plan-tokens-cuantos", intencion: "plan-tokens", patron: "cuantos tokens (he gastado|gaste|llevo|he usado|uso|gasto) [hoy|esta semana]" },
   { id: "plan-tokens-corto", intencion: "plan-tokens", patron: "[(muestrame|ver|dame)] [mi|el] (gasto|uso) (en|de) tokens" },
+  // El presupuesto va antes que los gastos: "¿cuánto puedo gastar hoy?" no es una consulta de gastos.
+  { id: "presupuesto-poner", intencion: "presupuesto-poner", patron: "[mi|el] presupuesto [mensual|del mes] (es|sera|va a ser|queda en) [de] {monto} [(al|por) mes|mensual|mensuales]" },
+  { id: "presupuesto-poner-verbo", intencion: "presupuesto-poner", patron: "(pon|ponme|deja|dejame|cambia|fija|define) [mi|el] presupuesto [mensual|del mes] (en|a|de) {monto} [(al|por) mes|mensual|mensuales]" },
+  { id: "presupuesto-poner-maximo", intencion: "presupuesto-poner", patron: "(quiero|voy a) gastar [como] (maximo|max) {monto} (al|por|este) mes" },
+  { id: "presupuesto-quitar", intencion: "presupuesto-quitar", patron: "(quita|quitame|borra|elimina|saca|sacame) [mi|el] presupuesto" },
+  { id: "presupuesto-queda", intencion: "presupuesto-queda", patron: "cuanto (me queda|queda|me sobra|sobra) (del|de mi|de|en el|en mi) presupuesto [(del|este) mes]" },
+  { id: "presupuesto-como", intencion: "presupuesto-queda", patron: "como (voy|vamos|va|ando|anda) con [mi|el] presupuesto" },
+  { id: "presupuesto-ver", intencion: "presupuesto-queda", patron: "[(muestrame|ver|dame)] [mi|el] presupuesto" },
+  { id: "presupuesto-hoy", intencion: "presupuesto-hoy", patron: "cuanto (puedo gastar|puedo gastarme|me queda para gastar|me puedo gastar) [hoy|hoy dia|el dia de hoy|para hoy]" },
   { id: "gasto-verbo", intencion: "registrar-gasto", patron: `(${VERBO_GASTO}) {monto} (en|de|por|para) {cosa}` },
   {
     id: "gasto-anota",

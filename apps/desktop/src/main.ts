@@ -17,8 +17,11 @@ import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
+import type { EstadoPlata } from "./agente/plata";
 import { Isla, type Ala } from "./isla";
-import { Panel, cuentaRegresiva } from "./panel";
+import { Mascotas } from "./mascotas";
+import { acercar } from "./personaje/fisica";
+import { Panel, cuentaRegresiva, type HistorialEspecialista } from "./panel";
 import type { Estado } from "./personaje/estados";
 import { Personaje } from "./personaje/personaje";
 
@@ -57,6 +60,10 @@ function mostrarDescarga(ruta: string, abrir = false): void {
   invoke("mostrar_descarga", { ruta, abrir }).catch((error) => console.error(`No pude mostrar la descarga: ${error}`));
 }
 
+/** "Ver a todos" se cierra solo: el equipo terminó hace este rato, o el cursor se fue hace este otro (ms). */
+const TODOS_TERMINADO_MS = 6000;
+const TODOS_SIN_CURSOR_MS = 3500;
+
 /** Cuánto dura la cara de error antes de volver al reposo; el mensaje sigue en la burbuja (ms). */
 const DURACION_ERROR = 6000;
 
@@ -88,6 +95,8 @@ async function iniciar(): Promise<void> {
   const diseno = await invoke<Diseno>("diseno");
   const { agente, puente } = await crearAgente();
   const isla = diseno.modo === "notch" ? new Isla(diseno.notchAncho, diseno.notchAlto) : null;
+  // Las mascotas del equipo de Brote: salen de detrás de Brote y van a su lugar del escenario.
+  const mascotas = new Mascotas();
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
@@ -103,6 +112,19 @@ async function iniciar(): Promise<void> {
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
+          alAnotarFrecuente: (monto: number, descripcion: string) =>
+            void puente
+              .anotarFrecuente(monto, descripcion)
+              .then((texto) => {
+                panel.mostrarAviso(texto);
+                personaje.setEstado("listo");
+              })
+              .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
+          alPedirHistorial: (sesion: string) =>
+            void puente
+              .consultar<HistorialEspecialista>({ tipo: "especialista-historial", sesion })
+              .then((historial) => panel.mostrarHistorial(sesion, historial))
+              .catch(() => {}),
           alDecidirPermisoClaude: (id, decision) =>
             void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
@@ -251,9 +273,21 @@ async function iniciar(): Promise<void> {
     };
     puente.alCambiarEspecialistas(cambiarEspecialistas);
     void puente.consultar<{ lista: Trabajando[] }>({ tipo: "especialistas-estado" }).then(({ lista }) => cambiarEspecialistas(lista), () => {});
-    setInterval(() => panel.mostrarEspecialistas(), 5000);
+    // Cada segundo: los que terminaron celebran un rato y se esconden, y sus fichas se van al minuto.
+    setInterval(() => panel.mostrarEspecialistas(), 1000);
     puente.alAvisoEspecialistas((texto) => {
       panel.mostrarAviso(`🌱 ${texto}`);
+      personaje.tocar();
+    });
+
+    // Plata: el resumen de los gastos llega con cada cambio (también lo que anota el agente) y se
+    // repinta cada minuto para que "hoy 13:05" y "ayer" no queden viejos. Los avisos del presupuesto
+    // (80 % y 100 %) se destacan con un saltito.
+    puente.alCambiarPlata((estado) => panel.mostrarPlata(estado));
+    void puente.consultar<EstadoPlata | null>({ tipo: "plata-estado" }).then((estado) => panel.mostrarPlata(estado), () => {});
+    setInterval(() => panel.mostrarPlata(), 60_000);
+    puente.alAvisoPlata((texto) => {
+      panel.mostrarAviso(texto);
       personaje.tocar();
     });
 
@@ -352,6 +386,7 @@ async function iniciar(): Promise<void> {
     if (document.hidden) return;
     const d = await invoke<{ x: number; y: number }>("cursor_relativo");
     personaje.mirarHacia(d.x, d.y);
+    mascotas.mirarHacia(d.x, d.y);
 
     const x = lienzo.clientWidth / 2 + d.x;
     const y = lienzo.clientHeight / 2 + d.y;
@@ -369,9 +404,14 @@ async function iniciar(): Promise<void> {
   // Modo flotante: el panel se abre igual que la isla (cursor encima o agente activo) y se cierra solo.
   let panelAbierto = false;
   let ultimaActividad = -Infinity;
+  /** Modo flotante: la caja del panel la dibuja el lienzo (así las mascotas se ven encima de ella). */
+  let fondoPanel = 0;
+  // "Ver a todos" se cierra solo cuando el equipo termina o el cursor se va un rato.
+  let todosTerminadoDesde: number | null = null;
+  let todosSinCursorDesde: number | null = null;
   function cuadro(ahora: number): void {
     requestAnimationFrame(cuadro);
-    if (personaje.enCalma() && (isla ? isla.quieta() : !panelAbierto)) {
+    if (personaje.enCalma() && !mascotas.hayAlguna() && (isla ? isla.quieta() : !panelAbierto)) {
       saltarCuadro = !saltarCuadro;
       if (saltarCuadro) return;
     }
@@ -386,6 +426,7 @@ async function iniciar(): Promise<void> {
     const reloj: Ala | null =
       relojPrincipal(temporizadores) ??
       (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
+      (panel.equipoTrabajando ? { texto: "👥", color: "#ffffff" } : null) ??
       relojCalendario(proximoEvento) ??
       (musica?.sonando ? { texto: "♪", color: "rgb(190, 170, 255)", ondas: true } : null) ??
       (programador.sesiones.some((s) => s.estado === "trabajando" || s.estado === "pensando") ? { texto: "⌨", color: "rgb(122, 178, 255)" } : null);
@@ -393,14 +434,40 @@ async function iniciar(): Promise<void> {
     // Lo que hace Brote por el modo programador no abre la isla (las sesiones pueden trabajar
     // por horas); un permiso de Claude Code sí, por `retieneIsla`.
     const activo = (personaje.estado !== "reposo" && !porProgramador) || panel.retieneIsla(ahora);
+    if (panel.verTodosAbierto) {
+      todosTerminadoDesde = panel.equipoTerminado ? (todosTerminadoDesde ?? ahora) : null;
+      todosSinCursorDesde = hover ? null : (todosSinCursorDesde ?? ahora);
+      if (
+        !panel.hayEquipo ||
+        (todosTerminadoDesde !== null && ahora - todosTerminadoDesde > TODOS_TERMINADO_MS) ||
+        (todosSinCursorDesde !== null && ahora - todosSinCursorDesde > TODOS_SIN_CURSOR_MS)
+      ) {
+        panel.verTodos(false);
+      }
+    } else {
+      todosTerminadoDesde = todosSinCursorDesde = null;
+    }
+    // Los lugares del panel vienen en coordenadas de la página; el lienzo puede no partir en 0,0.
+    const caja = lienzo.getBoundingClientRect();
+    const enLienzo = <T extends { x: number; suelo: number }>(l: T): T => ({ ...l, x: l.x - caja.left, suelo: l.suelo - caja.top });
+    const lugares = panel.lugaresMascotas().map(enLienzo);
     if (isla) {
+      isla.expandir(panel.verTodosAbierto);
       isla.actualizar(dt, hover, activo, panel.alto());
-      isla.dibujar(ctx, W, personaje, reloj ?? undefined);
+      const lugarBrote = panel.lugarBrote();
+      const columnaBrote = lugarBrote && enLienzo(lugarBrote);
+      mascotas.actualizar(dt, lugares, isla.posicionBrote(W, columnaBrote));
+      isla.dibujar(ctx, W, personaje, reloj ?? undefined, { antesDeBrote: () => mascotas.dibujar(ctx), columnaBrote });
       panel.ubicar(isla.zonaPanel(W), isla.lista());
     } else {
       // Brote abajo a la derecha; el panel a su izquierda, alineado abajo.
       const R = 40;
       const centro = W - 62;
+      fondoPanel = acercar(fondoPanel, panelAbierto ? 1 : 0, dt, 12);
+      const rect = panel.rect();
+      dibujarFondoPanel(ctx, rect && new DOMRect(rect.x - caja.left, rect.y - caja.top, rect.width, rect.height), fondoPanel);
+      mascotas.actualizar(dt, lugares, { x: centro, suelo: H - 16, radio: R });
+      mascotas.dibujar(ctx);
       personaje.dibujar(ctx, centro, H - 16, R);
       personaje.dibujarEtiqueta(ctx, centro, H - R * 2 - 34);
       if (reloj && !panelAbierto) {
@@ -420,6 +487,31 @@ async function iniciar(): Promise<void> {
     }
   }
   requestAnimationFrame(cuadro);
+}
+
+/**
+ * Modo flotante: la caja del panel (antes era su fondo CSS) se dibuja en el lienzo, debajo de las
+ * mascotas, para que se vean sobre ella. `alfa` sigue al panel al abrirse y cerrarse.
+ */
+function dibujarFondoPanel(ctx: CanvasRenderingContext2D, rect: DOMRect | null, alfa: number): void {
+  if (!rect || alfa < 0.01 || rect.width === 0) return;
+  ctx.save();
+  ctx.globalAlpha = alfa;
+  const forma = new Path2D();
+  forma.roundRect(rect.left, rect.top, rect.width, rect.height, 18);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 8;
+  const fondo = ctx.createLinearGradient(rect.left, rect.top, rect.right, rect.bottom);
+  fondo.addColorStop(0, "#19191f");
+  fondo.addColorStop(1, "#0e0e12");
+  ctx.fillStyle = fondo;
+  ctx.fill(forma);
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+  ctx.lineWidth = 1;
+  ctx.stroke(forma);
+  ctx.restore();
 }
 
 /** Con un evento en menos de una hora, el ala muestra cuánto falta: "📅25m". */

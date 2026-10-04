@@ -43,6 +43,12 @@ import {
   leerFunciones,
   leerUrlIcal,
   limpiarInstrucciones,
+  limpiarPersonalidad,
+  identityMd,
+  personalidadDeSoul,
+  soulMd,
+  MAX_PERSONALIDAD,
+  type Especialista,
   miembrosDeConfig,
   nombreModeloIA,
   pendientes,
@@ -78,6 +84,7 @@ import {
   argsIdentidad,
   argsListaAuth,
   argsModelo,
+  argsSinNavegador,
   argsRuntimeClaude,
   carpetaEspecialista,
   claveValida,
@@ -942,9 +949,36 @@ function dentroDeOpenclaw(ruta: string): boolean {
   return real.startsWith(base + sep);
 }
 
+/**
+ * Escribe la personalidad de un especialista en su carpeta si falta (SOUL.md e IDENTITY.md); con
+ * `personalidad`, reemplaza el SOUL.md con la del usuario. Nunca toca IDENTITY.md si ya existe (el
+ * usuario o OpenClaw pueden haberlo cambiado) y solo escribe dentro de la carpeta de OpenClaw. Sirve
+ * también para el 🔎 Investigador creado a mano en la fase 0: no se recrea, solo se le agrega lo que falte.
+ */
+function escribirPersonalidad(especialista: Especialista, workspace: string, personalidad: string | null = null): boolean {
+  if (!dentroDeOpenclaw(workspace) || !existsSync(workspace)) return false;
+  let cambio = false;
+  const soul = join(workspace, "SOUL.md");
+  if (personalidad !== null || !existsSync(soul)) {
+    writeFileSync(soul, soulMd(especialista, personalidad));
+    cambio = true;
+  }
+  const identidad = join(workspace, "IDENTITY.md");
+  if (!existsSync(identidad)) {
+    writeFileSync(identidad, identityMd(especialista));
+    cambio = true;
+  }
+  return cambio;
+}
+
 /** El estado para Configurar Brote → Cuentas de IA y Equipo. */
 export function equipo() {
   const config = leerConfig();
+  // A los que ya están en el equipo sin personalidad (creados antes, o a mano) se les escribe la del catálogo.
+  for (const { id } of miembrosDeConfig(config)) {
+    const especialista = especialistaDe(id);
+    if (especialista) escribirPersonalidad(especialista, workspaceDe(config, id));
+  }
   const brote = agente(config);
   const conectadas = cuentasConectadas(config ? perfilesDeModelos(config) : []);
   const claude = estadoClaude();
@@ -964,6 +998,7 @@ export function equipo() {
     const miembro = miembros.find((m) => m.id === e.id);
     const workspace = workspaceDe(config, e.id);
     const instrucciones = miembro ? instruccionesDeAgents(leerTexto(join(workspace, "AGENTS.md"))) : null;
+    const soul = miembro ? leerTexto(join(workspace, "SOUL.md")) : "";
     return {
       id: e.id,
       nombre: e.nombre,
@@ -973,6 +1008,8 @@ export function equipo() {
       activo: Boolean(miembro),
       modelo: miembro?.modelo ?? null,
       instrucciones: instrucciones ?? e.instrucciones,
+      personalidad: (soul && personalidadDeSoul(soul)) || e.alma,
+      vibe: e.vibe,
       // Los creados a mano antes (fase 0) quedaron dentro del workspace de Brote.
       dentroDeBrote: Boolean(miembro && brote && resolve(workspace).startsWith(resolve(brote.workspace) + sep)),
     };
@@ -1000,8 +1037,12 @@ export function guardarEspecialista(id: string, modelo: string, texto: string): 
   const especialista = especialistaDe(id);
   if (!especialista) throw new Error("Especialista desconocido");
   if (!MODELOS_PERMITIDOS.includes(modelo)) throw new Error("Ese modelo no está en la lista");
-  const instrucciones = limpiarInstrucciones(texto);
+  // Por la entrada llegan las instrucciones solas (texto) o { instrucciones, personalidad } en JSON.
+  const { instrucciones: textoInstrucciones, personalidad: textoPersonalidad } = leerEntradaEspecialista(texto);
+  const instrucciones = limpiarInstrucciones(textoInstrucciones);
   if (instrucciones === null) throw new Error(`Las instrucciones deben ser texto simple, de hasta ${MAX_INSTRUCCIONES} caracteres.`);
+  const personalidad = textoPersonalidad === null ? null : limpiarPersonalidad(textoPersonalidad);
+  if (textoPersonalidad !== null && personalidad === null) throw new Error(`La personalidad debe ser texto simple, de 1 a ${MAX_PERSONALIDAD} caracteres.`);
   let config = leerConfig();
   if (!agente(config)) throw new Error("Primero hay que configurar OpenClaw (Estado → Reparar)");
   const ia = iaDeModelo(modelo)!;
@@ -1016,6 +1057,10 @@ export function guardarEspecialista(id: string, modelo: string, texto: string): 
     openclaw(argsIdentidad(especialista));
   }
   exigir(openclaw(argsModelo(id, modelo)), `No pude elegir la IA de ${especialista.nombre}`);
+  // También al Investigador de la fase 0, creado a mano: que ningún especialista abra Chrome.
+  if (!Array.isArray(config?.agents?.entries?.[id]?.tools?.deny) || !config.agents.entries[id].tools.deny.includes("browser")) {
+    openclaw(argsSinNavegador(id));
+  }
   config = leerConfig();
   if (ia.id === "claude" && config?.agents?.defaults?.models?.[modelo]?.agentRuntime?.id !== "claude-cli") {
     exigir(openclaw(argsRuntimeClaude(modelo)), "No pude conectar ese modelo con Claude Code");
@@ -1025,8 +1070,24 @@ export function guardarEspecialista(id: string, modelo: string, texto: string): 
   mkdirSync(workspace, { recursive: true });
   const agentsMd = join(workspace, "AGENTS.md");
   writeFileSync(agentsMd, conBloque(leerTexto(agentsMd), bloqueAgents(especialista, instrucciones)));
+  escribirPersonalidad(especialista, workspace, personalidad);
   sincronizarDelegacion();
   return `${especialista.emoji} ${especialista.nombre} ${existia ? "quedó actualizado" : "se unió al equipo"} (${nombreModeloIA(modelo)}).`;
+}
+
+/** Lo que llega por la entrada al guardar un especialista: texto simple (las instrucciones) o JSON. */
+export function leerEntradaEspecialista(texto: string): { instrucciones: string; personalidad: string | null } {
+  if (texto.trimStart().startsWith("{")) {
+    try {
+      const datos = JSON.parse(texto);
+      if (datos && typeof datos === "object" && typeof datos.instrucciones === "string") {
+        return { instrucciones: datos.instrucciones, personalidad: typeof datos.personalidad === "string" ? datos.personalidad : null };
+      }
+    } catch {
+      // No era JSON: son instrucciones que empiezan con "{".
+    }
+  }
+  return { instrucciones: texto, personalidad: null };
 }
 
 /** Apaga un especialista: lo borra de OpenClaw (su carpeta va a la Papelera) y Brote deja de delegarle. */

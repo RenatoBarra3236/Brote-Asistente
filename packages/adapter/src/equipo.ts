@@ -36,6 +36,15 @@ export function argsAgregar(especialista: Especialista, workspace: string): stri
   ];
 }
 
+/**
+ * Ningún especialista usa la herramienta `browser` de OpenClaw: abre un Chrome visible (perfil
+ * "openclaw"), y al Investigador con la plantilla "researcher" le pasó en medio de una búsqueda
+ * (3-10-2026). Para buscar y leer le bastan `web_search` y `web_fetch`.
+ */
+export function argsSinNavegador(id: string): string[] {
+  return ["config", "set", `agents.entries.${id}.tools.deny`, JSON.stringify(["browser"]), "--strict-json"];
+}
+
 export function argsModelo(id: string, modelo: string): string[] {
   if (!MODELOS_PERMITIDOS.includes(modelo)) throw new Error("Modelo no permitido");
   return ["config", "set", `agents.entries.${id}.model`, modelo];

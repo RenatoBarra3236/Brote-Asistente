@@ -19,6 +19,7 @@ import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
 import { describirPlan, describirReinicio, type LecturaPlan } from "./plan.ts";
 import { describirUso, type ResumenUso } from "./uso.ts";
+import { describirHoy, describirPresupuestoPuesto, describirQueda, presupuestoDelMes, type PresupuestoMes } from "./plata.ts";
 
 export interface Resultado {
   intencion: Intencion;
@@ -56,7 +57,9 @@ export type Accion =
     }
   | { intencion: "programador-sesiones" }
   | { intencion: "aula-entregas" | "aula-semana" }
-  | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" };
+  | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" }
+  | { intencion: "presupuesto-poner"; monto: number }
+  | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -108,7 +111,15 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "plan-uso":
     case "plan-reinicio":
     case "plan-tokens":
+    case "presupuesto-quitar":
+    case "presupuesto-queda":
+    case "presupuesto-hoy":
       return { intencion };
+    case "presupuesto-poner": {
+      const monto = ranuras.monto === undefined ? null : leerMonto(ranuras.monto);
+      // Un presupuesto mensual de menos de mil pesos es casi seguro un error de lectura.
+      return monto === null || monto < 1000 ? null : { intencion, monto };
+    }
     case "calendario-crear":
     case "calendario-crear-manana": {
       const titulo = originales.cosa ? sinArticulo(originales.cosa.trim()).slice(0, 200) || "Evento" : "Evento";
@@ -334,6 +345,17 @@ export class Motor {
         return this.temporizar(accion);
       case "estado-equipo":
         return describirEquipo(this.equipo!()!);
+      case "presupuesto-poner":
+        this.gastos.ponerPresupuesto(accion.monto);
+        return describirPresupuestoPuesto(this.estadoPresupuesto()!);
+      case "presupuesto-quitar":
+        if (this.gastos.presupuesto() === null) return "No tenías presupuesto puesto.";
+        this.gastos.ponerPresupuesto(null);
+        return "Listo, quité tu presupuesto. Igual sigo anotando tus gastos 🌱";
+      case "presupuesto-queda":
+        return describirQueda(this.estadoPresupuesto());
+      case "presupuesto-hoy":
+        return describirHoy(this.estadoPresupuesto());
       default:
         throw new Error(`El motor no ejecuta «${accion.intencion}» aquí`);
     }
@@ -371,6 +393,20 @@ export class Motor {
         return lineas.join("\n");
       }
     }
+  }
+
+  /** El presupuesto del mes con lo gastado hasta ahora, o `null` si no hay presupuesto. */
+  estadoPresupuesto(): PresupuestoMes | null {
+    const monto = this.gastos.presupuesto();
+    if (monto === null) return null;
+    const ahora = this.reloj();
+    return presupuestoDelMes(monto, this.gastos.total(rangoDe("este mes", ahora)).total, this.gastos.total(rangoDe("hoy", ahora)).total, ahora.getTime());
+  }
+
+  /** Anota un gasto como lo haría la frase "gasté {monto} en {descripcion}" (los botones de un toque de la pestaña Plata). */
+  anotarGasto(monto: number, descripcion: string | null): string {
+    const limpia = descripcion?.trim() ? descripcion.trim().slice(0, 200) : null;
+    return this.registrar(monto, limpia ? categoriaDe(normalizar(sinArticulo(limpia))) : "otros", limpia);
   }
 
   private registrar(monto: number, categoria: Categoria, descripcion: string | null): string {

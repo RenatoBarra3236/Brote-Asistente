@@ -4,14 +4,15 @@
 //   pega aquí o en la terminal), ChatGPT y Grok (inicio de sesión en la terminal; "sin probar").
 //   Equipo: un interruptor por especialista (📚 Tutor, 🔎 Investigador, ✍️ Redactor, ✅ Revisor,
 //   🗓️ Planificador), con qué IA trabaja (solo modelos de cuentas conectadas), su rol en una línea y
-//   sus instrucciones editables. Prender crea el agente en OpenClaw; apagar lo borra.
+//   sus instrucciones y su personalidad (SOUL.md) editables. Prender crea el agente en OpenClaw (con su
+//   SOUL.md e IDENTITY.md); apagar lo borra.
 //
 // Todo pasa por Rust (`equipo_estado`, `especialista_guardar`, `especialista_quitar`, `cuenta_clave`,
 // `abrir_terminal`, `abrir_enlace`), que valida contra listas cerradas. La clave nunca se guarda aquí
 // más que en el campo mientras se escribe.
 
 import { invoke } from "@tauri-apps/api/core";
-import { MAX_INSTRUCCIONES, modeloInicial, modelosElegibles, type EstadoCuenta, type EstadoEspecialista } from "../agente/especialistas";
+import { MAX_INSTRUCCIONES, MAX_PERSONALIDAD, modeloInicial, modelosElegibles, type EstadoCuenta, type EstadoEspecialista } from "../agente/especialistas";
 import { boton, crear, estado, guardarFunciones, mensajeDe, mostrarAviso, pintar } from "./comun";
 
 interface EstadoEquipo {
@@ -27,7 +28,7 @@ let error: string | null = null;
 /** El especialista o la cuenta que se está guardando (solo uno a la vez). */
 let trabajandoEn: string | null = null;
 /** Lo escrito en los formularios (sobrevive a que la ventana se vuelva a armar). */
-const borradores = new Map<string, { modelo?: string; instrucciones?: string }>();
+const borradores = new Map<string, { modelo?: string; instrucciones?: string; personalidad?: string }>();
 const clave = { texto: "", acepto: false };
 
 export async function revisarEquipo(): Promise<void> {
@@ -191,7 +192,14 @@ function tarjetaEspecialista(e: EstadoEspecialista, cuentas: EstadoCuenta[]): HT
         mostrarAviso("Primero conecta una IA en Cuentas de IA.", true);
         return;
       }
-      void hacer(e.id, () => invoke<string>("especialista_guardar", { id: e.id, modelo, instrucciones: borrador.instrucciones ?? e.instrucciones }));
+      void hacer(e.id, () =>
+        invoke<string>("especialista_guardar", {
+          id: e.id,
+          modelo,
+          instrucciones: borrador.instrucciones ?? e.instrucciones,
+          personalidad: borrador.personalidad ?? null,
+        }),
+      );
     } else void hacer(e.id, () => invoke<string>("especialista_quitar", { id: e.id }));
   });
   interruptor.append(casilla, crear("span", "interruptor-riel"));
@@ -225,6 +233,15 @@ function tarjetaEspecialista(e: EstadoEspecialista, cuentas: EstadoCuenta[]): HT
     borradores.set(e.id, { ...borradores.get(e.id), instrucciones: instrucciones.value });
     guardar.disabled = ocupadoAhora || !e.activo;
   });
+  const personalidad = crear("textarea", "campo instrucciones");
+  personalidad.rows = 3;
+  personalidad.maxLength = MAX_PERSONALIDAD;
+  personalidad.value = borrador.personalidad ?? e.personalidad;
+  personalidad.setAttribute("aria-label", `Personalidad de ${e.nombre}`);
+  personalidad.addEventListener("input", () => {
+    borradores.set(e.id, { ...borradores.get(e.id), personalidad: personalidad.value });
+    guardar.disabled = ocupadoAhora || !e.activo || !personalidad.value.trim();
+  });
   const guardar = crear("button", "boton boton-primario", "Guardar cambios");
   guardar.type = "submit";
   guardar.disabled = ocupadoAhora || !e.activo || !borradores.has(e.id);
@@ -233,12 +250,22 @@ function tarjetaEspecialista(e: EstadoEspecialista, cuentas: EstadoCuenta[]): HT
     evento.preventDefault();
     const elegido = selector.value;
     if (!elegido) return;
-    void hacer(e.id, () => invoke<string>("especialista_guardar", { id: e.id, modelo: elegido, instrucciones: instrucciones.value })).then((ok) => {
+    const editada = borradores.get(e.id)?.personalidad;
+    void hacer(e.id, () =>
+      invoke<string>("especialista_guardar", { id: e.id, modelo: elegido, instrucciones: instrucciones.value, personalidad: editada?.trim() ? editada : null }),
+    ).then((ok) => {
       if (ok) borradores.delete(e.id);
       pintar();
     });
   });
-  formulario.append(crear("p", "subpaso-titulo", "Trabaja con"), selector, crear("p", "subpaso-titulo", "Sus instrucciones"), instrucciones);
+  formulario.append(
+    crear("p", "subpaso-titulo", "Trabaja con"),
+    selector,
+    crear("p", "subpaso-titulo", "Sus instrucciones"),
+    instrucciones,
+    crear("p", "subpaso-titulo", `Su personalidad · ${e.vibe}`),
+    personalidad,
+  );
   if (e.activo) {
     const botones = crear("div", "botones");
     botones.append(guardar);

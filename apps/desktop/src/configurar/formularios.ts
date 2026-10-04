@@ -4,7 +4,48 @@
 // hacia Rust.
 
 import { invoke } from "@tauri-apps/api/core";
-import { boton, crear, estado, mensajeDe, mostrarAviso, revisar } from "./comun";
+import { boton, crear, estado, guardarPresupuesto, mensajeDe, mostrarAviso, revisar } from "./comun";
+
+let borradorPresupuesto = "";
+
+/** "200.000", "$200000", "200 mil" → 200000; `null` si no se entiende o está fuera de rango. */
+export function leerPresupuestoEscrito(texto: string): number | null {
+  const limpio = texto.toLowerCase().replace(/[$\s.]/g, "").replace(/(lucas|luca|mil|k)$/, "000");
+  if (!/^\d+$/.test(limpio)) return null;
+  const monto = Number(limpio);
+  return monto >= 1000 && monto <= 100_000_000 ? monto : null;
+}
+
+/** El presupuesto mensual (tarjeta Gastos): un monto en pesos, guardar y quitar. Va al puente, que lo guarda en la base. */
+export function formularioPresupuesto(actual: number | null): HTMLElement {
+  const formulario = crear("form", "formulario-ical");
+  const campo = crear("input", "campo");
+  campo.inputMode = "numeric";
+  campo.autocomplete = "off";
+  campo.placeholder = actual ? `Ahora: $${actual.toLocaleString("es-CL")} al mes` : "Por ejemplo: 200.000";
+  campo.value = borradorPresupuesto;
+  campo.setAttribute("aria-label", "Presupuesto mensual en pesos");
+  const guardar = crear("button", "boton boton-primario", actual ? "Cambiar" : "Guardar");
+  guardar.type = "submit";
+  guardar.disabled = leerPresupuestoEscrito(borradorPresupuesto) === null;
+  campo.addEventListener("input", () => {
+    borradorPresupuesto = campo.value;
+    guardar.disabled = leerPresupuestoEscrito(borradorPresupuesto) === null;
+  });
+  const botones = crear("div", "botones");
+  if (actual) botones.append(boton("Quitar", "boton", () => void guardarPresupuesto(null)));
+  botones.append(guardar);
+  formulario.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    const monto = leerPresupuestoEscrito(borradorPresupuesto);
+    if (monto === null) return;
+    void guardarPresupuesto(monto).then((ok) => {
+      if (ok) borradorPresupuesto = "";
+    });
+  });
+  formulario.append(campo, botones);
+  return formulario;
+}
 
 let borradorIcal = "";
 

@@ -149,7 +149,11 @@ export function etiquetaHerramienta(nombre: string, args?: any, meta?: unknown):
   const resto = typeof meta === "string" ? meta.replace(/^from\s+/, "").trim() : "";
   const ruta = String(args?.file_path ?? args?.notebook_path ?? args?.path ?? resto);
   // Las de OpenClaw para delegar llegan como "mcp__openclaw__sessions_spawn".
-  const delegacion = ETIQUETAS_DELEGACION[nombre.replace(/^mcp__openclaw__/, "")];
+  const corto = nombre.replace(/^mcp__openclaw__/, "");
+  // Las de búsqueda de un especialista, con lo que busca o dónde lee si se sabe: "Leyendo es.wikipedia.org…".
+  if (corto === "web_fetch" && dominio(args?.url)) return `Leyendo ${dominio(args.url)}…`;
+  if (corto === "web_search" && typeof args?.query === "string" && args.query.trim()) return `Buscando «${recortar(args.query.trim(), 30)}»…`;
+  const delegacion = ETIQUETAS_DELEGACION[corto];
   if (delegacion) return delegacion;
   switch (nombre) {
     case "Read":

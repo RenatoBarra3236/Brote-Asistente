@@ -141,14 +141,23 @@ fn ubicar_en_esquina(ventana: &WebviewWindow) -> tauri::Result<()> {
     ))
 }
 
+/// La ventana del notch: 760 × 460 para que quepa "Ver a todos" (la isla normal crece como mucho
+/// 560 × 380, como antes). Transparente y los clics la atraviesan fuera de la isla: el tamaño solo
+/// limita cuánto puede crecer. En una pantalla chica se achica para no salirse.
+const ANCHO_NOTCH: f64 = 760.0;
+const ALTO_NOTCH: f64 = 460.0;
+
+// Solo se usa en macOS (el notch), pero se prueba en todos.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn tamano_notch(ancho_pantalla: f64, alto_pantalla: f64) -> (f64, f64) {
+    (ANCHO_NOTCH.min(ancho_pantalla - 40.0).max(400.0), ALTO_NOTCH.min(alto_pantalla * 0.6).max(300.0))
+}
+
 /// macOS: ventana arriba al centro, pegada al notch y sobre la barra de menú.
 /// Sin notch (por ejemplo, un monitor externo) se simula la isla con el alto de la barra.
 #[cfg(target_os = "macos")]
 fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
-    const ANCHO: f64 = 600.0;
-    // Transparente y los clics la atraviesan fuera de la isla: el alto solo limita cuánto puede crecer.
-    const ALTO: f64 = 380.0;
 
     // Para probar en un Mac la experiencia de Windows (ventana flotante en vez de notch).
     if std::env::var("ASISTENTE_MODO").is_ok_and(|modo| modo == "flotante") {
@@ -165,8 +174,9 @@ fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
         .notch
         .unwrap_or((180.0, pantalla.alto_barra.max(24.0), centro_pantalla));
 
+    let (ancho, alto) = tamano_notch(pantalla.marco.size.width, pantalla.marco.size.height);
     let arriba = pantalla.marco.origin.y + pantalla.marco.size.height;
-    let marco = NSRect::new(NSPoint::new(centro - ANCHO / 2.0, arriba - ALTO), NSSize::new(ANCHO, ALTO));
+    let marco = NSRect::new(NSPoint::new(centro - ancho / 2.0, arriba - alto), NSSize::new(ancho, alto));
     unsafe { notch::subir_sobre_la_barra(ventana.ns_window()?, marco) };
     Ok(Diseno { modo: "notch", notch_ancho, notch_alto })
 }
@@ -292,4 +302,19 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod pruebas {
+    use super::tamano_notch;
+
+    #[test]
+    fn la_ventana_del_notch_no_se_sale_de_pantallas_chicas() {
+        // Un MacBook Air de 13" (1470 × 956 puntos): el tamaño completo.
+        assert_eq!(tamano_notch(1470.0, 956.0), (760.0, 460.0));
+        // Una pantalla chica: cabe con margen y nunca baja de lo que necesita la isla normal.
+        let (ancho, alto) = tamano_notch(700.0, 600.0);
+        assert!((400.0..=660.0).contains(&ancho));
+        assert!((300.0..=360.0).contains(&alto));
+    }
 }

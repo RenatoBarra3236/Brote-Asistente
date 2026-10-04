@@ -22,7 +22,42 @@ export const estado = {
   permisos: null as LecturaPermisos | null,
   /** Se reparó algo: conviene reiniciar Brote para que el puente se reconecte. */
   reparado: false,
+  /** El presupuesto mensual (`null`: sin presupuesto; `undefined`: Brote no está abierto y no se sabe). */
+  presupuesto: undefined as number | null | undefined,
 };
+
+/** Cómo pedirle algo al puente de Brote (lo pone configuracion.ts si Brote está corriendo). */
+let pedirAlPuente: (<T>(pedido: Record<string, unknown>) => Promise<T>) | null = null;
+
+export function usarPuente(pedir: <T>(pedido: Record<string, unknown>) => Promise<T>): void {
+  pedirAlPuente = pedir;
+}
+
+/** El presupuesto vive en la base de Brote (la usa el puente): se lee y se cambia a través de él. */
+export async function leerPresupuesto(): Promise<void> {
+  if (!pedirAlPuente) return;
+  try {
+    const plata = await pedirAlPuente<{ presupuesto: { monto: number } | null } | null>({ tipo: "plata-estado" });
+    estado.presupuesto = plata ? (plata.presupuesto?.monto ?? null) : undefined;
+  } catch {
+    estado.presupuesto = undefined;
+  }
+  pintar();
+}
+
+export async function guardarPresupuesto(monto: number | null): Promise<boolean> {
+  if (!pedirAlPuente) return false;
+  try {
+    await pedirAlPuente({ tipo: "presupuesto-poner", monto });
+    estado.presupuesto = monto;
+    mostrarAviso(monto === null ? "Quité el presupuesto." : "Guardé tu presupuesto 💰");
+    pintar();
+    return true;
+  } catch (error) {
+    mostrarAviso(`Presupuesto: ${mensajeDe(error)}`, true);
+    return false;
+  }
+}
 
 /** En macOS hay permisos de Privacidad; en Windows y Linux no. */
 export const EN_MAC = navigator.userAgent.includes("Mac");

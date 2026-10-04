@@ -10,8 +10,13 @@
   (el uso del plan de Claude en la pestaña Claude: con datos, sin datos todavía, sin la statusline instalada,
   cerca del límite con el aviso de 95 %, leído de la app de Claude con la hora estimada, o con la sesión de
   5 h ya reiniciada). El botón ↻ simula la consulta mínima. ?delegar=1 (Brote le pasa la pregunta a su
-  equipo: 🔎 Investigador con Gemini y 📚 Tutor con Claude trabajando, y después la respuesta) ·
-  ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo).
+  equipo: las mascotas de 🔎 Investigador con Gemini, 📚 Tutor con Claude y ✍️ Redactor con ChatGPT salen de
+  detrás de Brote, piensan, buscan, piden permiso, escriben y celebran; después la respuesta de Brote) ·
+  ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo) · &todos=1 (abre
+  "Ver a todos") · &conversacion=1 (abre la conversación del Investigador) ·
+  ?pestana=plata (la pestaña Plata con tres meses de gastos de ejemplo) y ?plata=sin|pasado|nuevo (sin
+  presupuesto, pasado del presupuesto con el aviso del 100 %, o sin ningún gasto todavía). Los botones de un
+  toque y "mi presupuesto es…" funcionan.
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -26,12 +31,12 @@
       }
       body {
         position: relative;
-        width: 600px !important;
-        height: 380px !important;
+        width: 760px !important;
+        height: 460px !important;
         margin: 0 auto !important;
         box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
       }
-      /* El modo flotante (Windows) vive en una ventana de 400 × 280. */
+      /* La ventana del notch mide 760 × 460 (lib.rs). El modo flotante (Windows) vive en una de 400 × 280. */
       body.flotante {
         width: 400px !important;
         height: 280px !important;
@@ -222,36 +227,73 @@
                 case "equipo-estado":
                   t += 1;
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
+                case "plata-estado":
+                  return responder(id, { datos: window.__plata.estado() });
+                case "plata-anotar":
+                  window.__plata.anotar(pedido.monto, pedido.descripcion);
+                  setTimeout(() => emitir({ tipo: "plata", plata: window.__plata.estado() }), 150);
+                  return responder(id, { mensaje: `Anotado: $${pedido.monto.toLocaleString("es-CL")} en ${pedido.descripcion}. Este mes llevas $${window.__plata.estado().mes.total.toLocaleString("es-CL")}.` });
+                case "presupuesto-poner":
+                  window.__plata.presupuesto(pedido.monto);
+                  emitir({ tipo: "plata", plata: window.__plata.estado() });
+                  return responder(id, { datos: window.__plata.estado() });
                 case "especialistas-estado":
                   return responder(id, { datos: { lista: [], frenado: parametros.has("freno") } });
                 case "enviar":
-                  // Con ?delegar=1 Brote le pasa la pregunta a su equipo (así lo dejaría el puente).
+                  // Con ?delegar=1 Brote le pasa la pregunta a su equipo (así lo dejaría el puente): las
+                  // mascotas salen de detrás de Brote, piensan, buscan, escriben y celebran al terminar.
                   if (parametros.has("delegar")) {
                     responder(id, {});
                     const marco = (stream, data) => emitir({ tipo: "evento", marco: { event: "agent", payload: { runId: "r2", stream, data } } });
-                    const ahora = Date.now();
-                    const miembro = (extra) => ({
-                      sesion: `agent:${extra.id}:subagent:1`,
-                      tarea: null,
-                      herramienta: null,
-                      estado: "trabajando",
-                      inicioMs: ahora,
-                      finMs: null,
-                      ...extra,
-                    });
-                    const investigador = { id: "investigador", nombre: "Investigador", emoji: "🔎", ia: "Gemini", color: "#5b8def", tarea: "Busca fuentes sobre la fotosíntesis para primer año" };
-                    const tutor = { id: "tutor", nombre: "Tutor", emoji: "📚", ia: "Claude", color: "#d9825b", tarea: "Arma 3 preguntas de práctica sobre la fotosíntesis" };
-                    setTimeout(() => marco("lifecycle", { phase: "start" }), 200);
-                    setTimeout(() => marco("tool", { phase: "start", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1", args: {} }), 400);
-                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, herramienta: "web_search" }), miembro(tutor)] }), 700);
-                    setTimeout(() => marco("tool", { phase: "result", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1" }), 900);
-                    setTimeout(() => marco("tool", { phase: "start", name: "mcp__openclaw__subagents", toolCallId: "t2", args: {} }), 1000);
-                    const final = parametros.get("pestana") === "chat" ? 9000 : 60_000;
-                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, estado: "termino", finMs: Date.now() }), miembro({ ...tutor, herramienta: "Write" })] }), 4000);
-                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, estado: "termino", finMs: Date.now() }), miembro({ ...tutor, estado: "termino", finMs: Date.now() })] }), final - 1500);
-                    setTimeout(() => marco("tool", { phase: "result", name: "mcp__openclaw__subagents", toolCallId: "t2" }), final - 1200);
-                    setTimeout(() => marco("assistant", { text: "¡Listo! El Investigador encontró que la fotosíntesis es cuando las plantas usan la luz para convertir agua y CO₂ en glucosa y oxígeno (Khan Academy), y el Tutor te dejó 3 preguntas para practicar 🌱" }), final - 800);
-                    setTimeout(() => marco("lifecycle", { phase: "end" }), final);
+                    const inicio = Date.now();
+                    const final = parametros.has("todos") || parametros.has("conversacion") ? 45_000 : parametros.get("pestana") === "chat" ? 12_000 : 20_000;
+                    const equipo = [
+                      { sesion: "agent:investigador:subagent:1", id: "investigador", nombre: "Investigador", emoji: "🔎", ia: "Gemini", color: "#5b8def", tarea: "Busca fuentes sobre la fotosíntesis para primer año", tareaCompleta: "Busca dos fuentes confiables sobre la fotosíntesis para un estudiante de primer año y resume qué dicen, con sus enlaces." },
+                      { sesion: "agent:tutor:subagent:2", id: "tutor", nombre: "Tutor", emoji: "📚", ia: "Claude", color: "#d9825b", tarea: "Arma 3 preguntas de práctica sobre la fotosíntesis", tareaCompleta: "Arma 3 preguntas de práctica sobre la fotosíntesis, con su solución aparte." },
+                      { sesion: "agent:redactor:subagent:3", id: "redactor", nombre: "Redactor", emoji: "✍️", ia: "ChatGPT", color: "#3fa37a", tarea: "Resume todo en un párrafo", tareaCompleta: "Cuando lleguen las fuentes, resume la fotosíntesis en un párrafo claro para una prueba." },
+                    ].map((e) => ({ ...e, herramienta: null, args: null, estado: "trabajando", actividad: "en-espera", pasos: [], respuesta: "", inicioMs: inicio, finMs: null }));
+                    const [inv, tut, red] = equipo;
+                    const avisar = () => emitir({ tipo: "especialistas", lista: equipo.map((e) => ({ ...e, pasos: e.pasos.map((p) => ({ ...p })) })) });
+                    const paso = (e, herramienta, args) => {
+                      e.pasos.forEach((p) => p.estado === "en-curso" && (p.estado = "ok"));
+                      e.pasos.push({ id: String(e.pasos.length), herramienta, args, estado: "en-curso" });
+                      Object.assign(e, { herramienta, args, actividad: "trabajando" });
+                    };
+                    const pensar = (e) => {
+                      e.pasos.forEach((p) => p.estado === "en-curso" && (p.estado = "ok"));
+                      Object.assign(e, { herramienta: null, args: null, actividad: "pensando" });
+                    };
+                    const escribir = (e, texto) => Object.assign(e, { herramienta: null, args: null, actividad: "trabajando", respuesta: texto });
+                    const terminar = (e) => {
+                      e.pasos.forEach((p) => p.estado === "en-curso" && (p.estado = "ok"));
+                      Object.assign(e, { estado: "termino", herramienta: null, args: null, finMs: Date.now() });
+                    };
+                    const respuestaInv = "La **fotosíntesis** es el proceso con que las plantas usan la luz para transformar agua y CO₂ en glucosa y oxígeno.\n\n- Khan Academy: https://es.khanacademy.org/science/biology/photosynthesis\n- Wikipedia: https://es.wikipedia.org/wiki/Fotosíntesis";
+                    const respuestaTut = "1. ¿Qué gas liberan las plantas en la fotosíntesis?\n2. ¿Dónde ocurre, dentro de la célula?\n3. ¿Por qué la luz es necesaria?\n\nSoluciones: oxígeno · cloroplastos · da la energía para la reacción.";
+                    const pasos = [
+                      [200, () => marco("lifecycle", { phase: "start" })],
+                      [500, () => marco("tool", { phase: "start", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1", args: {} })],
+                      [800, avisar],
+                      [1700, () => { inv.actividad = tut.actividad = red.actividad = "pensando"; avisar(); }],
+                      [1900, () => marco("tool", { phase: "result", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1" })],
+                      [2000, () => marco("tool", { phase: "start", name: "mcp__openclaw__subagents", toolCallId: "t2", args: {} })],
+                      [2800, () => { paso(inv, "web_search", { query: "fotosíntesis primer año" }); avisar(); }],
+                      [4200, () => { paso(inv, "web_fetch", { url: "https://es.khanacademy.org/science/biology/photosynthesis" }); paso(tut, "Read", { file_path: "/Users/tu/apuntes/biologia.md" }); avisar(); }],
+                      [6200, () => { tut.actividad = "permiso"; paso(red, "Write", { file_path: "/Users/tu/borrador.md" }); red.actividad = "permiso"; avisar(); }],
+                      [7600, () => { paso(inv, "web_fetch", { url: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis" }); tut.actividad = "trabajando"; pensar(tut); avisar(); }],
+                      [9200, () => { pensar(inv); escribir(tut, respuestaTut.slice(0, 60)); red.actividad = "trabajando"; avisar(); }],
+                      [10600, () => { escribir(inv, respuestaInv.slice(0, 90)); escribir(tut, respuestaTut); avisar(); }],
+                      [12400, () => { escribir(inv, respuestaInv); terminar(tut); avisar(); }],
+                      [final * 0.75, () => { terminar(inv); avisar(); }],
+                      [final * 0.82, () => { escribir(red, "La fotosíntesis convierte la luz del sol en alimento para la planta: con agua y CO₂ fabrica glucosa y libera oxígeno."); terminar(red); avisar(); }],
+                      [final * 0.86, () => marco("tool", { phase: "result", name: "mcp__openclaw__subagents", toolCallId: "t2" })],
+                      [final * 0.92, () => marco("assistant", { text: "¡Listo! El Investigador encontró que la fotosíntesis es cuando las plantas usan la luz para convertir agua y CO₂ en glucosa y oxígeno (Khan Academy), y el Tutor te dejó 3 preguntas para practicar 🌱" })],
+                      [final, () => marco("lifecycle", { phase: "end" })],
+                    ];
+                    for (const [ms, accion] of pasos) setTimeout(accion, ms);
+                    // ?todos=1 abre "Ver a todos"; ?conversacion=1, la conversación del Investigador.
+                    if (parametros.has("todos")) setTimeout(() => document.querySelector(".ver-todos")?.click(), 3500);
+                    if (parametros.has("conversacion")) setTimeout(() => document.querySelector(".lugar-mascota")?.click(), 11_000);
                     return;
                   }
                   // Con ?permiso=1 la pregunta va al "agente", que pide permiso para un comando.
@@ -284,6 +326,14 @@
                     );
                     return;
                   }
+                  // "mi presupuesto es 200 lucas": como lo haría el motor, sin IA.
+                  const presupuesto = /presupuesto es\s*(\d+)\s*(lucas|mil|k)?/i.exec(pedido.texto ?? "");
+                  if (presupuesto) {
+                    const monto = Number(presupuesto[1]) * (presupuesto[2] ? 1000 : 1);
+                    window.__plata.presupuesto(monto);
+                    setTimeout(() => emitir({ tipo: "plata", plata: window.__plata.estado() }), 150);
+                    return responder(id, { local: { texto: `Listo: tu presupuesto es $${monto.toLocaleString("es-CL")} al mes 💰.`, intencion: "presupuesto-poner" } });
+                  }
                   return responder(id, {
                     local: { texto: "Esta semana llevas **$23.500**: comida $11.000, transporte $7.500 y otros $5.000.", intencion: "total-periodo" },
                   });
@@ -299,6 +349,8 @@
 
       // Cerca del límite: el aviso de 95 % de la sesión, como llegaría del puente.
       if (cerca) setTimeout(() => emitir({ tipo: "plan-aviso", texto: "Llevas 95 % de tu sesión de Claude; se reinicia a las 18:40" }), 2500);
+      // Pasado del presupuesto: el aviso del 100 %, como lo mandaría el puente.
+      if (parametros.get("plata") === "pasado") setTimeout(() => emitir({ tipo: "plata-aviso", texto: "🚨 Te pasaste del presupuesto del mes: llevas $412.000 de $250.000. Nada de dramas: desde mañana vamos con calma 🌱" }), 2200);
       // El freno por plan, como lo avisaría el puente.
       if (parametros.has("freno")) setTimeout(() => emitir({ tipo: "especialistas-aviso", texto: "Tu plan semanal de Claude va alto (87 %): no le paso tareas a los especialistas con Claude hasta que baje. Los de otras IA siguen." }), 2000);
       // Una descarga en curso, como llegaría del puente.
@@ -307,7 +359,7 @@
       const pestana = parametros.get("pestana");
       if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
-          const titulos = { brote: "Brote", claude: "Claude", equipo: "Equipo" };
+          const titulos = { brote: "Brote", plata: "Plata", claude: "Claude", equipo: "Equipo" };
           if (pestana === "chat" || parametros.has("permiso") || parametros.has("delegar")) {
             const entrada = document.querySelector(".entrada");
             entrada.value = parametros.has("delegar") ? "Pídele al equipo que me ayude a estudiar la fotosíntesis" : "¿cuánto llevo esta semana?";
@@ -316,6 +368,36 @@
           } else document.querySelector(`.pestana[title="${titulos[pestana]}"]`)?.click();
         }, 1500);
       }
+    </script>
+    <script type="module">
+      // La pestaña Plata con el cálculo de verdad (motor/plata.ts) sobre gastos de ejemplo.
+      import { resumenPlata } from "/src/agente/plata.ts";
+      const modo = new URLSearchParams(location.search).get("plata");
+      const hoy = new Date();
+      const en = (dias, hora, monto, categoria, descripcion) => ({ monto, categoria, descripcion, fechaMs: new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dias, hora, 10).getTime() });
+      const lista = [];
+      if (modo !== "nuevo") {
+        for (let d = 95; d >= 0; d--) {
+          if (d % 2 === 0) lista.push(en(d, 9, 1500, "comida", "café"));
+          if (d % 7 !== 5 && d % 7 !== 6) lista.push(en(d, 8, 800, "transporte", "micro"));
+          if (d % 3 === 1) lista.push(en(d, 13, 4500, "comida", "almuerzo"));
+          if (d % 11 === 3) lista.push(en(d, 21, 12000, "salidas", "carrete"));
+        }
+        for (const meses of [1, 2, 3]) lista.push({ monto: 8990, categoria: "salidas", descripcion: "Netflix", fechaMs: new Date(hoy.getFullYear(), hoy.getMonth() - meses, 12, 10).getTime() });
+        lista.push(en(1, 19, 9000, "transporte", "uber"), en(3, 23, 7000, "transporte", "uber"), en(0, 0, 6500, "transporte", "uber"));
+        lista.push(en(9, 15, 3000, "transporte", "uber"));
+        lista.push(en(2, 11, 18000, "estudio", "libro de cálculo"), en(0, 12, 3500, "salud", "farmacia"));
+        if (modo === "pasado") lista.push(en(0, 10, 150000, "cuentas", "arriendo"));
+      }
+      const datos = { lista: lista.filter((g) => g.fechaMs <= Date.now()).map((g, i) => ({ id: i + 1, ...g })), presupuesto: modo === "sin" || modo === "nuevo" ? null : 250000 };
+      window.__plata = {
+        estado: () => resumenPlata(datos.lista, datos.presupuesto, Date.now()),
+        anotar: (monto, descripcion) => {
+          const categoria = descripcion === "micro" ? "transporte" : "comida";
+          datos.lista.push({ id: datos.lista.length + 1, monto, categoria, descripcion, fechaMs: Date.now() });
+        },
+        presupuesto: (monto) => (datos.presupuesto = monto),
+      };
     </script>
     <script type="module" src="/src/main.ts"></script>
   </head>

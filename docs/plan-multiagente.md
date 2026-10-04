@@ -160,8 +160,51 @@ IA, respuestas lado a lado y una síntesis de Brote). Idea: una intención del m
 síntesis; la isla mostraría las respuestas lado a lado leyendo el aviso `especialistas` (habría que
 agregarle el texto final de cada uno, que hoy el puente no guarda).
 
+## Fase 2: el equipo vivo en la isla (hecha en la nube, 4-10-2026; falta probarla en el Mac)
+
+La fila "Mi equipo está trabajando" se reemplazó por algo que se ve y se toca, en dos niveles:
+
+1. **El escenario** (pestaña Brote): cuando Brote delega, las mascotas de los especialistas salen de
+   detrás de Brote (se dibujan antes que él, desde su posición) y quedan en fila, como mucho 4, sin
+   cambiar de lugar. Cada una se anima según lo que hace: en espera (aún no parte), pensando, trabajando
+   (una herramienta o escribiendo), pidiendo permiso, terminó (salta y lanza chispas) o falló (se
+   sacude). Arriba, un globito con lo que hace ahora ("Buscando «mitosis»…", "Leyendo es.wikipedia.org…",
+   el comienzo de su respuesta); abajo, "Investigador · Gemini" en el color de su IA. Al tocar una, su
+   conversación (tarea recibida, pasos y respuesta con el markdown de la burbuja) se abre en el panel con
+   "← volver". Al terminar todos, celebran 4,5 s y se esconden; sus conversaciones quedan a un toque un
+   minuto ("Lo que hizo tu equipo: 🔎 ✓").
+2. **"⤢ Ver a todos"**: la isla se agranda (como la Dynamic Island al expandirse, con los mismos resortes)
+   hasta 740 × 456 y muestra en columnas a Brote (su pregunta y su respuesta) y hasta 3 especialistas
+   (mascota chica, nombre, IA, pasos y respuesta en vivo). Brote se achica y pasa a su columna. Se cierra
+   sola 6 s después de que el equipo termina, con "⤡ Volver" o con el cursor 3,5 s fuera. Para que
+   quepa, la ventana del notch pasó de 600 × 380 a 760 × 460 (`tamano_notch` en lib.rs, que la achica en
+   pantallas chicas); la isla normal sigue creciendo como mucho hasta los 380 de antes. En el modo
+   flotante usa el espacio del panel (columnas que se deslizan de lado); allí la caja del panel la dibuja
+   el lienzo, para que las mascotas se vean encima.
+
+**Datos**: el puente (`FiltroDelegacion`) ahora guarda por especialista su `actividad`, sus `pasos`
+(herramienta, estado y solo los argumentos útiles: `url`, `query`, `file_path`, `path`, `pattern`,
+`command`, `action`, `agentId`), lo que lleva de su `respuesta` (de los flujos `thinking`, `assistant`,
+`tool` y del `chat` final) y la tarea completa; aparece "en espera" apenas `sessions_spawn` devuelve su
+sesión; un permiso pendiente de su sesión lo pone en "permiso". El aviso `especialistas` se agrupa (4
+por segundo). Si los eventos no alcanzan (por ejemplo, el puente partió a mitad), la isla pide
+`especialista-historial` y el puente lee `chat.history` de esa sesión hija (solo de una que está en la
+lista; `leerHistorial` tolera formas distintas: sin probar contra el Gateway real). Con la grabación real
+de la fase 0 se ve: en espera → pensando → trabajando (escribiendo) → terminó, con la respuesta de Gemini.
+
+**Mascotas propias**: `personaje.ts` acepta una `Apariencia` (degradado del cuerpo, color de hoja y un
+accesorio dibujado en canvas: birrete 📚, lupa 🔎, lápiz ✍️, visera ✅, reloj 🗓️). La hoja se tiñe a medias
+con el color del estado. Brote no cambió. Nada de personajes, logos ni dibujos de otros proyectos.
+
+**Personalidad**: cada especialista del catálogo trae su `vibe` y su `alma` (Tutor paciente y socrático,
+Investigador curioso que cita todo, Redactor ordenado y creativo, Revisor exigente pero amable,
+Planificador práctico). Al crearlo se escriben `SOUL.md` e `IDENTITY.md` en su workspace; el SOUL.md se
+edita en Configurar Brote → Equipo ("Su personalidad"). A los que ya existen (el 🔎 Investigador hecho a
+mano en la fase 0, en `~/.openclaw/workspace/investigador`) solo se les escribe lo que falta, al abrir
+Equipo: no se recrean ni se borran, y un IDENTITY.md que ya existe nunca se toca.
+
 ## Fases siguientes
 
 1. Probar la fase 1 en el Mac (lista en el commit) y reemplazar `delegacion.jsonl` por la grabación real.
-2. Modo Consejo (arriba), la tarjeta "Revisar antes de guardar" y especialistas como variantes propias de Brote.
+2. Modo Consejo (arriba) y la tarjeta "Revisar antes de guardar" (las variantes propias de Brote ya están: fase 2).
 3. Memoria por especialista en "Lo que sé de ti".

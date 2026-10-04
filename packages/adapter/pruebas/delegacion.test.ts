@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { FiltroDelegacion, type Ficha } from "../src/delegacion.ts";
+import { FiltroDelegacion, leerHistorial, type Ficha } from "../src/delegacion.ts";
 import { CONVERSACION_INICIAL, aplicar, type Conversacion } from "../../../apps/desktop/src/agente/conversacion.ts";
 import { traducir } from "../../../apps/desktop/src/agente/traduccion.ts";
 
@@ -216,5 +216,86 @@ describe("delegación: la grabación real", () => {
     const investigador = ultimo.find((t) => t.id === "investigador");
     assert.ok(investigador, "el investigador aparece en el equipo");
     assert.equal(investigador!.estado, "termino");
+  });
+});
+
+describe("el equipo vivo: lo que hace cada especialista", () => {
+  it("con la grabación real: en espera al delegar, pensando, escribiendo y la respuesta", () => {
+    const filtro = new FiltroDelegacion(PRINCIPAL, ficha);
+    const actividades: string[] = [];
+    for (const [i, marco] of leer("delegacion-grabada").entries()) {
+      const { equipo } = filtro.procesar(marco, 1000 + i);
+      const t = filtro.equipo()[0];
+      if (equipo && t && actividades.at(-1) !== `${t.estado}/${t.actividad}`) actividades.push(`${t.estado}/${t.actividad}`);
+    }
+    assert.deepEqual(actividades.slice(0, 3), ["trabajando/en-espera", "trabajando/pensando", "trabajando/trabajando"]);
+    const t = filtro.equipo()[0];
+    assert.equal(t.estado, "termino");
+    assert.match(t.respuesta, /^La mitosis es el proceso de división celular en el cual una célula progenitora se divide/);
+    assert.match(t.tareaCompleta!, /^Investiga y responde en UNA sola frase qué es la mitosis/);
+  });
+
+  it("guarda los pasos con solo los argumentos útiles", () => {
+    const { filtro } = filtrar(leer("delegacion"));
+    const t = filtro.equipo()[0];
+    assert.ok(t.pasos.length >= 1);
+    assert.equal(t.pasos[0].herramienta, "web_search");
+    assert.equal(t.pasos[0].estado, "ok");
+    assert.ok(Object.keys(t.pasos[0].args).every((k) => ["url", "query", "file_path", "path", "pattern", "command", "action", "agentId"].includes(k)));
+    assert.match(t.respuesta, /fotosíntesis/i);
+  });
+
+  it("un permiso pendiente lo deja «en espera de ti» y al resolverse sigue", () => {
+    const filtro = new FiltroDelegacion(PRINCIPAL, ficha);
+    filtro.procesar({ event: "agent", payload: { runId: "h", sessionKey: HIJA, agentId: "investigador", stream: "lifecycle", data: { phase: "start" } } }, 1);
+    filtro.procesar({ event: "agent", payload: { runId: "h", sessionKey: HIJA, stream: "tool", data: { phase: "start", name: "Bash", toolCallId: "b1", args: { command: "ls ~/apuntes", description: "secreto" } } } }, 2);
+    assert.deepEqual(filtro.equipo()[0].args, { command: "ls ~/apuntes" });
+    const pendiente = { event: "session.approval", payload: { sessionKey: PRINCIPAL, sourceSessionKey: HIJA, phase: "pending", approval: { id: "a", presentation: { kind: "plugin", toolName: "Bash" } } } };
+    assert.equal(filtro.procesar(pendiente, 3).equipo, true);
+    assert.equal(filtro.equipo()[0].actividad, "permiso");
+    const resuelto = { ...pendiente, payload: { ...pendiente.payload, phase: "terminal" } };
+    filtro.procesar(resuelto, 4);
+    assert.equal(filtro.equipo()[0].actividad, "trabajando");
+    filtro.procesar({ event: "agent", payload: { runId: "h", sessionKey: HIJA, stream: "tool", data: { phase: "result", name: "Bash", toolCallId: "b1", isError: true } } }, 5);
+    assert.equal(filtro.equipo()[0].pasos[0].estado, "error");
+    assert.equal(filtro.equipo()[0].actividad, "pensando");
+  });
+
+  it("lee el historial de una sesión hija (chat.history)", () => {
+    const h = leerHistorial({
+      messages: [
+        { role: "user", content: "Busca qué es la mitosis" },
+        { role: "assistant", content: [{ type: "text", text: "Voy a buscar." }, { type: "tool_use", id: "t1", name: "web_search", input: { query: "mitosis", secreto: "x" } }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", is_error: false, content: "…" }] },
+        { role: "assistant", content: [{ type: "text", text: "La mitosis es…" }] },
+        { role: "user", content: "[Inter-session message] algo" },
+      ],
+    });
+    assert.equal(h.tarea, "Busca qué es la mitosis");
+    assert.deepEqual(h.pasos, [{ id: "t1", herramienta: "web_search", args: { query: "mitosis" }, estado: "ok" }]);
+    assert.equal(h.respuesta, "La mitosis es…");
+    assert.deepEqual(leerHistorial(null), { tarea: null, pasos: [], respuesta: "" });
+  });
+});
+
+describe("historial de un especialista (forma real de chat.history, 4-10-2026)", () => {
+  it("la tarea se muestra sin el envoltorio de OpenClaw", async () => {
+    const { leerHistorial, tareaSinEnvoltorio } = await import("../src/delegacion.ts");
+    const tarea =
+      "[Subagent Context] You are running as a subagent (depth 1/5). Complete the current [Subagent Task]; inherited conversation is background context, not your assignment.\n\n[Subagent Task]\n\nExplica la fotosíntesis en exactamente dos frases, en español.\n\nBegin. Execute the assigned task to completion.";
+    const real = {
+      sessionKey: "agent:investigador:subagent:b34eee7e-cf70-45a2-858d-5253355e2cda",
+      sessionId: "x",
+      messages: [
+        { role: "user", content: tarea, timestamp: 1 },
+        { role: "assistant", content: "La fotosíntesis es el proceso químico… Durante este proceso se libera oxígeno.", timestamp: 2 },
+      ],
+      hasMore: false,
+      totalMessages: 2,
+    };
+    const h = leerHistorial(real);
+    assert.equal(h.tarea, "Explica la fotosíntesis en exactamente dos frases, en español.");
+    assert.match(h.respuesta, /^La fotosíntesis es el proceso químico/);
+    assert.equal(tareaSinEnvoltorio("Investiga X"), "Investiga X");
   });
 });

@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  MAX_PERSONALIDAD,
+  identityMd,
+  limpiarPersonalidad,
+  mascotaDe,
+  personalidadDeSoul,
+  soulMd,
   ESPECIALISTAS,
   IAS,
   IDS_ESPECIALISTAS,
@@ -70,6 +76,22 @@ describe("catálogo del equipo", () => {
     assert.deepEqual(lista("ESPECIALISTAS"), [...IDS_ESPECIALISTAS]);
     assert.deepEqual(lista("MODELOS"), [...MODELOS_PERMITIDOS]);
     assert.deepEqual(lista("CUENTAS_CON_CLAVE"), IAS.filter((c) => c.conexion === "clave").map((c) => c.id));
+    assert.match(rust, new RegExp(`const MAX_PERSONALIDAD: usize = ${MAX_PERSONALIDAD};`));
+  });
+
+  it("cada especialista tiene su personalidad y su mascota propia", () => {
+    const accesorios = new Set(ESPECIALISTAS.map((e) => e.mascota.accesorio));
+    assert.equal(accesorios.size, ESPECIALISTAS.length, "un accesorio distinto por especialista");
+    for (const e of ESPECIALISTAS) {
+      assert.ok(e.alma.length > 40 && e.alma.length <= MAX_PERSONALIDAD, e.id);
+      assert.equal(limpiarPersonalidad(e.alma), e.alma);
+      assert.equal(personalidadDeSoul(soulMd(e)), e.alma);
+      assert.match(identityMd(e), new RegExp(`- \\*\\*Name:\\*\\* ${e.nombre}\n`));
+      for (const c of [...e.mascota.cuerpo.flat(), ...e.mascota.hoja]) assert.ok(c >= 0 && c <= 1);
+    }
+    assert.equal(mascotaDe("desconocido").accesorio, "lupa");
+    assert.equal(limpiarPersonalidad("  "), null);
+    assert.equal(limpiarPersonalidad("x".repeat(MAX_PERSONALIDAD + 1)), null);
   });
 
   it("las terminales de las cuentas están en la lista de configuracion.rs", () => {

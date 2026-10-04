@@ -113,7 +113,7 @@ agente por MCP, que es otro proceso) y manda el aviso `plata`.
 
 Ideas para después: metas de ahorro, gastos compartidos con amigos, exportar el mes a CSV.
 
-## 5. Avisos sin abrir la isla (pedido del usuario, 4-10-2026; pendiente)
+## 5. Avisos sin abrir la isla (pedido del usuario, 4-10-2026; hecho; notificación del sistema sin probar en un equipo real)
 
 Hoy casi todo aviso **abre la isla** (`panel.mostrarAviso` + `retener` la mantienen abierta unos segundos):
 que terminó o falló una sesión de Claude Code, una descarga lista, un temporizador, el calendario 10 min
@@ -129,7 +129,7 @@ propuesta "¿Aprendo esto?"). Lo demás es una **notificación discreta con la i
 - Al abrirla (con el cursor), los avisos de los últimos minutos quedan en una lista corta de "Novedades".
 - Opcional (configurable): además, una notificación del sistema (Centro de notificaciones de macOS /
   notificaciones de Windows) para lo importante, como el calendario.
-- En el modo flotante (Windows) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
+- En el modo flotante (ya no es el de Windows, que usa la misma isla; solo con `ASISTENTE_MODO=flotante`) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
   sin desplegar el panel.
 
 ## 6. Privacidad y protección de datos (revisión del 4-10-2026; pendiente)
@@ -154,6 +154,23 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
 7. **Antes de repartir Brote a más gente**: una política de privacidad corta (qué se guarda, dónde, a qué empresas
    va —Anthropic, Google, conectores— y cómo borrarlo), partiendo de "Tus datos" en docs/instalar.md. En Chile
    rige la Ley 21.719 desde diciembre de 2026 (orientación, no asesoría legal).
+
+## 7. Calendario como sección propia de la isla (anotado el 4-10-2026; pendiente)
+
+Hoy el calendario es solo una tarjeta de Inicio. La idea: una **sección en la isla** para ver eventos y todo lo
+relacionado con el orden del usuario (clases, entregas, recordatorios, tareas), con un estilo parecido a Notion.
+Al hacerla, arreglar lo del permiso: en Ajustes del Sistema → Privacidad → Calendarios solo aparece **Terminal**
+con "Acceso completo" (captura del 4-10-2026), porque con `tauri dev` el permiso es de la Terminal y no de Brote.
+Brote.app empaquetada tiene que pedir y tener el suyo (ver `Info.plist` y el paso "Calendario del Mac" de
+Configurar Brote), y la sección nueva debe explicar qué hacer si falta.
+
+## 8. Grabar y transcribir (anotado el 4-10-2026; pendiente, por pensar)
+
+Opción de grabar audio (por ejemplo una clase) y transcribirlo. A partir de las transcripciones, Brote ayuda al
+usuario: resúmenes, apuntes, tareas y fechas que salen a la vista (alimentando el calendario de la sección 7).
+Por decidir antes de programar: transcripción local o en la nube, permiso de micrófono de macOS/Windows,
+dónde se guardan los audios y textos (privacidad, sección 6: datos personales en claro en el disco) y consentimiento
+de grabar a otras personas.
 
 ## Orden sugerido
 

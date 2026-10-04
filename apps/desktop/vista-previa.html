@@ -4,8 +4,8 @@
   el puente con datos de ejemplo (pomodoro, calendario, entregas del aula, música, una descarga y una
   sesión de Claude Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
   Parámetros: ?pestana=brote|chat|claude|equipo (chat = la pestaña Brote con una pregunta enviada: las
-  tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) ·
-  ?vacia=1 (sin datos) · ?modo=flotante (la ventana de Windows) · ?ocultas=musica,descargas (tarjetas
+  tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) · ?aviso=descarga|calendario|claude|plata (un aviso sin abrir la isla) ·
+  ?vacia=1 (sin datos) · ?plataforma=windows (la isla de Windows, con su notch simulado) · ?modo=flotante (la ventana flotante, que ya no es la de Windows) · ?ocultas=musica,descargas (tarjetas
   ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite|app|reiniciado
   (el uso del plan de Claude en la pestaña Claude: con datos, sin datos todavía, sin la statusline instalada,
   cerca del límite con el aviso de 95 %, leído de la app de Claude con la hora estimada, o con la sesión de
@@ -179,7 +179,9 @@
         async invoke(comando, args) {
           switch (comando) {
             case "diseno":
-              return { modo: parametros.get("modo") === "flotante" ? "flotante" : "notch", notchAncho: 185, notchAlto: 32 };
+              // ?plataforma=windows: la isla de Windows, con su "notch" simulado más chico.
+              const windows = parametros.get("plataforma") === "windows";
+              return { modo: parametros.get("modo") === "flotante" ? "flotante" : "notch", notchAncho: windows ? 130 : 185, notchAlto: windows ? 30 : 32 };
             case "agente_modo":
               return "real";
             case "agente_conexion":
@@ -353,6 +355,18 @@
       if (parametros.get("plata") === "pasado") setTimeout(() => emitir({ tipo: "plata-aviso", texto: "🚨 Te pasaste del presupuesto del mes: llevas $412.000 de $250.000. Nada de dramas: desde mañana vamos con calma 🌱" }), 2200);
       // El freno por plan, como lo avisaría el puente.
       if (parametros.has("freno")) setTimeout(() => emitir({ tipo: "especialistas-aviso", texto: "Tu plan semanal de Claude va alto (87 %): no le paso tareas a los especialistas con Claude hasta que baje. Los de otras IA siguen." }), 2000);
+      // ?aviso=descarga|calendario|claude|plata: un aviso que no abre la isla (con ?cerrada=1 se ve en el ala).
+      const avisoPrueba = {
+        descarga: { tipo: "descarga-lista", descarga: { nombre: "apunte-calculo.pdf", ruta: "/tmp/apunte-calculo.pdf", tamano: 2 * 1024 ** 2, fechaMs: Date.now() } },
+        calendario: { tipo: "calendario-aviso", texto: "📅 Cálculo II en 10 min" },
+        claude: { tipo: "programador-reaccion", reaccion: "termino", proyecto: "tarea-rust" },
+        plata: { tipo: "plata-aviso", texto: "💸 Llevas 80 % de tu presupuesto del mes" },
+      }[parametros.get("aviso")];
+      // Se repite cada 10 s para poder mirarlo con calma.
+      if (avisoPrueba) {
+        setTimeout(() => emitir(avisoPrueba), 1500);
+        setInterval(() => emitir(avisoPrueba), 10_000);
+      }
       // Una descarga en curso, como llegaría del puente.
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.

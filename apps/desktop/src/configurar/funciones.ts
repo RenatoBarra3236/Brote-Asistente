@@ -4,8 +4,10 @@
 // las tarjetas de Inicio en la isla. Todo va a funciones.json (Rust lo valida y lo guarda).
 
 import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
+import { guardarNotificaciones, leerNotificaciones } from "../agente/notificaciones";
 import { PERMISOS, type Paso } from "../agente/preparacion";
-import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, paso, pintar } from "./comun";
+import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
+import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, mostrarAviso, paso, pintar } from "./comun";
 import { formularioAula, formularioIcal, formularioPresupuesto } from "./formularios";
 
 /** En el asistente se guarda al final ("Empezar"); en el uso diario, al tiro. */
@@ -166,4 +168,28 @@ export function vistaTarjetasInicio(): HTMLElement {
     caja.append(fila);
   });
   return caja;
+}
+
+/** El interruptor de las notificaciones del sistema; al prenderlo se pide el permiso al sistema. */
+export function vistaNotificaciones(): HTMLElement {
+  const fila = crear("div", "fila-tarjeta");
+  const etiqueta = crear("label", "mostrar-tarjeta");
+  const casilla = crear("input");
+  casilla.type = "checkbox";
+  casilla.checked = leerNotificaciones(localStorage);
+  casilla.addEventListener("change", () => {
+    void (async () => {
+      if (casilla.checked) {
+        const permitido = (await isPermissionGranted()) || (await requestPermission()) === "granted";
+        if (!permitido) {
+          casilla.checked = false;
+          mostrarAviso("El sistema no dio permiso para notificar. Puedes darlo en los ajustes de notificaciones del sistema.", true);
+        }
+      }
+      guardarNotificaciones(localStorage, casilla.checked);
+    })();
+  });
+  etiqueta.append(casilla, document.createTextNode(" Avisarme también con notificaciones del sistema"));
+  fila.append(etiqueta);
+  return fila;
 }

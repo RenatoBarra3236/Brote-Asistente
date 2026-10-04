@@ -11,7 +11,8 @@ mod puente;
 use puente::Puente;
 use tauri::{AppHandle, LogicalPosition, Manager, RunEvent, State, WebviewWindow};
 
-/// Cómo vive el personaje: en el notch (macOS) o en una ventana flotante (el resto).
+/// Cómo vive el personaje: en la isla (el notch en macOS; una píldora arriba al centro en Windows y Linux)
+/// o, solo si se pide con `ASISTENTE_MODO=flotante`, en una ventana flotante abajo a la derecha.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Diseno {
@@ -147,8 +148,6 @@ fn ubicar_en_esquina(ventana: &WebviewWindow) -> tauri::Result<()> {
 const ANCHO_NOTCH: f64 = 760.0;
 const ALTO_NOTCH: f64 = 460.0;
 
-// Solo se usa en macOS (el notch), pero se prueba en todos.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn tamano_notch(ancho_pantalla: f64, alto_pantalla: f64) -> (f64, f64) {
     (ANCHO_NOTCH.min(ancho_pantalla - 40.0).max(400.0), ALTO_NOTCH.min(alto_pantalla * 0.6).max(300.0))
 }
@@ -181,10 +180,44 @@ fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
     Ok(Diseno { modo: "notch", notch_ancho, notch_alto })
 }
 
+/// La "isla" de Windows y Linux, que no tienen notch: una píldora negra pegada al borde de arriba, al
+/// centro de la pantalla, con el mismo diseño que el notch de macOS (la ventana es transparente y los
+/// clics la atraviesan fuera de la isla).
+const ISLA_ANCHO: f64 = 130.0;
+const ISLA_ALTO: f64 = 30.0;
+
+/// Dónde va la ventana de la isla: arriba al centro de un monitor (`origen_x`, `ancho_monitor` en
+/// píxeles lógicos).
+// En macOS la ubica `notch.rs`; esto se compila y se prueba en todos.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn x_de_la_isla(origen_x: f64, ancho_monitor: f64, ancho_ventana: f64) -> f64 {
+    origen_x + (ancho_monitor - ancho_ventana) / 2.0
+}
+
+/// Windows y Linux: la isla arriba al centro del monitor principal. Con `ASISTENTE_MODO=flotante`
+/// (o sin monitor) queda la ventana flotante de antes.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn preparar_isla_simulada(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
+    if std::env::var("ASISTENTE_MODO").is_ok_and(|modo| modo == "flotante") {
+        ubicar_en_esquina(ventana)?;
+        return Ok(Diseno::flotante());
+    }
+    let Some(monitor) = ventana.primary_monitor()? else {
+        ubicar_en_esquina(ventana)?;
+        return Ok(Diseno::flotante());
+    };
+    let escala = monitor.scale_factor();
+    let origen = monitor.position().to_logical::<f64>(escala);
+    let tamano = monitor.size().to_logical::<f64>(escala);
+    let (ancho, alto) = tamano_notch(tamano.width, tamano.height);
+    ventana.set_size(tauri::LogicalSize::new(ancho, alto))?;
+    ventana.set_position(LogicalPosition::new(x_de_la_isla(origen.x, tamano.width, ancho), origen.y))?;
+    Ok(Diseno { modo: "notch", notch_ancho: ISLA_ANCHO, notch_alto: ISLA_ALTO })
+}
+
 #[cfg(not(target_os = "macos"))]
 fn preparar_ventana(ventana: &WebviewWindow) -> tauri::Result<Diseno> {
-    ubicar_en_esquina(ventana)?;
-    Ok(Diseno::flotante())
+    preparar_isla_simulada(ventana)
 }
 
 /// El ícono 🌱 en la barra de menú (o la bandeja en Windows). La app no tiene Dock ni menú propio,
@@ -233,6 +266,7 @@ fn crear_icono_de_barra(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // App de accesorio (sin ícono en el Dock): es lo que permite a la ventana aparecer
             // también sobre apps en pantalla completa, como las demás apps de notch.
@@ -306,7 +340,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod pruebas {
-    use super::tamano_notch;
+    use super::{tamano_notch, x_de_la_isla};
 
     #[test]
     fn la_ventana_del_notch_no_se_sale_de_pantallas_chicas() {
@@ -316,5 +350,13 @@ mod pruebas {
         let (ancho, alto) = tamano_notch(700.0, 600.0);
         assert!((400.0..=660.0).contains(&ancho));
         assert!((300.0..=360.0).contains(&alto));
+    }
+
+    #[test]
+    fn la_isla_de_windows_va_centrada_arriba_en_cualquier_monitor() {
+        // Monitor principal de 1920 de ancho: la ventana de 760 queda centrada.
+        assert_eq!(x_de_la_isla(0.0, 1920.0, 760.0), 580.0);
+        // Un monitor a la izquierda del principal (origen negativo).
+        assert_eq!(x_de_la_isla(-1280.0, 1280.0, 760.0), -1280.0 + 260.0);
     }
 }

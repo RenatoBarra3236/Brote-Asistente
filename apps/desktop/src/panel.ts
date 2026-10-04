@@ -34,6 +34,7 @@ import type {
   TemporizadorActivo,
 } from "./agente/puente";
 import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
+import { Novedades, textoCorto, type Novedad, type TipoNovedad } from "./agente/novedades";
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
 import {
@@ -228,6 +229,11 @@ export class Panel {
 
   // Comunes
   private readonly avisoDestacado: HTMLParagraphElement;
+  /** Avisos que no abren la isla (`notificar`): lo que llegó mientras estaba cerrada, al abrirla. */
+  private readonly novedades = new Novedades();
+  private readonly listaNovedades: HTMLDivElement;
+  /** Los avisos que el usuario no había visto al abrir la isla (o que llegaron con ella abierta). */
+  private novedadesNuevas = new Set<number>();
   private readonly entrada: HTMLInputElement;
   private readonly enviar: HTMLButtonElement;
   private visible = false;
@@ -279,6 +285,8 @@ export class Panel {
 
     this.avisoDestacado = crear("p", "aviso-destacado");
     this.avisoDestacado.hidden = true;
+    this.listaNovedades = crear("div", "novedades");
+    this.listaNovedades.hidden = true;
 
     // --- Brote: tarjetas y conversación ---
     const inicio = crear("div", "vista vista-brote");
@@ -453,7 +461,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, inicio, this.plata, codigo, equipo, this.vistaTodos, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, codigo, equipo, this.vistaTodos, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -498,6 +506,7 @@ export class Panel {
       b.setAttribute("aria-pressed", String(nombre === pestana));
     }
     if (pestana === "brote") this.respuestaSinVer = false;
+    if (this.visible) this.novedades.marcarVistasDe(pestana);
     this.actualizarPuntos();
   }
 
@@ -1292,6 +1301,7 @@ export class Panel {
     // La fila de píldoras (con su cuenta regresiva) y, al terminar la lectura, de vuelta a las tarjetas.
     this.pintarPildoras();
     this.aplicarModo();
+    this.actualizarPuntos();
     const hoy = new Date(ahora);
     const texto = `${saludo(hoy)}|${fechaLarga(hoy)}`;
     if (texto !== this.saludoPintado) {
@@ -1309,6 +1319,42 @@ export class Panel {
     this.avisoDestacado.textContent = texto;
     this.avisoDestacado.hidden = false;
     this.avisoHasta = Date.now() + AVISO_DESTACADO_MS;
+  }
+
+  /**
+   * Un aviso que no hace falta decidir (una descarga lista, el calendario, que Claude terminó…): no abre
+   * la isla. Va unos segundos en el ala izquierda (`avisoEnAla`), deja un punto en su pestaña y, al abrir
+   * la isla, queda en la lista de novedades.
+   */
+  notificar(tipo: TipoNovedad, texto: string): void {
+    const novedad = this.novedades.agregar(tipo, texto, Date.now());
+    if (this.visible) this.novedadesNuevas.add(novedad.id);
+    this.pintarNovedades();
+    this.actualizarPuntos();
+  }
+
+  /** Si la isla está abierta (el usuario ya ve los avisos). */
+  get abierta(): boolean {
+    return this.visible;
+  }
+
+  /** El aviso para el ala izquierda: solo con la isla cerrada. */
+  get avisoEnAla(): Novedad | null {
+    return this.visible ? null : this.novedades.enAla(Date.now());
+  }
+
+  /** La lista corta de lo que llegó mientras la isla estaba cerrada (hasta 3 líneas). */
+  private pintarNovedades(): void {
+    const nuevas = this.novedades.recientes(Date.now()).filter((n) => this.novedadesNuevas.has(n.id)).slice(0, 3);
+    this.listaNovedades.hidden = nuevas.length === 0;
+    this.listaNovedades.replaceChildren(
+      ...nuevas.map((n) => {
+        const linea = crear("p", "novedad");
+        linea.textContent = textoCorto(n.texto, 70);
+        linea.title = n.texto;
+        return linea;
+      }),
+    );
   }
 
   /** Alto que necesita el contenido, para que la isla crezca lo justo. */
@@ -1337,10 +1383,18 @@ export class Panel {
     this.raiz.classList.toggle("visible", visible);
     this.barra.classList.toggle("visible", visible);
     if (visible) {
+      this.novedadesNuevas = new Set(this.novedades.sinVer(Date.now()).map((n) => n.id));
+      this.pintarNovedades();
       // Tras un rato cerrada, vuelve a lo que importa ahora (o a Inicio).
       if (performance.now() - this.cerradaDesde > VOLVER_A_INICIO_MS) this.elegir(this.pestanaSugerida());
+      this.novedades.marcarVistasDe(this.pestana);
     } else {
       this.cerradaDesde = performance.now();
+      // Lo que se vio con la isla abierta ya no cuenta como pendiente.
+      this.novedades.marcarVistas();
+      this.novedadesNuevas.clear();
+      this.pintarNovedades();
+      this.actualizarPuntos();
       // Al cerrarse la isla, el foco no debe quedar en un campo que no se ve.
       if (document.activeElement && this.raiz.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
     }
@@ -1524,8 +1578,14 @@ export class Panel {
   private actualizarPuntos(): void {
     const c = this.agente.conversacion;
     const brotePendiente = c.aprobacion !== null || c.propuesta !== null || this.respuestaSinVer;
-    this.botonesPestana.get("brote")!.classList.toggle("con-punto", brotePendiente && this.pestana !== "brote");
-    this.botonesPestana.get("claude")!.classList.toggle("con-punto", this.hayPermisoClaude && this.pestana !== "claude");
+    const nuevos = this.novedades.pestanasConPunto(Date.now());
+    const pendiente: Record<Pestana, boolean> = {
+      brote: brotePendiente || nuevos.has("brote"),
+      plata: nuevos.has("plata"),
+      claude: this.hayPermisoClaude || nuevos.has("claude"),
+      equipo: nuevos.has("equipo"),
+    };
+    for (const [nombre, boton] of this.botonesPestana) boton.classList.toggle("con-punto", pendiente[nombre] && this.pestana !== nombre);
   }
 
   private mostrar(c: Conversacion): void {

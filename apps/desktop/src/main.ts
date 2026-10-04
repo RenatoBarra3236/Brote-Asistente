@@ -18,6 +18,9 @@ import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
 import type { EstadoPlata } from "./agente/plata";
+import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
+import { debeNotificarAlSistema, leerNotificaciones } from "./agente/notificaciones";
+import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
 import { Isla, type Ala } from "./isla";
 import { Mascotas } from "./mascotas";
 import { acercar } from "./personaje/fisica";
@@ -131,6 +134,16 @@ async function iniciar(): Promise<void> {
       : {}),
   });
 
+  // Un aviso que no abre la isla; y, si el usuario lo prendió, una notificación del sistema para lo importante.
+  const avisar = (tipo: TipoNovedad, texto: string) => {
+    panel.notificar(tipo, texto);
+    if (debeNotificarAlSistema(tipo, leerNotificaciones(localStorage), panel.abierta)) {
+      void isPermissionGranted()
+        .then((permitido) => permitido && sendNotification({ title: "Brote 🌱", body: texto }))
+        .catch(() => {});
+    }
+  };
+
   // Temporizadores y pomodoro: la lista viene del puente cada vez que cambia (y al iniciar, por
   // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
   let temporizadores: TemporizadorActivo[] = [];
@@ -150,13 +163,13 @@ async function iniciar(): Promise<void> {
     void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then((config) => panel.mostrarFunciones(config), () => {});
     puente.alCambiarTemporizadores(mostrarTemporizadores);
     puente.alAvisoTemporizador((texto) => {
-      panel.mostrarAviso(texto);
-      personaje.setEstado("listo");
+      avisar("temporizador", texto);
+      personaje.tocar();
     });
     // Brote reacciona al computador: su ánimo (cansado, acalorado) y avisos con personalidad.
-    puente.alAvisoEquipo(({ texto, celebrar }) => {
-      panel.mostrarAviso(texto);
-      if (celebrar) personaje.setEstado("listo");
+    puente.alAvisoEquipo(({ texto }) => {
+      avisar("computador", texto);
+      personaje.tocar();
     });
     puente.alCambiarAnimo((animo) => personaje.setAnimo(animo));
     void puente
@@ -190,7 +203,7 @@ async function iniciar(): Promise<void> {
     puente.alCambiarCalendario(cambiarCalendario);
     void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
     puente.alAvisoCalendario((texto) => {
-      panel.mostrarAviso(texto);
+      avisar("calendario", texto);
       personaje.tocar();
     });
 
@@ -205,7 +218,7 @@ async function iniciar(): Promise<void> {
     void puente.consultar<EstadoAula>({ tipo: "aula-estado" }).then(cambiarAula, () => {});
     setInterval(() => aula && panel.mostrarAula(aula), 60_000);
     puente.alAvisoAula((texto) => {
-      panel.mostrarAviso(texto);
+      avisar("aula", texto);
       personaje.tocar();
     });
 
@@ -218,14 +231,15 @@ async function iniciar(): Promise<void> {
     puente.alCambiarProgramador(cambiarProgramador);
     void puente.consultar<EstadoProgramador>({ tipo: "programador-estado" }).then(cambiarProgramador, () => {});
     puente.alReaccionProgramador(({ reaccion, proyecto }) => {
+      // Si Brote "trabajaba" por esta sesión, vuelve a reposo: si no, la isla creería que sigue ocupado y no cerraría.
+      if (porProgramador && personaje.estado !== "reposo") personaje.setEstado("reposo");
       porProgramador = false;
       if (reaccion === "termino") {
-        if (agente.conversacion.estado === "reposo") personaje.setEstado("listo");
-        panel.mostrarAviso(`✅ Claude Code terminó${proyecto ? ` en ${proyecto}` : ""}`);
+        avisar("claude", `✅ Claude Code terminó${proyecto ? ` · ${proyecto}` : ""}`);
       } else {
-        personaje.tocar();
-        panel.mostrarAviso(`⚠️ Claude Code se detuvo por un error${proyecto ? ` en ${proyecto}` : ""}`);
+        avisar("claude", `⚠️ Claude Code se detuvo${proyecto ? ` · ${proyecto}` : ""}`);
       }
+      personaje.tocar();
     });
     setInterval(() => {
       if (agente.conversacion.estado !== "reposo") return;
@@ -261,7 +275,7 @@ async function iniciar(): Promise<void> {
     }, 5000);
     setInterval(() => uso && panel.mostrarUso(uso), 30_000);
     puente.alAvisoPlan((texto) => {
-      panel.mostrarAviso(`📊 ${texto}`);
+      avisar("plan", `📊 ${texto}`);
       personaje.tocar();
     });
 
@@ -276,7 +290,7 @@ async function iniciar(): Promise<void> {
     // Cada segundo: los que terminaron celebran un rato y se esconden, y sus fichas se van al minuto.
     setInterval(() => panel.mostrarEspecialistas(), 1000);
     puente.alAvisoEspecialistas((texto) => {
-      panel.mostrarAviso(`🌱 ${texto}`);
+      avisar("equipo", `🌱 ${texto}`);
       personaje.tocar();
     });
 
@@ -287,7 +301,7 @@ async function iniciar(): Promise<void> {
     void puente.consultar<EstadoPlata | null>({ tipo: "plata-estado" }).then((estado) => panel.mostrarPlata(estado), () => {});
     setInterval(() => panel.mostrarPlata(), 60_000);
     puente.alAvisoPlata((texto) => {
-      panel.mostrarAviso(texto);
+      avisar("plata", texto);
       personaje.tocar();
     });
 
@@ -305,8 +319,8 @@ async function iniciar(): Promise<void> {
     puente.alDescargaLista((descarga) => {
       listas = [{ descarga, hasta: Date.now() + DESCARGA_A_LA_VISTA_MS }, ...listas.filter((l) => l.descarga.ruta !== descarga.ruta)].slice(0, 3);
       pintarDescargas();
-      panel.retener();
-      personaje.setEstado("listo");
+      avisar("descarga", `📥 ${descarga.nombre} listo`);
+      personaje.tocar();
     });
     setInterval(() => {
       if (listas.some((l) => l.hasta <= Date.now())) pintarDescargas();
@@ -422,6 +436,11 @@ async function iniciar(): Promise<void> {
 
     personaje.actualizar(dt);
     panel.actualizarRelojes();
+    // Un aviso que no abre la isla: se lee en el ala izquierda unos segundos.
+    const novedad = panel.avisoEnAla;
+    const aviso = novedad
+      ? { texto: textoCorto(novedad.texto, 30), color: COLOR_DE[novedad.tipo], restante: 1 - (Date.now() - novedad.ms) / AVISO_EN_ALA_MS }
+      : null;
     // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador, una descarga o la música.
     const reloj: Ala | null =
       relojPrincipal(temporizadores) ??
@@ -453,11 +472,11 @@ async function iniciar(): Promise<void> {
     const lugares = panel.lugaresMascotas().map(enLienzo);
     if (isla) {
       isla.expandir(panel.verTodosAbierto);
-      isla.actualizar(dt, hover, activo, panel.alto());
+      isla.actualizar(dt, hover, activo, panel.alto(), aviso);
       const lugarBrote = panel.lugarBrote();
       const columnaBrote = lugarBrote && enLienzo(lugarBrote);
       mascotas.actualizar(dt, lugares, isla.posicionBrote(W, columnaBrote));
-      isla.dibujar(ctx, W, personaje, reloj ?? undefined, { antesDeBrote: () => mascotas.dibujar(ctx), columnaBrote });
+      isla.dibujar(ctx, W, personaje, reloj ?? undefined, { antesDeBrote: () => mascotas.dibujar(ctx), columnaBrote, aviso });
       panel.ubicar(isla.zonaPanel(W), isla.lista());
     } else {
       // Brote abajo a la derecha; el panel a su izquierda, alineado abajo.
@@ -470,6 +489,8 @@ async function iniciar(): Promise<void> {
       mascotas.dibujar(ctx);
       personaje.dibujar(ctx, centro, H - 16, R);
       personaje.dibujarEtiqueta(ctx, centro, H - R * 2 - 34);
+      // Un aviso sin abrir el panel: una burbuja chica a la izquierda de Brote.
+      if (aviso && !panelAbierto) dibujarBurbujaAviso(ctx, centro - R - 8, H - 16 - R, aviso);
       if (reloj && !panelAbierto) {
         ctx.fillStyle = reloj.color;
         ctx.font = "600 12px ui-monospace, 'SF Mono', Menlo, monospace";
@@ -511,6 +532,32 @@ function dibujarFondoPanel(ctx: CanvasRenderingContext2D, rect: DOMRect | null, 
   ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
   ctx.lineWidth = 1;
   ctx.stroke(forma);
+  ctx.restore();
+}
+
+/** Modo flotante: la burbuja del aviso, con su borde derecho en `derecha` y centrada en `y`. */
+function dibujarBurbujaAviso(ctx: CanvasRenderingContext2D, derecha: number, y: number, aviso: { texto: string; color: string; restante: number }): void {
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, aviso.restante * 4);
+  ctx.font = "600 12px system-ui, -apple-system, sans-serif";
+  const ancho = ctx.measureText(aviso.texto).width + 24;
+  const forma = new Path2D();
+  forma.roundRect(derecha - ancho, y - 15, ancho, 30, 15);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "#15151a";
+  ctx.fill(forma);
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = aviso.color;
+  ctx.globalAlpha *= 0.5 + 0.3 * Math.sin(performance.now() / 160);
+  ctx.lineWidth = 1.5;
+  ctx.stroke(forma);
+  ctx.globalAlpha = Math.min(1, aviso.restante * 4);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(aviso.texto, derecha - ancho / 2, y + 0.5);
   ctx.restore();
 }
 

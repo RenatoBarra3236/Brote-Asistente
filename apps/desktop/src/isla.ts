@@ -48,6 +48,18 @@ export interface Ala {
   ondas?: boolean;
 }
 
+/** Un aviso que no abre la isla: se lee en el ala izquierda y un pulso del color del tema rodea el notch. */
+export interface AvisoAla {
+  texto: string;
+  /** "rgb(r, g, b)". */
+  color: string;
+  /** 1 recién llegado, 0 a punto de irse. */
+  restante: number;
+}
+
+/** Ancho aproximado de cada letra del aviso (fuente de 10 px). */
+const LETRA_AVISO = 6.4;
+
 export class Isla {
   private readonly notchAncho: number;
   private readonly notchAlto: number;
@@ -63,6 +75,8 @@ export class Isla {
   private readonly expansion = new Resorte(0, 2.2, 0.9);
   private t = 0;
   private ultimaActividad = -Infinity;
+  /** Lo último que se ensanchó cada ala por un aviso (para que Brote acompañe el borde derecho). */
+  private extraAla = 0;
 
   constructor(notchAncho: number, notchAlto: number) {
     this.notchAncho = notchAncho;
@@ -92,7 +106,7 @@ export class Isla {
    * `hover`: el cursor está sobre la isla o el panel. `activo`: el agente está haciendo algo o
    * el panel pide seguir abierta. `altoPanel`: lo que mide el contenido del panel.
    */
-  actualizar(dt: number, hover: boolean, activo: boolean, altoPanel = 0): void {
+  actualizar(dt: number, hover: boolean, activo: boolean, altoPanel = 0, aviso?: AvisoAla | null): void {
     this.t += dt;
     if (hover || activo || this.expandida) {
       this.abierta = true;
@@ -101,13 +115,23 @@ export class Isla {
       this.abierta = false;
     }
     const desplegada = this.tamanoDesplegada(altoPanel);
-    const objetivo = this.abierta ? desplegada : this.cerrada;
+    // Con un aviso, la isla cerrada se ensancha (a los dos lados, para seguir centrada en el notch).
+    const extra = aviso ? this.anchoExtraAviso(aviso.texto) : 0;
+    if (extra > 0) this.extraAla = extra;
+    const objetivo = this.abierta ? desplegada : { ancho: this.cerrada.ancho + 2 * extra, alto: this.cerrada.alto };
     this.ancho.objetivo = objetivo.ancho;
     this.alto.objetivo = objetivo.alto;
     this.ancho.avanzar(dt);
     this.alto.avanzar(dt);
     this.expansion.objetivo = this.expandida && this.abierta ? 1 : 0;
     this.expansion.avanzar(dt);
+  }
+
+  /** Cuánto debe crecer cada ala para que quepa el texto del aviso (sin pasarse de la ventana). */
+  private anchoExtraAviso(texto: string): number {
+    const necesario = texto.length * LETRA_AVISO + 16 - this.notchAlto * ALA;
+    const tope = (this.ventana.ancho - 2 * OREJA - 4 - this.cerrada.ancho) / 2;
+    return limitar(necesario, 0, Math.max(0, tope));
   }
 
   /** Sin movimiento: el bucle puede dibujar a menos cuadros por segundo. */
@@ -160,7 +184,8 @@ export class Isla {
     const ala0 = this.notchAlto * ALA;
     const radioChico = this.notchAlto * 0.3;
     const normal = {
-      x: lerp(W / 2 + this.notchAncho / 2 + ala0 / 2, x0 + BORDE + COLUMNA / 2, p),
+      // Cerrada, Brote va en el ala derecha y se corre con ella cuando un aviso ensancha la isla.
+      x: lerp(W / 2 + this.notchAncho / 2 + ala0 / 2 + limitar((this.ancho.valor - this.cerrada.ancho) / 2, 0, this.extraAla), x0 + BORDE + COLUMNA / 2, p),
       suelo: lerp(this.notchAlto * 0.5 + radioChico * 0.92, this.notchAlto + 4 + ALTO_TARJETA * 0.62, p),
       radio: lerp(radioChico, RADIO_GRANDE, p),
     };
@@ -176,11 +201,23 @@ export class Isla {
     W: number,
     personaje: Personaje,
     ala?: Ala,
-    extra: { antesDeBrote?: () => void; columnaBrote?: { x: number; suelo: number; radio: number } | null } = {},
+    extra: { antesDeBrote?: () => void; columnaBrote?: { x: number; suelo: number; radio: number } | null; aviso?: AvisoAla | null } = {},
   ): void {
     const camino = this.camino(W);
     ctx.fillStyle = "#000";
     ctx.fill(camino);
+    // Un pulso suave del color del aviso alrededor de la isla cerrada.
+    const aviso = !this.abierta ? extra.aviso : null;
+    if (aviso) {
+      ctx.save();
+      ctx.globalAlpha = limitar(aviso.restante * 3, 0, 1) * (0.55 + 0.45 * Math.sin(this.t * 5));
+      ctx.strokeStyle = aviso.color;
+      ctx.shadowColor = aviso.color;
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = 1.5;
+      ctx.stroke(camino);
+      ctx.restore();
+    }
 
     // Progreso del despliegue: 0 cerrada, 1 abierta. Brote crece y pasa a su columna.
     const p = this.progreso();
@@ -218,7 +255,17 @@ export class Isla {
       etiqueta(ctx, nombre, color, xGrande, sueloGrande + 22, COLUMNA - 16);
       ctx.globalAlpha = 1;
     }
-    if (ala && p < 0.5) {
+    if (aviso && p < 0.5) {
+      ctx.globalAlpha = (1 - p * 2) * limitar(aviso.restante * 4, 0, 1);
+      // Centrado en el ala izquierda, que ahora es más ancha.
+      const x = W / 2 - this.notchAncho / 2 - (this.ancho.valor - this.notchAncho) / 4;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+      ctx.font = "600 10px system-ui, -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(aviso.texto, x, this.notchAlto / 2 + 0.5);
+      ctx.globalAlpha = 1;
+    } else if (ala && p < 0.5) {
       ctx.globalAlpha = 1 - p * 2;
       const x = W / 2 - this.notchAncho / 2 - ala0 / 2;
       if (ala.ondas) ondas(ctx, x, this.notchAlto / 2, ala.color, this.t);

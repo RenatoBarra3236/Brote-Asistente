@@ -220,7 +220,8 @@ function main() {
   const lector = $.EKEventStore.alloc.init;
   const desde = $.NSDate.dateWithTimeIntervalSince1970(${Math.floor(desdeMs / 1000)});
   const hasta = $.NSDate.dateWithTimeIntervalSince1970(${Math.floor(hastaMs / 1000)});
-  const encontrados = lector.eventsMatchingPredicate(lector.predicateForEventsWithStartDateEndDateCalendars(desde, hasta, null));
+  // $() es nil (todos los calendarios): null llega como NSNull y EventKit le llama count.
+  const encontrados = lector.eventsMatchingPredicate(lector.predicateForEventsWithStartDateEndDateCalendars(desde, hasta, $()));
   const eventos = [];
   for (let i = 0; i < encontrados.count; i++) {
     const e = encontrados.objectAtIndex(i);

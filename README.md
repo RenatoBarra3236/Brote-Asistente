@@ -51,7 +51,7 @@ Monorepo con pnpm. Cada pieza se crea en su paso del plan:
 - [x] Paso 1: preparar el entorno
 - [x] Paso 2: estudiar las referencias ([resumen](docs/referencias-tecnicas.md))
 - [x] Paso 3: prueba del Gateway (`pnpm --dir packages/adapter spike "mensaje"`)
-- [x] Paso 4: personaje base (`pnpm --dir apps/desktop tauri dev`; en macOS vive en el notch, en el resto en una ventana flotante)
+- [x] Paso 4: personaje base (`pnpm --dir apps/desktop tauri dev`; en macOS vive en el notch; en Windows y Linux, en una isla igual arriba al centro de la pantalla)
 - [x] Paso 5: personaje conectado al agente (habla con OpenClaw a través de un puente Node; `ASISTENTE_SIMULADO=1` usa el simulador)
 - [x] Paso 6: motor de comandos y skill de gastos (`pnpm --dir packages/motor test`; skill: `openclaw mcp add gastos --command node --arg <repo>/packages/motor/src/mcp.ts`)
 - [x] Paso 7: motor que aprende (el agente resuelve, el motor deduce la plantilla y el usuario la confirma en la isla)

@@ -19,7 +19,7 @@ import { TransportePuente } from "./agente/puente";
 import { revisarConectores, vistaConectores } from "./configurar/conectores";
 import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, leerPresupuesto, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso, usarPuente } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
-import { vistaFunciones, vistaTarjetasInicio } from "./configurar/funciones";
+import { vistaFunciones, vistaNotificaciones, vistaTarjetasInicio } from "./configurar/funciones";
 import { revisarEquipo, vistaCuentas, vistaEquipo } from "./configurar/equipo";
 
 type Seccion = "estado" | "funciones" | "cuentas" | "equipo" | "conectores" | "aula" | "permisos" | "memoria";
@@ -203,6 +203,8 @@ function seccionFunciones(): HTMLElement[] {
     vistaFunciones(false),
     cabecera("Tarjetas de Inicio", "Qué se ve en la pestaña Brote de la isla, y en qué orden."),
     vistaTarjetasInicio(),
+    cabecera("Notificaciones del sistema", "Con la isla cerrada, Brote avisa también por el Centro de notificaciones: calendario, entregas, temporizadores, el plan de Claude y cuando Claude Code termina."),
+    vistaNotificaciones(),
   ];
 }
 

@@ -73,7 +73,7 @@ export const IAS: readonly CuentaIA[] = [
     conexion: "clave",
     terminal: "clave-gemini",
     requisito: "Una clave gratis de Google AI Studio (Google ya no deja entrar con la cuenta personal).",
-    aviso: "En el plan gratis, Google puede usar lo que le mandes para entrenar sus modelos. No le pases datos privados.",
+    aviso: "En el plan gratis, Google puede leer lo que le mandes (también personas) y usarlo para entrenar sus modelos. Brote no le pasa tu nombre, tus gastos, tu calendario, tus entregas ni lo que sabe de ti; solo temas de estudio. Tampoco pegues datos personales en sus instrucciones.",
     color: "#5b8def",
   },
   {

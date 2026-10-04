@@ -3,13 +3,13 @@
 // "Configurar Brote", con consentimiento explícito. Reglas:
 //   - Nunca se tocan los hooks del usuario: solo se agregan o quitan los de Brote, que se reconocen
 //     por la marca `--brote` en el comando.
-//   - Antes de escribir se respalda el archivo (settings.json.brote-<fecha>.bak).
+//   - Antes de escribir se respalda el archivo (settings.json.brote-<fecha>.bak); quedan solo los últimos 3.
 //   - Si el archivo no es JSON válido, no se toca.
 // La lógica (agregar, quitar, reconocer) es pura y tiene pruebas.
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /** La marca que distingue los hooks de Brote de los del usuario. */
 export const MARCA = "--brote";
@@ -104,6 +104,27 @@ export function leerSettings(ruta = rutaSettings()): any {
   }
 }
 
+/** Cuántos respaldos `settings.json.brote-<fecha>.bak` se conservan. */
+export const RESPALDOS_A_CONSERVAR = 3;
+
+/**
+ * Borra los respaldos viejos de Brote junto a `ruta`, dejando los más recientes. Solo toca archivos con
+ * exactamente la forma `<archivo>.brote-<fecha ISO>.bak`; la fecha ordena por el nombre. Nunca falla.
+ */
+export function podarRespaldos(ruta: string, conservar = RESPALDOS_A_CONSERVAR): void {
+  try {
+    const prefijo = `${basename(ruta)}.brote-`;
+    const forma = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.bak$/;
+    const viejos = readdirSync(dirname(ruta))
+      .filter((nombre) => nombre.startsWith(prefijo) && forma.test(nombre.slice(prefijo.length)))
+      .sort()
+      .slice(0, -conservar);
+    for (const nombre of viejos) rmSync(join(dirname(ruta), nombre), { force: true });
+  } catch {
+    // Podar es un favor: si falla, no debe romper la instalación.
+  }
+}
+
 /** Escribe con respaldo previo y de forma atómica, conservando los permisos del archivo. */
 export function escribirSettings(config: any, ruta = rutaSettings(), ahora = new Date()): string | null {
   mkdirSync(dirname(ruta), { recursive: true });
@@ -119,5 +140,6 @@ export function escribirSettings(config: any, ruta = rutaSettings(), ahora = new
   writeFileSync(temporal, `${JSON.stringify(config, null, 2)}\n`, { mode: modo ?? 0o600 });
   if (modo !== null) chmodSync(temporal, modo);
   renameSync(temporal, ruta);
+  if (respaldo) podarRespaldos(ruta);
   return respaldo;
 }

@@ -184,3 +184,16 @@ describe("freno por plan", () => {
     assert.match(textoFreno(false, null), /vuelven al equipo/);
   });
 });
+
+describe("privacidad con planes gratuitos", () => {
+  it("el aviso de Gemini dice qué datos no se mandan", () => {
+    const gemini = IAS.find((ia) => ia.id === "gemini")!;
+    for (const palabra of ["entrenar", "gastos", "calendario", "nombre"]) assert.match(gemini.aviso ?? "", new RegExp(palabra));
+  });
+
+  it("la skill delegar prohíbe pasar datos personales a planes gratuitos", () => {
+    const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
+    assert.match(skill, /## Datos personales: nunca a un plan gratuito/);
+    for (const palabra of ["gastos", "memoria", "calendario", "aula"]) assert.match(skill, new RegExp(palabra));
+  });
+});

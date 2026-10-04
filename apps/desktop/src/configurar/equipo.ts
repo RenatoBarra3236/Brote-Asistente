@@ -94,7 +94,7 @@ function formularioClave(cuenta: EstadoCuenta): HTMLElement {
   const casilla = crear("input");
   casilla.type = "checkbox";
   casilla.checked = clave.acepto;
-  etiqueta.append(casilla, document.createTextNode(` Entiendo que, en el plan gratis, Google puede usar lo que le mande a ${cuenta.nombre} para entrenar sus modelos.`));
+  etiqueta.append(casilla, document.createTextNode(` Entiendo que, en el plan gratis, Google puede leer (también personas) y usar para entrenar lo que le mande a ${cuenta.nombre}, y que no debo pegarle datos personales.`));
   const guardar = crear("button", "boton boton-primario", "Guardar clave");
   guardar.type = "submit";
   const actualizar = () => (guardar.disabled = trabajandoEn !== null || !clave.acepto || clave.texto.trim().length < 20);

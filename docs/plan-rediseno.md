@@ -139,7 +139,7 @@ Revisado en el Mac del usuario: todos los archivos con datos o secretos están e
 apagada (queda solo el aviso diario de versión), Gateway y servidor del puente solo en 127.0.0.1 con token,
 nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, en orden:
 
-1. **Gemini gratis y datos personales**: en el plan gratis Google puede usar lo que recibe para entrenar y
+1. **Gemini gratis y datos personales** (hecho y probado en el Mac el 4-10-2026; la skill se reinstala con `openclaw skills install ./packages/motor/skill/delegar --as delegar --agent <id> --force` y se carga en una sesión nueva): en el plan gratis Google puede usar lo que recibe para entrenar y
    revisarlo con personas. La skill `delegar` debe prohibir pasarle a especialistas de planes gratuitos datos
    personales (nombre, gastos, memoria, calendario, aula); la tarjeta de Gemini en Cuentas de IA lo avisa más claro.
 2. **Secretos en texto plano** (permisos 600 + cifrado del disco): `openclaw.json` (token del Gateway, clave de
@@ -150,7 +150,7 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
 4. **Datos en claro en el disco** (gastos, memoria, transcripciones): docs/instalar.md debe recomendar FileVault
    (Mac) o BitLocker (Windows) a quien pruebe Brote.
 5. **"Olvidar" va a la Papelera**: la interfaz debe decir que el dato sigue ahí hasta vaciarla.
-6. **Respaldos que se acumulan**: `~/.claude/settings.json.brote-*.bak`; dejar solo los últimos.
+6. **Respaldos que se acumulan** (hecho el 4-10-2026: `podarRespaldos` deja los 3 últimos): `~/.claude/settings.json.brote-*.bak`.
 7. **Antes de repartir Brote a más gente**: una política de privacidad corta (qué se guarda, dónde, a qué empresas
    va —Anthropic, Google, conectores— y cómo borrarlo), partiendo de "Tus datos" en docs/instalar.md. En Chile
    rige la Ley 21.719 desde diciembre de 2026 (orientación, no asesoría legal).

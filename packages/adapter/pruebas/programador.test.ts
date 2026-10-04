@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { esDeOpenClaw, esInteractiva, resumir, salidaPermiso } from "../src/hook.ts";
-import { MARCA, agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks } from "../src/hooks-claude.ts";
+import { MARCA, agregarHooks, comandoHook, escribirSettings, hooksInstalados, podarRespaldos, leerSettings, quitarHooks } from "../src/hooks-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "../src/servidor-hooks.ts";
 import { pedirAlPuente } from "@asistente/motor";
 
@@ -184,6 +184,23 @@ describe("instalar los hooks en la configuración de Claude Code", () => {
     assert.throws(() => comandoHook("/a/node", '/x/"hook.mjs', "darwin"));
     assert.doesNotThrow(() => comandoHook("C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\ana\\.asistente-prototipo\\app\\hook.mjs", "win32"));
     assert.throws(() => comandoHook("C:\\%PATH%\\node.exe", "C:\\x\\hook.mjs", "win32"));
+  });
+
+  it("deja solo los 3 últimos respaldos de Brote y no toca otros archivos", () => {
+    const dir = carpeta();
+    const ruta = join(dir, "settings.json");
+    writeFileSync(ruta, JSON.stringify(DEL_USUARIO));
+    const nombres = [1, 2, 3, 4, 5, 6].map((d) => `settings.json.brote-2026-09-0${d}T10-00-00-000Z.bak`);
+    const ajenos = ["settings.json.bak", "settings.json.brote-x.bak", "settings.json.brote-123.tmp", "otro.json.brote-2026-01-01T10-00-00-000Z.bak"];
+    for (const n of [...nombres, ...ajenos]) writeFileSync(join(dir, n), "{}");
+    escribirSettings(agregarHooks(leerSettings(ruta), comando), ruta, new Date(2026, 9, 3));
+    const quedan = readdirSync(dir).filter((n) => /^settings\.json\.brote-\d{4}-.*\.bak$/.test(n)).sort();
+    assert.equal(quedan.length, 3);
+    assert.deepEqual(quedan.slice(0, 2), nombres.slice(4));
+    for (const n of ajenos) assert.ok(existsSync(join(dir, n)), n);
+    podarRespaldos(join(dir, "no-existe", "settings.json"));
+    podarRespaldos(ruta, 10);
+    assert.equal(readdirSync(dir).filter((n) => n.startsWith("settings.json.brote-2026")).length, 3);
   });
 
   it("respalda antes de escribir, conserva los permisos y no toca un archivo roto", () => {

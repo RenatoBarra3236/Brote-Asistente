@@ -29,11 +29,29 @@ Cada delegación cuesta vueltas y tiempo; con Claude, además, gasta del plan de
   calendario, música, descargas o la memoria (eso lo haces tú con tus herramientas).
 - Como mucho dos especialistas a la vez.
 
+## Datos personales: nunca a un plan gratuito
+
+Un especialista con un plan gratuito (hoy, Gemini con clave de AI Studio) manda lo que recibe
+a una empresa que puede leerlo con personas y usarlo para entrenar sus modelos. A ese
+especialista **nunca** le pases datos personales del estudiante:
+
+- su nombre, correo, teléfono, dirección o su universidad y carrera;
+- sus gastos, presupuesto o cualquier cifra de su plata;
+- lo que sabes de él (memoria, recuerdos, conversaciones anteriores);
+- su calendario, sus entregas del aula, sus tareas o cuentas de los conectores;
+- archivos, rutas o descargas suyas.
+
+Pásale solo el tema de estudio, escrito en general ("explica la derivada de funciones
+compuestas para primer año", no "Ana tiene prueba el jueves en la UC"). Si el estudiante
+pega un texto suyo (ensayo, apuntes) para que lo corrijan, avísale antes que ese texto sale
+a un servicio gratuito y espera su visto bueno. Si la tarea no se puede hacer sin datos
+personales, hazla tú o usa un especialista con Claude; si no hay, dile por qué no delegas.
+
 ## Cómo hacerlo en pocas vueltas
 
 1. `mcp__openclaw__sessions_spawn` con `agentId` y una `task` que se entienda sola: el
    especialista no ve esta conversación. Incluye lo que necesita (tema, nivel, largo,
-   formato). Nunca pegues datos privados que no hagan falta.
+   formato). Sin datos personales (ver la sección siguiente).
 2. `mcp__openclaw__subagents` con `{ "action": "wait", "runIds": [<runId del paso 1>],
    "timeoutSeconds": 60 }`. Si vuelve con `reason: "timeout"`, puedes esperar una vez más.
 3. La espera no trae el texto: léelo con `mcp__openclaw__sessions_history`

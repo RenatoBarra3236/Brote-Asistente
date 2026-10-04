@@ -65,7 +65,16 @@ impl Puente {
             let _ = app.emit("puente", aviso);
         });
 
-        Puente { hijo: Mutex::new(Some(hijo)), entrada: Mutex::new(entrada), conexion }
+        let puente = Puente { hijo: Mutex::new(Some(hijo)), entrada: Mutex::new(entrada), conexion };
+        puente.mandar_secretos();
+        puente
+    }
+
+    /// Le pasa al puente lo que hay en el Llavero (token del aula, dirección iCal), solo por su entrada.
+    fn mandar_secretos(&self) {
+        let Ok(carpeta) = crate::configuracion::carpeta_datos() else { return };
+        let linea = crate::secretos::linea_para_el_puente(crate::secretos::almacen(), &crate::secretos::leer_marcas(&carpeta));
+        let _ = self.escribir(&linea);
     }
 
     /// Envía un pedido (una línea JSON) al puente.
@@ -95,5 +104,13 @@ impl Puente {
         }
         let _ = hijo.kill();
         let _ = hijo.wait();
+    }
+}
+
+/// Después de guardar el aula o el calendario: el puente recibe los secretos al día.
+pub fn enviar_secretos(app: &AppHandle) {
+    use tauri::Manager;
+    if let Some(puente) = app.try_state::<crate::Agente>().as_ref().and_then(|a| a.puente.as_ref()) {
+        puente.mandar_secretos();
     }
 }

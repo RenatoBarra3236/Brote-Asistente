@@ -12,6 +12,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { leerSecretos, versionSecretos } from "./secretos.ts";
 import { eventosIcs, type EventoCalendario } from "./ics.ts";
 import type { Comando } from "./musica.ts";
 
@@ -152,7 +153,9 @@ export function normalizarUrlIcal(texto: string): string | null {
 export function leerUrlIcal(ruta = RUTA_CONFIG_CALENDARIO): string | null {
   try {
     const datos = JSON.parse(readFileSync(ruta, "utf8"));
-    return typeof datos?.ical === "string" ? normalizarUrlIcal(datos.ical) : null;
+    // Con `enLlavero` la dirección no está en el archivo: la entregó la app (ver secretos.ts).
+    const ical = typeof datos?.ical === "string" ? datos.ical : datos?.enLlavero === true ? leerSecretos().ical : null;
+    return ical ? normalizarUrlIcal(ical) : null;
   } catch {
     return null;
   }
@@ -161,7 +164,7 @@ export function leerUrlIcal(ruta = RUTA_CONFIG_CALENDARIO): string | null {
 /** Cuándo cambió la configuración (para notar que el usuario guardó otra dirección). */
 export function marcaConfigCalendario(ruta = RUTA_CONFIG_CALENDARIO): number {
   try {
-    return statSync(ruta).mtimeMs;
+    return statSync(ruta).mtimeMs + versionSecretos();
   } catch {
     return 0;
   }

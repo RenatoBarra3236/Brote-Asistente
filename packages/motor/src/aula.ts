@@ -18,6 +18,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { leerSecretos, versionSecretos } from "./secretos.ts";
 
 const MINUTO = 60_000;
 const HORA = 60 * MINUTO;
@@ -68,17 +69,29 @@ export function leerConfigAula(ruta = RUTA_CONFIG_AULA): ConfigAula | null {
   try {
     const datos = JSON.parse(readFileSync(ruta, "utf8"));
     const url = typeof datos?.url === "string" ? normalizarUrlAula(datos.url) : null;
-    if ((datos?.tipo !== "canvas" && datos?.tipo !== "moodle") || !url || typeof datos.token !== "string" || !tokenAulaValido(datos.token)) return null;
-    return { tipo: datos.tipo, url, token: datos.token };
+    // Con `enLlavero` el token no está en el archivo: lo entregó la app (ver secretos.ts).
+    const token = typeof datos?.token === "string" ? datos.token : datos?.enLlavero === true ? leerSecretos().aulaToken : null;
+    if ((datos?.tipo !== "canvas" && datos?.tipo !== "moodle") || !url || !token || !tokenAulaValido(token)) return null;
+    return { tipo: datos.tipo, url, token };
   } catch {
     return null;
+  }
+}
+
+/** El aula está guardada, pero su token vive en el Llavero y este proceso no lo tiene (el servidor MCP). */
+export function aulaSoloEnLlavero(ruta = RUTA_CONFIG_AULA): boolean {
+  try {
+    const datos = JSON.parse(readFileSync(ruta, "utf8"));
+    return datos?.enLlavero === true && typeof datos?.token !== "string" && !leerSecretos().aulaToken;
+  } catch {
+    return false;
   }
 }
 
 /** Cuándo cambió la configuración (para notar que el usuario guardó otra). */
 export function marcaConfigAula(ruta = RUTA_CONFIG_AULA): number {
   try {
-    return statSync(ruta).mtimeMs;
+    return statSync(ruta).mtimeMs + versionSecretos();
   } catch {
     return 0;
   }

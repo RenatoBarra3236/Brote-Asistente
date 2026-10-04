@@ -137,6 +137,7 @@ import {
   AvisadorEntregas,
   describirErrorAula,
   leerAula,
+  aplicarPedidoSecretos,
   leerConfigAula,
   marcaConfigAula,
   pendientes,
@@ -1497,6 +1498,8 @@ entrada.on("line", (linea) => {
     registrar("línea que no es JSON, ignorada");
     return;
   }
+  // Los secretos que la app saca del Llavero: solo en memoria, sin respuesta y sin registrar nada.
+  if (aplicarPedidoSecretos(pedido)) return;
   const id = typeof pedido?.id === "string" ? pedido.id : null;
   atender(pedido).then(
     (extra) => id && avisar({ tipo: "respuesta", id, ok: true, ...extra }),

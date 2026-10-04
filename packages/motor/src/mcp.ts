@@ -23,7 +23,7 @@ import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
 import { rangoDe, type Rango } from "./periodos.ts";
 import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
-import { describirErrorAula, leerAula, leerConfigAula, type Entrega } from "./aula.ts";
+import { aulaSoloEnLlavero, describirErrorAula, leerAula, leerConfigAula, type Entrega } from "./aula.ts";
 import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
 import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type AccionMusica, type EstadoMusica } from "./musica.ts";
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
@@ -381,7 +381,7 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         entregas = deBrote.entregas;
       } else {
         const config = leerConfigAula();
-        if (!config) return SIN_AULA;
+        if (!config) return aulaSoloEnLlavero() ? AULA_EN_LLAVERO : SIN_AULA;
         const lectura = await leerAula(config, ahora);
         if ("error" in lectura) return describirErrorAula(lectura.error);
         entregas = lectura.entregas;
@@ -461,6 +461,7 @@ function leerNuevoEvento(args: any): NuevoEvento {
   };
 }
 
+const AULA_EN_LLAVERO = "El aula está conectada, pero su token está guardado en el Llavero y solo la app Brote puede leerlo. Brote no está abierto: el usuario debe abrirlo para ver las entregas.";
 const SIN_AULA = "No hay aula conectada. El usuario puede conectar Canvas o Moodle en Brote: 🌱 → Configurar Brote.";
 
 const SIN_CALENDARIO =

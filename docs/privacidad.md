@@ -16,7 +16,8 @@ diciembre de 2026).
 |---|---|
 | Tus gastos, tu presupuesto, las frases que Brote aprendió, los temporizadores y cuántas veces respondió sin IA (sin el texto de tus mensajes) | `~/.asistente-prototipo/asistente.db` |
 | Qué funciones tienes prendidas, el equipo y sus avisos | `~/.asistente-prototipo/` |
-| Token del aula, dirección secreta de tu calendario iCal, conectores conectados | `~/.asistente-prototipo/` (aula.json, calendario.json, conectores.json), solo legibles por tu usuario |
+| Token del aula y dirección secreta de tu calendario iCal | En el Llavero de macOS / Administrador de credenciales de Windows (los archivos aula.json y calendario.json dicen solo `enLlavero`). Sin Llavero (Linux o si falla) quedan en esos archivos, solo legibles por tu usuario |
+| Qué conectores tienes conectados (sin secretos) | `~/.asistente-prototipo/conectores.json` |
 | Lo que Brote recuerda de ti y las conversaciones guardadas | la carpeta de OpenClaw (`~/.openclaw/workspace`) y la memoria de Claude Code de ese espacio |
 | Registros de OpenClaw | `~/Library/Logs/openclaw/gateway.log` (Mac). Pueden caer respuestas de los agentes; Brote las quita solo (al abrir y cada hora). El registro propio de OpenClaw está en `/tmp/openclaw` y se borra a las 24 h |
 | Tus sesiones de Claude Code (si prendes el modo programador o el uso del plan) | `~/.claude/projects`: Brote lee solo la cantidad de tokens y el modelo, no el texto |
@@ -40,4 +41,4 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 
 ## Lo que todavía no está resuelto
 
-- Algunos secretos (token del aula, dirección iCal, claves de OpenClaw) están en archivos de texto con permisos de tu usuario, no en el Llavero de macOS ni en el Administrador de credenciales de Windows.
+- El token de Gateway y las claves de OpenClaw (`~/.openclaw/openclaw.json`), el token de GitHub si lo conectas y la clave del dispositivo (`~/.asistente-prototipo/dispositivo.json`) siguen en archivos de texto con permisos de tu usuario, no en el Llavero. Brote no los mueve: dependen de OpenClaw.

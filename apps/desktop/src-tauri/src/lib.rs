@@ -7,6 +7,7 @@ mod entorno;
 mod especialistas;
 mod funciones;
 mod puente;
+mod secretos;
 
 use puente::Puente;
 use tauri::{AppHandle, LogicalPosition, Manager, RunEvent, State, WebviewWindow};
@@ -280,6 +281,13 @@ pub fn run() {
             app.manage(diseno);
 
             let simulado = std::env::var("ASISTENTE_SIMULADO").is_ok_and(|v| v == "1");
+            // Secretos que quedaron en texto plano de versiones anteriores pasan al Llavero (idempotente).
+            if let Ok(carpeta) = configuracion::carpeta_datos() {
+                let hechos = secretos::migrar(secretos::almacen(), &carpeta);
+                if !hechos.is_empty() {
+                    eprintln!("[secretos] pasé al Llavero: {}", hechos.join(", "));
+                }
+            }
             let puente = (!simulado).then(|| Puente::iniciar(app.handle()));
             app.manage(Agente { puente });
             app.manage(conectores::Conexiones::default());

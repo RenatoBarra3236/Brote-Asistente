@@ -132,7 +132,7 @@ propuesta "¿Aprendo esto?"). Lo demás es una **notificación discreta con la i
 - En el modo flotante (ya no es el de Windows, que usa la misma isla; solo con `ASISTENTE_MODO=flotante`) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
   sin desplegar el panel.
 
-## 6. Privacidad y protección de datos (revisión del 4-10-2026; puntos 1, 3, 4, 5, 6, 7 (borrador) y 8 hechos; falta 2)
+## 6. Privacidad y protección de datos (revisión del 4-10-2026; puntos 1 a 8 hechos; el 2 solo con A: aula e iCal, sin probar en un Mac real)
 
 Revisado en el Mac del usuario: todos los archivos con datos o secretos están en 600 (`~/.asistente-prototipo/*`,
 `openclaw.json`, las bases de OpenClaw, `gateway.log`), FileVault activado, telemetría de funciones de OpenClaw
@@ -142,9 +142,14 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
 1. **Gemini gratis y datos personales** (hecho y probado en el Mac el 4-10-2026; la skill se reinstala con `openclaw skills install ./packages/motor/skill/delegar --as delegar --agent <id> --force` y se carga en una sesión nueva): en el plan gratis Google puede usar lo que recibe para entrenar y
    revisarlo con personas. La skill `delegar` debe prohibir pasarle a especialistas de planes gratuitos datos
    personales (nombre, gastos, memoria, calendario, aula); la tarjeta de Gemini en Cuentas de IA lo avisa más claro.
-2. **Secretos en texto plano** (permisos 600 + cifrado del disco): `openclaw.json` (token del Gateway, clave de
-   búsqueda de Gemini…), `aula.json` (token), `calendario.json` (dirección iCal secreta). Llevarlos al Llavero de
-   macOS / Administrador de credenciales de Windows donde se pueda (los de OpenClaw dependen de OpenClaw).
+2. **Secretos en texto plano** (hecho el 4-10-2026, opción A; falta probarlo en un Mac real y en Windows): el token del aula y la dirección iCal van al Llavero de
+   macOS / Administrador de credenciales de Windows (`apps/desktop/src-tauri/src/secretos.rs`, crate `keyring`). Solo Rust toca el Llavero y
+   le pasa los secretos al puente (y a `configurar.ts`) por la entrada estándar; el archivo queda con `enLlavero: true`.
+   Migración idempotente al arrancar. Sin Llavero (Linux o si falla) el archivo conserva el secreto (600). Auditoría de OpenClaw
+   (`openclaw secrets audit`, 4-10-2026): en texto plano `gateway.auth.token`, `models.providers.llama-cpp.apiKey`,
+   `plugins.entries.google.config.webSearch.apiKey` y la clave de Gemini del Investigador (`openclaw-agent.sqlite`); aceptan SecretRef
+   (`env|file|exec|store`, sin Llavero nativo), pero no se tocan: si el Gateway no resuelve el secreto al partir, Brote queda muerto, y las
+   cabeceras de los servidores MCP (token de GitHub) no admiten SecretRef. `dispositivo.json` (clave del dispositivo) queda como está (opción B, pendiente).
 3. **Registros con conversaciones** (hecho el 4-10-2026, `packages/adapter/src/limpiar-registros.ts`): `~/Library/Logs/openclaw/gateway.log`
    es la salida estándar del Gateway bajo launchd. Sus líneas con marca de tiempo o `[subsistema]` son técnicas; lo que
    traía conversación eran 63 líneas sueltas (sin marca) con respuestas completas de un especialista, que el logger de

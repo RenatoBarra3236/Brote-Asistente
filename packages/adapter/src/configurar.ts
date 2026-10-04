@@ -39,6 +39,7 @@ import {
   instruccionesDeAgents,
   leerAula,
   leerCalendarioMacAhora,
+  aplicarPedidoSecretos,
   leerConfigAula,
   leerFunciones,
   leerUrlIcal,
@@ -1143,8 +1144,33 @@ async function leerEntrada(): Promise<string> {
 /** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
 const SIN_REINICIO = ["openclaw", "gateway", "calendario-mac", "programador", "programador-quitar", "statusline", "statusline-quitar"];
 
+/** Los secretos que la app sacó del Llavero llegan en la primera línea de la entrada (solo en memoria). */
+function recibirSecretos(limiteMs = 2000): Promise<void> {
+  return new Promise((listo) => {
+    const lineas = createInterface({ input: process.stdin });
+    const terminar = () => {
+      clearTimeout(reloj);
+      lineas.close();
+      process.stdin.pause();
+      listo();
+    };
+    // Sin línea a tiempo (entrada abierta sin escribir, o terminal) se sigue sin secretos.
+    const reloj = setTimeout(terminar, limiteMs);
+    lineas.once("line", (linea) => {
+      try {
+        aplicarPedidoSecretos(JSON.parse(linea));
+      } catch {
+        // no era un pedido de secretos
+      }
+      terminar();
+    });
+    lineas.once("close", terminar);
+  });
+}
+
 if (import.meta.main) {
   const [orden, paso, ...resto] = process.argv.slice(2);
+  if (orden === "revisar" || orden === "rapido" || orden === "aplicar") await recibirSecretos();
   let respuesta: unknown;
   if (orden === "conectar" || orden === "conectar-token" || orden === "conectar-propio") {
     await ordenConectar(orden, [paso, ...resto].filter((a): a is string => typeof a === "string"));

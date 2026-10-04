@@ -2,6 +2,7 @@
 //! Node (`packages/adapter/src/configurar.ts`); aquí solo se lanza y se abren terminales o páginas
 //! de una lista cerrada: la ventana nunca puede pedir un comando o una dirección cualquiera.
 
+use std::io::Write;
 use std::process::{Command, Stdio};
 
 use tauri::AppHandle;
@@ -72,9 +73,18 @@ pub async fn configuracion(app: AppHandle, orden: String, paso: Option<String>) 
         let salida = entorno::sin_consola(entorno::sin_clave_api(&mut Command::new(node)))
             .arg(script)
             .args(argumentos)
-            .stdin(Stdio::null())
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|e| e.to_string())?;
+        let mut salida = salida;
+        // Los secretos del Llavero van por la entrada (nunca por argumentos) y se cierra para que el script no espere.
+        if let Some(mut entrada) = salida.stdin.take() {
+            let linea = crate::secretos::linea_para_el_puente(crate::secretos::almacen(), &crate::secretos::leer_marcas(&carpeta_datos()?));
+            let _ = writeln!(entrada, "{linea}");
+        }
+        let salida = salida.wait_with_output().map_err(|e| e.to_string())?;
         Ok(String::from_utf8_lossy(&salida.stdout).trim().to_string())
     })
     .await
@@ -192,17 +202,32 @@ pub fn validar_url_ical(texto: &str) -> Result<String, String> {
 /// Guarda (o borra, con `None`) la dirección iCal secreta en `~/.asistente-prototipo/calendario.json`.
 /// La lee el puente (calendario.ts), que nota el cambio solo en menos de un minuto.
 #[tauri::command]
-pub fn guardar_calendario(url: Option<String>) -> Result<(), String> {
-    let ruta = carpeta_datos()?.join("calendario.json");
+pub fn guardar_calendario(app: AppHandle, url: Option<String>) -> Result<(), String> {
+    guardar_calendario_en(crate::secretos::almacen(), &carpeta_datos()?, url)?;
+    crate::puente::enviar_secretos(&app);
+    Ok(())
+}
+
+/// La dirección va al Llavero y el archivo solo lleva `enLlavero`; si no se puede, queda en el archivo (600).
+pub fn guardar_calendario_en(almacen: &dyn crate::secretos::Almacen, carpeta: &std::path::Path, url: Option<String>) -> Result<(), String> {
+    let ruta = carpeta.join("calendario.json");
     match url {
         Some(url) => {
             let url = validar_url_ical(&url)?;
-            escribir_privado(&ruta, &serde_json::json!({ "ical": url }).to_string())
+            let contenido = if crate::secretos::guardar_verificado(almacen, crate::secretos::ICAL, &url) {
+                serde_json::json!({ "enLlavero": true })
+            } else {
+                serde_json::json!({ "ical": url })
+            };
+            escribir_privado(&ruta, &contenido.to_string())
         }
-        None => match std::fs::remove_file(&ruta) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-            _ => Ok(()),
-        },
+        None => {
+            let _ = almacen.borrar(crate::secretos::ICAL);
+            match std::fs::remove_file(&ruta) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+                _ => Ok(()),
+            }
+        }
     }
 }
 
@@ -238,9 +263,23 @@ pub fn validar_token_aula(token: &str) -> Result<String, String> {
 /// Guarda (o borra, con `tipo: None`) el aula en `~/.asistente-prototipo/aula.json` con permisos 600.
 /// El token nunca se registra; lo lee el puente (aula.ts), que nota el cambio solo.
 #[tauri::command]
-pub fn guardar_aula(tipo: Option<String>, url: Option<String>, token: Option<String>) -> Result<(), String> {
-    let ruta = carpeta_datos()?.join("aula.json");
+pub fn guardar_aula(app: AppHandle, tipo: Option<String>, url: Option<String>, token: Option<String>) -> Result<(), String> {
+    guardar_aula_en(crate::secretos::almacen(), &carpeta_datos()?, tipo, url, token)?;
+    crate::puente::enviar_secretos(&app);
+    Ok(())
+}
+
+/// El token va al Llavero y el archivo solo lleva `enLlavero`; si no se puede, queda en el archivo (600).
+pub fn guardar_aula_en(
+    almacen: &dyn crate::secretos::Almacen,
+    carpeta: &std::path::Path,
+    tipo: Option<String>,
+    url: Option<String>,
+    token: Option<String>,
+) -> Result<(), String> {
+    let ruta = carpeta.join("aula.json");
     let Some(tipo) = tipo else {
+        let _ = almacen.borrar(crate::secretos::AULA_TOKEN);
         return match std::fs::remove_file(&ruta) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
             _ => Ok(()),
@@ -251,7 +290,12 @@ pub fn guardar_aula(tipo: Option<String>, url: Option<String>, token: Option<Str
     }
     let url = validar_url_aula(url.as_deref().unwrap_or(""))?;
     let token = validar_token_aula(token.as_deref().unwrap_or(""))?;
-    escribir_privado(&ruta, &serde_json::json!({ "tipo": tipo, "url": url, "token": token }).to_string())
+    let contenido = if crate::secretos::guardar_verificado(almacen, crate::secretos::AULA_TOKEN, &token) {
+        serde_json::json!({ "tipo": tipo, "url": url, "enLlavero": true })
+    } else {
+        serde_json::json!({ "tipo": tipo, "url": url, "token": token })
+    };
+    escribir_privado(&ruta, &contenido.to_string())
 }
 
 #[cfg(test)]
@@ -299,6 +343,32 @@ mod pruebas {
         for malo in ["corto", "con espacio 12345678901234", "comilla\"12345678901234567", &"a".repeat(301)] {
             assert!(validar_token_aula(malo).is_err(), "{malo}");
         }
+    }
+
+    #[test]
+    fn aula_y_calendario_guardan_el_secreto_en_el_llavero() {
+        use crate::secretos::{Almacen, EnMemoria, AULA_TOKEN, ICAL};
+        let c = std::env::temp_dir().join(format!("brote-guardar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&c);
+        std::fs::create_dir_all(&c).unwrap();
+        let a = EnMemoria::default();
+        let token = "TOKEN-DE-PRUEBA-1234567";
+        guardar_aula_en(&a, &c, Some("canvas".into()), Some("https://campus.miu.cl".into()), Some(token.into())).unwrap();
+        let archivo = std::fs::read_to_string(c.join("aula.json")).unwrap();
+        assert!(!archivo.contains(token) && archivo.contains("enLlavero"));
+        assert_eq!(a.leer(AULA_TOKEN).unwrap().as_deref(), Some(token));
+        guardar_calendario_en(&a, &c, Some("https://calendar.example/secreta.ics".into())).unwrap();
+        assert!(!std::fs::read_to_string(c.join("calendario.json")).unwrap().contains("secreta"));
+        // Quitar borra el archivo y el Llavero.
+        guardar_aula_en(&a, &c, None, None, None).unwrap();
+        guardar_calendario_en(&a, &c, None).unwrap();
+        assert!(a.leer(AULA_TOKEN).unwrap().is_none() && a.leer(ICAL).unwrap().is_none());
+        assert!(!c.join("aula.json").exists() && !c.join("calendario.json").exists());
+        // Sin Llavero el secreto queda en el archivo, como antes.
+        let roto = EnMemoria { falla: true, ..Default::default() };
+        guardar_aula_en(&roto, &c, Some("moodle".into()), Some("https://m.miu.cl".into()), Some(token.into())).unwrap();
+        assert!(std::fs::read_to_string(c.join("aula.json")).unwrap().contains(token));
+        std::fs::remove_dir_all(&c).unwrap();
     }
 
     #[cfg(unix)]

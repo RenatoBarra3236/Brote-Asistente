@@ -84,6 +84,7 @@ import {
   argsIdentidad,
   argsListaAuth,
   argsModelo,
+  argsSinNavegador,
   argsRuntimeClaude,
   carpetaEspecialista,
   claveValida,
@@ -1056,6 +1057,10 @@ export function guardarEspecialista(id: string, modelo: string, texto: string): 
     openclaw(argsIdentidad(especialista));
   }
   exigir(openclaw(argsModelo(id, modelo)), `No pude elegir la IA de ${especialista.nombre}`);
+  // También al Investigador de la fase 0, creado a mano: que ningún especialista abra Chrome.
+  if (!Array.isArray(config?.agents?.entries?.[id]?.tools?.deny) || !config.agents.entries[id].tools.deny.includes("browser")) {
+    openclaw(argsSinNavegador(id));
+  }
   config = leerConfig();
   if (ia.id === "claude" && config?.agents?.defaults?.models?.[modelo]?.agentRuntime?.id !== "claude-cli") {
     exigir(openclaw(argsRuntimeClaude(modelo)), "No pude conectar ese modelo con Claude Code");

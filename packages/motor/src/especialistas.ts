@@ -64,6 +64,9 @@ export const IAS: readonly CuentaIA[] = [
     proveedor: "google",
     probado: true,
     modelos: [
+      // Flash-Lite primero: en el plan gratis tiene mucha más cuota diaria (con 3.5 Flash el Investigador
+      // se quedó sin cuota en una tarde: error 429, Mac del usuario, 3-10-2026). Gemini 2.5 ya no está.
+      { ref: "google/gemini-3.5-flash-lite", nombre: "Gemini 3.5 Flash-Lite (más cuota gratis)" },
       { ref: "google/gemini-3.5-flash", nombre: "Gemini 3.5 Flash" },
       { ref: "google/gemini-3-flash-preview", nombre: "Gemini 3 Flash (vista previa)" },
     ],

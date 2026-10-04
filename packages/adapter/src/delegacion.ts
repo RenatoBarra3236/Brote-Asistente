@@ -420,7 +420,8 @@ export interface Historial {
  * Lee el resultado de `chat.history` (la forma exacta no está en el protocolo: `messages` es una
  * lista libre). Se toma lo mismo que de los eventos: la primera pregunta (la tarea), las herramientas
  * que usó (bloques `tool_use` / `toolCall` con su nombre y solo los argumentos útiles) y su última
- * respuesta de texto. Lo que no se reconoce se ignora. Sin probar contra el Gateway real.
+ * respuesta de texto. Lo que no se reconoce se ignora. Probado contra el Gateway real (4-10-2026): trae
+ * `{ sessionKey, sessionId, messages: [{ role, content: string | bloques, timestamp, … }], hasMore, … }`.
  */
 export function leerHistorial(resultado: unknown): Historial {
   const mensajes: any[] = Array.isArray((resultado as any)?.messages) ? (resultado as any).messages : Array.isArray(resultado) ? (resultado as any[]) : [];
@@ -431,7 +432,7 @@ export function leerHistorial(resultado: unknown): Historial {
     const bloques: any[] = typeof mensaje?.content === "string" ? [{ type: "text", text: mensaje.content }] : Array.isArray(mensaje?.content) ? mensaje.content : [];
     if (rol === "user") {
       const texto = textoDe(bloques).trim();
-      if (texto && historial.tarea === null && !texto.startsWith(PREFIJO_INTER_SESION)) historial.tarea = texto.slice(0, MAX_TAREA_COMPLETA);
+      if (texto && historial.tarea === null && !texto.startsWith(PREFIJO_INTER_SESION)) historial.tarea = tareaSinEnvoltorio(texto).slice(0, MAX_TAREA_COMPLETA);
       for (const b of bloques) if (b?.type === "tool_result") marcarPaso(historial, b.tool_use_id, b.is_error === true);
       continue;
     }
@@ -450,6 +451,21 @@ export function leerHistorial(resultado: unknown): Historial {
     if (texto && !esNoReply(texto)) historial.respuesta = texto.slice(0, MAX_RESPUESTA);
   }
   return historial;
+}
+
+/**
+ * OpenClaw le pasa la tarea al especialista envuelta en sus instrucciones ("[Subagent Context] You are
+ * running as a subagent… [Subagent Task]\n\n<tarea>\n\nBegin. Execute the assigned task to completion.").
+ * La isla muestra solo la tarea.
+ */
+export function tareaSinEnvoltorio(texto: string): string {
+  const marca = "[Subagent Task]";
+  const i = texto.lastIndexOf(marca);
+  if (i === -1) return texto;
+  let tarea = texto.slice(i + marca.length);
+  const fin = tarea.search(/\n\s*Begin\. Execute the assigned task/);
+  if (fin !== -1) tarea = tarea.slice(0, fin);
+  return tarea.trim() || texto;
 }
 
 function marcarPaso(historial: Historial, id: unknown, error: boolean): void {

@@ -277,3 +277,25 @@ describe("el equipo vivo: lo que hace cada especialista", () => {
     assert.deepEqual(leerHistorial(null), { tarea: null, pasos: [], respuesta: "" });
   });
 });
+
+describe("historial de un especialista (forma real de chat.history, 4-10-2026)", () => {
+  it("la tarea se muestra sin el envoltorio de OpenClaw", async () => {
+    const { leerHistorial, tareaSinEnvoltorio } = await import("../src/delegacion.ts");
+    const tarea =
+      "[Subagent Context] You are running as a subagent (depth 1/5). Complete the current [Subagent Task]; inherited conversation is background context, not your assignment.\n\n[Subagent Task]\n\nExplica la fotosíntesis en exactamente dos frases, en español.\n\nBegin. Execute the assigned task to completion.";
+    const real = {
+      sessionKey: "agent:investigador:subagent:b34eee7e-cf70-45a2-858d-5253355e2cda",
+      sessionId: "x",
+      messages: [
+        { role: "user", content: tarea, timestamp: 1 },
+        { role: "assistant", content: "La fotosíntesis es el proceso químico… Durante este proceso se libera oxígeno.", timestamp: 2 },
+      ],
+      hasMore: false,
+      totalMessages: 2,
+    };
+    const h = leerHistorial(real);
+    assert.equal(h.tarea, "Explica la fotosíntesis en exactamente dos frases, en español.");
+    assert.match(h.respuesta, /^La fotosíntesis es el proceso químico/);
+    assert.equal(tareaSinEnvoltorio("Investiga X"), "Investiga X");
+  });
+});

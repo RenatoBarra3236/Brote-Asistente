@@ -17,7 +17,7 @@ const ESPECIALISTAS: &[&str] = &["tutor", "investigador", "redactor", "revisor",
 /// Los modelos que se pueden elegir: solo los del catálogo de OpenClaw 2026.9.7 que validan. Deben
 /// coincidir con `MODELOS_PERMITIDOS` de especialistas.ts.
 const MODELOS: &[&str] = &[
-    "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-4-5", "google/gemini-3.5-flash", "google/gemini-3-flash-preview",
+    "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-4-5", "google/gemini-3.5-flash-lite", "google/gemini-3.5-flash", "google/gemini-3-flash-preview",
     "openai/gpt-6-astra", "openai/gpt-5.4-mini", "xai/grok-4.7",
 ];
 

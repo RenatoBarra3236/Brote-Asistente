@@ -170,7 +170,11 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
    (sin la variable) muestre `apiKeySource`, o cuando `settings.json` tenga `ANTHROPIC_API_KEY` en `env`. Solo leer
    el estado y los nombres de las variables, nunca sus valores ni credenciales.
 
-## 7. Calendario como sección propia de la isla (anotado el 4-10-2026; pendiente)
+## 7. Calendario como sección propia de la isla (anotado el 4-10-2026; hecho el mismo día como pestaña Agenda; sin probar en un Mac real)
+
+> Hecho (ver CLAUDE.md, viñeta «Pestaña Agenda»): pestaña propia con 14 días, entregas del aula y recordatorios, y la explicación del permiso. Pendiente: tareas de Todoist (hay un tipo `tarea` previsto), navegar por semanas si 14 días no alcanza, probar EventKit y `Brote.app` en un Mac.
+
+> **Pendiente de diseño (pedido del usuario, 4-10-2026):** la pestaña Agenda hoy es funcional pero casi sin diseño (lista simple por día). Darle un diseño propio, estilo Notion: por ejemplo vista de semana o mes, tarjetas por tipo, y un estado vacío con más gracia. En la prueba real (`tauri dev`) se quedó en «Armando tu agenda…» porque corría el puente anterior, sin el pedido `agenda-estado`; tras reiniciar la app cargó bien y mostró un evento real de todo el día (confirmado por el usuario, 4-10-2026). Falta que un fallo del pedido muestre un mensaje en vez de quedarse cargando.
 
 Hoy el calendario es solo una tarjeta de Inicio. La idea: una **sección en la isla** para ver eventos y todo lo
 relacionado con el orden del usuario (clases, entregas, recordatorios, tareas), con un estilo parecido a Notion.

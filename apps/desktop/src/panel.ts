@@ -51,6 +51,7 @@ import {
   type Visual,
 } from "./agente/especialistas";
 import type { Lugar } from "./mascotas";
+import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
 
@@ -93,6 +94,12 @@ interface Opciones {
   alMostrarDescarga?: (ruta: string) => void;
   alControlarMusica?: (accion: AccionMusica) => void;
   alDecidirPermisoClaude?: (id: string, decision: "allow" | "deny") => void;
+  /** La pestaña Agenda pide sus datos al abrirse y cuando cambian las fuentes. */
+  alPedirAgenda?: () => void;
+  /** Los botones de la explicación de Agenda: Configurar Brote o los ajustes de Privacidad de macOS. */
+  alAccionAgenda?: (accion: "configurar" | "privacidad-calendarios") => void;
+  /** Estamos en `tauri dev`: el permiso de Calendarios es de la Terminal, no de Brote. */
+  desarrollo?: boolean;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
@@ -222,6 +229,9 @@ export class Panel {
   // Plata
   private readonly plata: HTMLDivElement;
   private estadoPlata: EstadoPlata | null = null;
+  // Agenda
+  private readonly agenda: HTMLDivElement;
+  private estadoAgenda: EstadoAgenda | null = null;
 
   // Equipo
   private readonly metricas: HTMLDivElement;
@@ -261,6 +271,7 @@ export class Panel {
     const pestanas: [Pestana, NombreIcono, string][] = [
       ["brote", "brote", "Brote"],
       ["plata", "plata", "Plata"],
+      ["agenda", "calendario", "Agenda"],
       ["claude", "codigo", "Claude"],
       ["equipo", "equipo", "Equipo"],
     ];
@@ -305,6 +316,9 @@ export class Panel {
     this.tarjetasTemporizador = crear("div", "grupo-tarjetas");
     this.tarjetaCalendario = crear("div", "tarjeta calendario");
     this.tarjetaCalendario.hidden = true;
+    this.tarjetaCalendario.addEventListener("click", () => {
+      if (!this.botonesPestana.get("agenda")!.hidden) this.elegir("agenda");
+    });
     this.tarjetaAula = crear("div", "tarjeta aula");
     this.tarjetaAula.hidden = true;
 
@@ -434,7 +448,13 @@ export class Panel {
     sinPlata.textContent = "Sumando tus gastos…";
     this.plata.append(sinPlata);
 
-    this.vistas.set("brote", inicio).set("plata", this.plata).set("claude", codigo).set("equipo", equipo);
+    // --- Agenda ---
+    this.agenda = crear("div", "vista vista-agenda");
+    const sinAgenda = crear("p", "vacia-texto");
+    sinAgenda.textContent = "Armando tu agenda…";
+    this.agenda.append(sinAgenda);
+
+    this.vistas.set("brote", inicio).set("plata", this.plata).set("agenda", this.agenda).set("claude", codigo).set("equipo", equipo);
 
     // --- Campo de texto (en todas las pestañas) ---
     const formulario = crear("form", "formulario");
@@ -461,7 +481,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, codigo, equipo, this.vistaTodos, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, codigo, equipo, this.vistaTodos, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -506,6 +526,7 @@ export class Panel {
       b.setAttribute("aria-pressed", String(nombre === pestana));
     }
     if (pestana === "brote") this.respuestaSinVer = false;
+    if (pestana === "agenda") this.opciones.alPedirAgenda?.();
     if (this.visible) this.novedades.marcarVistasDe(pestana);
     this.actualizarPuntos();
   }
@@ -616,6 +637,82 @@ export class Panel {
       this.tarjetaCalendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
     }
     this.actualizarInicio();
+  }
+
+  /** ¿Se está viendo la agenda? (main la refresca cuando cambia el calendario, el aula o los temporizadores). */
+  get agendaAbierta(): boolean {
+    return this.visible && this.pestana === "agenda";
+  }
+
+  /**
+   * La pestaña Agenda: los próximos 14 días por día, con una barra de color por tipo (evento, entrega,
+   * recordatorio); lo que ya pasó se atenúa y lo que pasa ahora se resalta. Sin nada, explica por qué
+   * (sin calendario, sin permiso, modo desarrollo). Se repinta cada minuto.
+   */
+  mostrarAgenda(estado: EstadoAgenda | null = this.estadoAgenda): void {
+    this.estadoAgenda = estado;
+    if (!estado) return;
+    const ahora = Date.now();
+    const partes: HTMLElement[] = [];
+    const cabecera = crear("div", "agenda-cabecera");
+    const titulo = crear("span", "agenda-titulo");
+    titulo.textContent = "Próximos 14 días";
+    cabecera.append(titulo);
+    if (estado.fuentes.calendario) {
+      const nuevo = boton("pildora", "+ Evento");
+      nuevo.title = "Escribe «agenda …» en el campo";
+      nuevo.addEventListener("click", () => {
+        this.entrada.value = "agenda ";
+        this.actualizarBotonEnviar();
+        this.entrada.focus();
+      });
+      cabecera.append(nuevo);
+    }
+    partes.push(cabecera);
+
+    for (const dia of estado.dias) {
+      const bloque = crear("div", "agenda-dia");
+      const nombre = crear("div", "agenda-dia-titulo");
+      nombre.textContent = tituloDelDia(dia.diaMs, ahora);
+      bloque.append(nombre);
+      for (const item of dia.items) {
+        const fila = crear("div", `agenda-fila ${item.tipo} ${estadoDelItem(item, ahora)}`);
+        const horaEl = crear("span", "agenda-hora");
+        horaEl.textContent = horaDelItem(item);
+        const barra = crear("span", "agenda-barra");
+        const texto = crear("span", "agenda-texto");
+        const tituloItem = crear("span", "agenda-item-titulo");
+        tituloItem.textContent = item.titulo;
+        texto.append(tituloItem);
+        if (item.detalle) {
+          const detalle = crear("span", "agenda-detalle");
+          detalle.textContent = item.detalle;
+          texto.append(detalle);
+        }
+        fila.title = [horaDelItem(item), item.titulo, item.detalle].filter(Boolean).join(" · ");
+        fila.append(horaEl, barra, texto);
+        bloque.append(fila);
+      }
+      partes.push(bloque);
+    }
+
+    if (estado.dias.length === 0) {
+      const e = explicarAgenda(estado, { desarrollo: this.opciones.desarrollo === true });
+      const caja = crear("div", "tarjeta agenda-explicacion");
+      const t = crear("div", "tarjeta-titulo");
+      t.textContent = e.titulo;
+      const d = crear("p", "vacia-texto");
+      d.textContent = e.texto;
+      caja.append(t, d);
+      if (e.boton) {
+        const accion = e.boton.accion;
+        const b = boton("boton boton-fila", e.boton.texto);
+        b.addEventListener("click", () => this.opciones.alAccionAgenda?.(accion));
+        caja.append(b);
+      }
+      partes.push(caja);
+    }
+    this.agenda.replaceChildren(...partes);
   }
 
   /** La próxima entrega del aula (Canvas o Moodle) y cuánto falta; o por qué no se pudo leer. */
@@ -1492,6 +1589,8 @@ export class Panel {
     this.codigoVacio.hidden = sinSesiones || this.hayActividadClaude;
     this.botonesPestana.get("equipo")!.hidden = !this.funciones.activas.equipo;
     this.botonesPestana.get("plata")!.hidden = !this.funciones.activas.gastos;
+    const { calendario, aula, temporizadores } = this.funciones.activas;
+    this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }
 
@@ -1582,6 +1681,7 @@ export class Panel {
     const pendiente: Record<Pestana, boolean> = {
       brote: brotePendiente || nuevos.has("brote"),
       plata: nuevos.has("plata"),
+      agenda: nuevos.has("agenda"),
       claude: this.hayPermisoClaude || nuevos.has("claude"),
       equipo: nuevos.has("equipo"),
     };

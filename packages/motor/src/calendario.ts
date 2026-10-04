@@ -186,9 +186,12 @@ export async function descargarIcal(url: string, tiempoMs = 20_000): Promise<str
   }
 }
 
-/** La ventana que se lee: desde el comienzo de hoy, tres días (cubre "mañana" y las próximas 24 h). */
+/** Cuántos días se leen: lo que muestra la pestaña Agenda (las frases y el MCP filtran solos por hora). */
+export const DIAS_VENTANA = 14;
+
+/** La ventana que se lee: desde el comienzo de hoy, `DIAS_VENTANA` días. */
 export function ventana(ahoraMs: number): { desde: number; hasta: number } {
-  return { desde: inicioDelDia(ahoraMs), hasta: inicioDelDia(ahoraMs, 3) };
+  return { desde: inicioDelDia(ahoraMs), hasta: inicioDelDia(ahoraMs, DIAS_VENTANA) };
 }
 
 export function eventosDeIcal(texto: string, ahoraMs: number): EventoCalendario[] {

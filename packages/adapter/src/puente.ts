@@ -49,6 +49,8 @@
 //   aviso { "tipo": "calendario", "proximo": { titulo, lugar, inicioMs, finMs } | null, "etiqueta": "Cálculo en 25 min" }
 //   aviso { "tipo": "calendario-aviso", "texto": "📅 En 10 min: Cálculo…" }
 //   pedido { "tipo": "calendario-estado" }   → "datos": { proximo, etiqueta }
+//   pedido { "tipo": "agenda-estado" }       → "datos": { dias, fuentes } (la pestaña Agenda: 14 días de eventos,
+//                                               entregas del aula y recordatorios; `fuentes` dice qué hay conectado)
 //
 // Modo programador (sesiones de Claude Code del usuario, por sus hooks; servidor-hooks.ts):
 //   aviso { "tipo": "programador", "sesiones": [...], "permisos": [{ id, proyecto, titulo, detalle }] }   cuando cambian
@@ -135,6 +137,8 @@ import {
   leerEventoHook,
   AvisadorCalendario,
   AvisadorEntregas,
+  DIAS_VENTANA,
+  armarAgenda,
   describirErrorAula,
   leerAula,
   aplicarPedidoSecretos,
@@ -511,6 +515,33 @@ function estadoCalendario(): { proximo: EventoCalendario | null; etiqueta: strin
   const ahora = Date.now();
   const proximo = proximoEvento(eventosCalendario(), ahora);
   return { proximo, etiqueta: proximo ? etiquetaProximo(proximo, ahora) : null };
+}
+/** La pestaña Agenda: lo de las funciones prendidas, 14 días, y qué fuentes hay (para explicar lo que falta). */
+async function estadoAgenda() {
+  if (activa("calendario")) await leerCalendarios();
+  if (activa("aula")) await leerAulaSiToca();
+  const ahora = Date.now();
+  const dias = armarAgenda(
+    {
+      eventos: activa("calendario") ? eventosCalendario() : [],
+      entregas: activa("aula") && entregasAula ? pendientes(entregasAula, ahora) : [],
+      temporizadores: activa("temporizadores") ? temporizadores.activos() : [],
+    },
+    ahora,
+    DIAS_VENTANA,
+  );
+  return {
+    dias,
+    fuentes: {
+      calendario: activa("calendario"),
+      aula: activa("aula") && (entregasAula !== null || errorAula !== null),
+      temporizadores: activa("temporizadores"),
+      // Calendario del Mac: null = no se ha leído (o no es Mac); 3 = acceso completo; 0 = sin decidir.
+      permisoMac: process.platform === "darwin" ? permisoCalendarioMac : null,
+      mac: process.platform === "darwin",
+      ical: icsTexto !== null,
+    },
+  };
 }
 async function revisarCalendario(): Promise<void> {
   await leerCalendarios();
@@ -1395,6 +1426,8 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: estadoCalendario() };
     case "aula-estado":
       return { datos: estadoAula() };
+    case "agenda-estado":
+      return { datos: await estadoAgenda() };
     case "programador-estado":
       return { datos: estadoProgramador() };
     case "uso-estado":

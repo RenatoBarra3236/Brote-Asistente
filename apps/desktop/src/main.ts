@@ -17,6 +17,7 @@ import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
+import type { EstadoAgenda } from "./agente/agenda";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
 import { debeNotificarAlSistema, leerNotificaciones } from "./agente/notificaciones";
@@ -100,6 +101,8 @@ async function iniciar(): Promise<void> {
   const isla = diseno.modo === "notch" ? new Isla(diseno.notchAncho, diseno.notchAlto) : null;
   // Las mascotas del equipo de Brote: salen de detrás de Brote y van a su lugar del escenario.
   const mascotas = new Mascotas();
+  // La pestaña Agenda pide sus datos al puente (se asigna más abajo, donde el puente existe).
+  let pedirAgenda = () => {};
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
@@ -113,6 +116,11 @@ async function iniciar(): Promise<void> {
               .then((estado) => panel.mostrarUso(estado))
               .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
+          alPedirAgenda: () => pedirAgenda(),
+          alAccionAgenda: (accion: "configurar" | "privacidad-calendarios") =>
+            void (accion === "configurar" ? invoke("abrir_configuracion") : invoke("abrir_enlace", { cual: accion })).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
+          // En la vista previa del navegador (siempre "dev"), `?produccion=1` muestra los textos de la app empaquetada.
+          desarrollo: import.meta.env.DEV && !new URLSearchParams(location.search).has("produccion"),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
           alAnotarFrecuente: (monto: number, descripcion: string) =>
@@ -161,7 +169,14 @@ async function iniciar(): Promise<void> {
     // Qué funciones están prendidas y qué tarjetas se ven (Configurar Brote → Funciones).
     puente.alCambiarFunciones((config) => panel.mostrarFunciones(config));
     void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then((config) => panel.mostrarFunciones(config), () => {});
-    puente.alCambiarTemporizadores(mostrarTemporizadores);
+    pedirAgenda = () => void puente.consultar<EstadoAgenda>({ tipo: "agenda-estado" }).then((estado) => panel.mostrarAgenda(estado), () => {});
+    puente.alCambiarTemporizadores((lista) => {
+      mostrarTemporizadores(lista);
+      if (panel.agendaAbierta) pedirAgenda();
+    });
+    // La agenda se repinta cada minuto (lo que ya pasó se atenúa) y se vuelve a pedir cada 5 min.
+    setInterval(() => (panel.agendaAbierta ? pedirAgenda() : undefined), 5 * 60_000);
+    setInterval(() => panel.mostrarAgenda(), 60_000);
     puente.alAvisoTemporizador((texto) => {
       avisar("temporizador", texto);
       personaje.tocar();
@@ -200,7 +215,10 @@ async function iniciar(): Promise<void> {
       proximoEvento = estado.proximo;
       panel.mostrarCalendario(estado);
     };
-    puente.alCambiarCalendario(cambiarCalendario);
+    puente.alCambiarCalendario((estado) => {
+      cambiarCalendario(estado);
+      if (panel.agendaAbierta) pedirAgenda();
+    });
     void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
     puente.alAvisoCalendario((texto) => {
       avisar("calendario", texto);
@@ -214,7 +232,10 @@ async function iniciar(): Promise<void> {
       aula = estado;
       panel.mostrarAula(estado);
     };
-    puente.alCambiarAula(cambiarAula);
+    puente.alCambiarAula((estado) => {
+      cambiarAula(estado);
+      if (panel.agendaAbierta) pedirAgenda();
+    });
     void puente.consultar<EstadoAula>({ tipo: "aula-estado" }).then(cambiarAula, () => {});
     setInterval(() => aula && panel.mostrarAula(aula), 60_000);
     puente.alAvisoAula((texto) => {

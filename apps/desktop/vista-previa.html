@@ -17,6 +17,10 @@
   ?pestana=plata (la pestaña Plata con tres meses de gastos de ejemplo) y ?plata=sin|pasado|nuevo (sin
   presupuesto, pasado del presupuesto con el aviso del 100 %, o sin ningún gasto todavía). Los botones de un
   toque y "mi presupuesto es…" funcionan.
+  ?pestana=agenda (la pestaña Agenda con eventos, entregas y un recordatorio de ejemplo) y
+  ?agenda=sin|permiso|negado|dev|ical|apagada (sin nada en 14 días, Mac sin decidir el permiso, permiso negado,
+  modo desarrollo, otro sistema sin iCal, o la función apagada). La vista previa siempre cree estar en
+  desarrollo: agrega &produccion=1 para ver los textos de la app empaquetada (permiso, negado).
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -211,6 +215,8 @@
                   return responder(id, { datos: datos.calendario });
                 case "aula-estado":
                   return responder(id, { datos: datos.aula });
+                case "agenda-estado":
+                  return responder(id, { datos: window.__agenda() });
                 case "programador-estado":
                   return responder(id, { datos: datos.programador });
                 case "uso-estado":
@@ -369,11 +375,49 @@
       }
       // Una descarga en curso, como llegaría del puente.
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
+      // Agenda de ejemplo: ?agenda=sin|permiso|negado|dev|ical|apagada (sin parámetro: con datos).
+      window.__agenda = () => {
+        const modo = parametros.get("agenda");
+        const hoy = new Date();
+        const en = (dias, h = 0, min = 0) => new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias, h, min).getTime();
+        const base = { calendario: true, aula: true, temporizadores: true, permisoMac: 3, mac: true, ical: false };
+        const sinNada = { dias: [], fuentes: { ...base, aula: false, temporizadores: false } };
+        if (modo === "sin") return sinNada;
+        if (modo === "permiso" || modo === "dev") return { dias: [], fuentes: { ...sinNada.fuentes, permisoMac: modo === "dev" ? 2 : 0 } };
+        if (modo === "negado") return { dias: [], fuentes: { ...sinNada.fuentes, permisoMac: 2 } };
+        if (modo === "ical") return { dias: [], fuentes: { ...sinNada.fuentes, mac: false, permisoMac: null } };
+        if (modo === "apagada") return { dias: [], fuentes: { ...sinNada.fuentes, calendario: false } };
+        const ev = (titulo, lugar, a, b, todoElDia = false) => ({ tipo: "evento", titulo, detalle: lugar, inicioMs: a, finMs: b, todoElDia, url: null });
+        return {
+          fuentes: base,
+          dias: [
+            {
+              diaMs: en(0),
+              items: [
+                ev("Álgebra lineal", "Sala A-3", en(0, 8, 30), en(0, 9, 50)),
+                ev("Cálculo II", "Sala B-12", new Date().getTime() - 20 * 60_000, new Date().getTime() + 70 * 60_000),
+                { tipo: "recordatorio", titulo: "sacar la ropa", detalle: null, inicioMs: new Date().getTime() + 12 * 60_000, finMs: new Date().getTime() + 12 * 60_000, todoElDia: false, url: null },
+                { tipo: "entrega", titulo: "Laboratorio 4: péndulo", detalle: "Física I", inicioMs: en(0, 23, 59), finMs: en(0, 23, 59), todoElDia: false, url: null },
+              ],
+            },
+            { diaMs: en(1), items: [ev("Feriado", null, en(1), en(2), true), ev("Taller de escritura", "Biblioteca", en(1, 15), en(1, 16, 30))] },
+            {
+              diaMs: en(4),
+              items: [
+                ev("Física I", "Sala C-7", en(4, 10), en(4, 11, 20)),
+                { tipo: "entrega", titulo: "Informe de química", detalle: "Química general", inicioMs: en(4, 18), finMs: en(4, 18), todoElDia: false, url: null },
+              ],
+            },
+            { diaMs: en(9), items: [ev("Prueba solemne de Cálculo", "Auditorio", en(9, 9), en(9, 11))] },
+          ],
+        };
+      };
+
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.
       const pestana = parametros.get("pestana");
       if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
-          const titulos = { brote: "Brote", plata: "Plata", claude: "Claude", equipo: "Equipo" };
+          const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", claude: "Claude", equipo: "Equipo" };
           if (pestana === "chat" || parametros.has("permiso") || parametros.has("delegar")) {
             const entrada = document.querySelector(".entrada");
             entrada.value = parametros.has("delegar") ? "Pídele al equipo que me ayude a estudiar la fotosíntesis" : "¿cuánto llevo esta semana?";

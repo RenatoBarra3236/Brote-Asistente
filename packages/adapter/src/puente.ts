@@ -222,6 +222,7 @@ import {
 } from "./conexion.ts";
 import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
 import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
+import { limpiarRegistros } from "./limpiar-registros.ts";
 import { migrarFunciones } from "./migrar-funciones.ts";
 import { consultarPlan } from "./consulta-plan.ts";
 import { esDeMemoria } from "./permisos.ts";
@@ -1478,6 +1479,14 @@ async function atender(pedido: any): Promise<Extra> {
 }
 
 quitarClaveDeApi();
+
+// El registro del Gateway acumula respuestas de los agentes; se limpia al partir y cada hora (ver limpiar-registros.ts).
+function limpiarRegistrosDelGateway(): void {
+  const quitadas = limpiarRegistros();
+  if (quitadas > 0) registrar(`registros: quité ${quitadas} líneas de texto suelto del registro del Gateway`);
+}
+limpiarRegistrosDelGateway();
+setInterval(limpiarRegistrosDelGateway, 3_600_000).unref();
 
 const entrada = createInterface({ input: process.stdin });
 entrada.on("line", (linea) => {

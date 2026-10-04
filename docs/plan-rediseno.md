@@ -132,7 +132,7 @@ propuesta "¿Aprendo esto?"). Lo demás es una **notificación discreta con la i
 - En el modo flotante (ya no es el de Windows, que usa la misma isla; solo con `ASISTENTE_MODO=flotante`) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
   sin desplegar el panel.
 
-## 6. Privacidad y protección de datos (revisión del 4-10-2026; puntos 1, 4, 5, 6 y 7 (borrador) hechos; faltan 2, 3 y 8)
+## 6. Privacidad y protección de datos (revisión del 4-10-2026; puntos 1, 3, 4, 5, 6, 7 (borrador) y 8 hechos; falta 2)
 
 Revisado en el Mac del usuario: todos los archivos con datos o secretos están en 600 (`~/.asistente-prototipo/*`,
 `openclaw.json`, las bases de OpenClaw, `gateway.log`), FileVault activado, telemetría de funciones de OpenClaw
@@ -145,8 +145,12 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
 2. **Secretos en texto plano** (permisos 600 + cifrado del disco): `openclaw.json` (token del Gateway, clave de
    búsqueda de Gemini…), `aula.json` (token), `calendario.json` (dirección iCal secreta). Llevarlos al Llavero de
    macOS / Administrador de credenciales de Windows donde se pueda (los de OpenClaw dependen de OpenClaw).
-3. **Registros con conversaciones**: `~/Library/Logs/openclaw/gateway.log` guarda fragmentos de lo conversado
-   (28 líneas el 4-10-2026). Limpieza periódica o bajar lo que registra OpenClaw.
+3. **Registros con conversaciones** (hecho el 4-10-2026, `packages/adapter/src/limpiar-registros.ts`): `~/Library/Logs/openclaw/gateway.log`
+   es la salida estándar del Gateway bajo launchd. Sus líneas con marca de tiempo o `[subsistema]` son técnicas; lo que
+   traía conversación eran 63 líneas sueltas (sin marca) con respuestas completas de un especialista, que el logger de
+   OpenClaw no controla (`logging.level`/`redactPatterns` no sirven). El puente quita esas líneas al partir y cada hora,
+   solo en `gateway.log` y `gateway.log.N`, en el mismo archivo (mismo inodo, permisos 600). El registro propio de OpenClaw
+   (`/tmp/openclaw/openclaw-AAAA-MM-DD.log`) se borra solo a las 24 h.
 4. **Datos en claro en el disco** (hecho el 4-10-2026): docs/instalar.md, en "Tus datos", recomienda FileVault
    (Mac) o BitLocker (Windows) y explica por qué (gastos, memoria y transcripciones quedan en claro).
 5. **"Olvidar" va a la Papelera** (hecho el 4-10-2026, `src/agente/papelera.ts`): en macOS la ventana dice que el dato sigue en la
@@ -155,7 +159,7 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
 7. **Antes de repartir Brote a más gente** (borrador hecho el 4-10-2026 en `docs/privacidad.md`, falta que alguien lo revise): una política de privacidad corta (qué se guarda, dónde, a qué empresas
    va —Anthropic, Google, conectores— y cómo borrarlo), partiendo de "Tus datos" en docs/instalar.md. En Chile
    rige la Ley 21.719 desde diciembre de 2026 (orientación, no asesoría legal).
-8. **Avisar si Brote quedó con una clave de API** (anotado el 4-10-2026; pendiente): hoy `entorno::sin_clave_api` solo evita
+8. **Avisar si Brote quedó con una clave de API** (hecho el 4-10-2026, `packages/adapter/src/clave-api.ts`; el paso "Claude Code con tu cuenta" de Configurar Brote queda en "falta" con el aviso): hoy `entorno::sin_clave_api` solo evita
    heredarla desde la terminal; no impide que alguien la ponga a propósito (`env` de `~/.claude/settings.json`, la
    config de OpenClaw o el plist del Gateway). Configurar Brote → Estado debe avisar cuando `claude auth status`
    (sin la variable) muestre `apiKeySource`, o cuando `settings.json` tenga `ANTHROPIC_API_KEY` en `env`. Solo leer

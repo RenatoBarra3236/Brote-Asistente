@@ -18,7 +18,7 @@ diciembre de 2026).
 | Qué funciones tienes prendidas, el equipo y sus avisos | `~/.asistente-prototipo/` |
 | Token del aula, dirección secreta de tu calendario iCal, conectores conectados | `~/.asistente-prototipo/` (aula.json, calendario.json, conectores.json), solo legibles por tu usuario |
 | Lo que Brote recuerda de ti y las conversaciones guardadas | la carpeta de OpenClaw (`~/.openclaw/workspace`) y la memoria de Claude Code de ese espacio |
-| Registros de OpenClaw | `~/Library/Logs/openclaw/gateway.log` (Mac). **Pueden incluir fragmentos de lo conversado**; hoy no se limpian solos |
+| Registros de OpenClaw | `~/Library/Logs/openclaw/gateway.log` (Mac). Pueden caer respuestas de los agentes; Brote las quita solo (al abrir y cada hora). El registro propio de OpenClaw está en `/tmp/openclaw` y se borra a las 24 h |
 | Tus sesiones de Claude Code (si prendes el modo programador o el uso del plan) | `~/.claude/projects`: Brote lee solo la cantidad de tokens y el modelo, no el texto |
 
 Los archivos de Brote quedan con permisos de solo tu usuario, pero **no están cifrados**: por eso recomendamos
@@ -26,7 +26,7 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 
 ## A qué empresas llega algo
 
-- **Anthropic**: tus conversaciones con Brote, por tu cuenta de Claude (Claude Code). Brote nunca lee tus credenciales de Claude ni usa tu clave de API.
+- **Anthropic**: tus conversaciones con Brote, por tu cuenta de Claude (Claude Code). Brote nunca lee tus credenciales de Claude ni usa tu clave de API (y Configurar Brote te avisa si queda una puesta en `settings.json`, en OpenClaw o en el servicio del Gateway).
 - **Google (Gemini), OpenAI (ChatGPT), xAI (Grok)**: solo si prendes el equipo de Brote y eliges esa IA para un especialista. Con Gemini en el plan gratis, Google puede usar lo que recibe para mejorar sus productos y revisarlo con personas, por eso Brote le pasa **solo el tema en general**, nunca tu nombre, gastos, memoria, calendario ni aula.
 - **Conectores** (Todoist, Notion, GitHub, Canva o uno propio): solo si los conectas. Cada uno ve lo que le pidas a Brote que haga con él.
 - **Tu campus** (Canvas o Moodle) y **tu calendario de Google** (dirección iCal): Brote los consulta directo, solo para leer, y no pasan por ningún tercero de Brote.
@@ -40,6 +40,4 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 
 ## Lo que todavía no está resuelto
 
-- Los registros de OpenClaw (`gateway.log`) guardan fragmentos de conversaciones sin limpieza automática.
 - Algunos secretos (token del aula, dirección iCal, claves de OpenClaw) están en archivos de texto con permisos de tu usuario, no en el Llavero de macOS ni en el Administrador de credenciales de Windows.
-- Si alguien configura a propósito una clave de API de Claude, Brote hoy no avisa que dejó de usar el plan.

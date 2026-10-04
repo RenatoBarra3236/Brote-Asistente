@@ -76,6 +76,7 @@ import {
 import { agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks, rutaSettings } from "./hooks-claude.ts";
 import { borrarOriginal, guardarOriginal, instalarStatusline, leerOriginalGuardada, quitarStatusline, statuslineInstalada } from "./statusline-claude.ts";
 import { CONFIG_OPENCLAW, agenteDeBrote } from "./rutas.ts";
+import { avisoClaveApi, fuentesDeClaveApi } from "./clave-api.ts";
 import {
   argsAgregar,
   argsBorrar,
@@ -304,18 +305,19 @@ export function revisar(): Paso[] {
   });
 
   const { claude, sesion, suscripcion, conPlan } = estadoClaude();
+  const aviso = avisoClaveApi(fuentesDeClaveApi(), sesion?.apiKeySource);
   pasos.push({
     id: "claude",
     titulo: "Claude Code con tu cuenta",
-    estado: conPlan && !sesion?.apiKeySource ? "ok" : "falta",
+    estado: conPlan && !aviso ? "ok" : "falta",
     detalle: !claude
       ? "No está instalado. Brote usa Claude Code con tu suscripción Pro o Max."
       : !sesion?.loggedIn
         ? "Instalado, pero sin sesión iniciada."
         : !conPlan
           ? `Tu cuenta no tiene un plan Pro o Max (${suscripcion || "sin plan"}).`
-          : sesion?.apiKeySource
-            ? `Claude Code está usando una API key (${sesion.apiKeySource}) en vez de tu cuenta. Quita ANTHROPIC_API_KEY de tu configuración.`
+          : aviso
+            ? aviso
             : `Sesión iniciada (${suscripcion}).`,
     accion: !claude
       ? { tipo: "enlace", etiqueta: "Instalar Claude Code", enlace: "claude-code" }
@@ -991,7 +993,7 @@ export function equipo() {
     requisito: c.requisito,
     aviso: c.aviso ?? null,
     modelos: c.modelos,
-    conectada: c.id === "claude" ? claude.conPlan && !claude.sesion?.apiKeySource : conectadas.has(c.id),
+    conectada: c.id === "claude" ? claude.conPlan && !claude.sesion?.apiKeySource && fuentesDeClaveApi().length === 0 : conectadas.has(c.id),
   }));
   const miembros = miembrosDeConfig(config);
   const especialistas = ESPECIALISTAS.map((e) => {

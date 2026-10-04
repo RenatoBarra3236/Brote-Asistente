@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --dir packages/motor test)",
+      "Bash(pnpm --dir packages/adapter test)",
+      "Bash(pnpm --dir apps/desktop test)",
+      "Bash(pnpm --dir apps/desktop tipos)",
+      "Bash(pnpm --dir apps/desktop empaquetar-puente)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Read(~/.openclaw/openclaw.json)",
+      "Read(~/.claude/.credentials.json)"
+    ]
+  }
+}

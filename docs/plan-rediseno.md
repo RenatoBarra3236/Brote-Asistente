@@ -113,6 +113,48 @@ agente por MCP, que es otro proceso) y manda el aviso `plata`.
 
 Ideas para después: metas de ahorro, gastos compartidos con amigos, exportar el mes a CSV.
 
+## 5. Avisos sin abrir la isla (pedido del usuario, 4-10-2026; pendiente)
+
+Hoy casi todo aviso **abre la isla** (`panel.mostrarAviso` + `retener` la mantienen abierta unos segundos):
+que terminó o falló una sesión de Claude Code, una descarga lista, un temporizador, el calendario 10 min
+antes, una entrega del aula, el plan o el presupuesto al 80 %, lo que hizo el equipo… Es molesto: tapa lo que
+el usuario está haciendo.
+
+Regla nueva: **solo se abre sola cuando hace falta una decisión** (un permiso de Brote o de Claude Code, una
+propuesta "¿Aprendo esto?"). Lo demás es una **notificación discreta con la isla cerrada**:
+- En el ala izquierda, unos segundos: un ícono y un texto corto ("✅ Claude terminó · tarea-rust",
+  "📥 apunte.pdf listo", "📅 Cálculo en 10 min"), con una animación suave (un pulso o brillo alrededor del notch
+  del color del aviso) y Brote dando un saltito en el ala derecha. Nada de agrandar la isla.
+- Un **punto** en el ala o en la pestaña que corresponde, hasta que el usuario abra la isla.
+- Al abrirla (con el cursor), los avisos de los últimos minutos quedan en una lista corta de "Novedades".
+- Opcional (configurable): además, una notificación del sistema (Centro de notificaciones de macOS /
+  notificaciones de Windows) para lo importante, como el calendario.
+- En el modo flotante (Windows) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
+  sin desplegar el panel.
+
+## 6. Privacidad y protección de datos (revisión del 4-10-2026; pendiente)
+
+Revisado en el Mac del usuario: todos los archivos con datos o secretos están en 600 (`~/.asistente-prototipo/*`,
+`openclaw.json`, las bases de OpenClaw, `gateway.log`), FileVault activado, telemetría de funciones de OpenClaw
+apagada (queda solo el aviso diario de versión), Gateway y servidor del puente solo en 127.0.0.1 con token,
+nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, en orden:
+
+1. **Gemini gratis y datos personales**: en el plan gratis Google puede usar lo que recibe para entrenar y
+   revisarlo con personas. La skill `delegar` debe prohibir pasarle a especialistas de planes gratuitos datos
+   personales (nombre, gastos, memoria, calendario, aula); la tarjeta de Gemini en Cuentas de IA lo avisa más claro.
+2. **Secretos en texto plano** (permisos 600 + cifrado del disco): `openclaw.json` (token del Gateway, clave de
+   búsqueda de Gemini…), `aula.json` (token), `calendario.json` (dirección iCal secreta). Llevarlos al Llavero de
+   macOS / Administrador de credenciales de Windows donde se pueda (los de OpenClaw dependen de OpenClaw).
+3. **Registros con conversaciones**: `~/Library/Logs/openclaw/gateway.log` guarda fragmentos de lo conversado
+   (28 líneas el 4-10-2026). Limpieza periódica o bajar lo que registra OpenClaw.
+4. **Datos en claro en el disco** (gastos, memoria, transcripciones): docs/instalar.md debe recomendar FileVault
+   (Mac) o BitLocker (Windows) a quien pruebe Brote.
+5. **"Olvidar" va a la Papelera**: la interfaz debe decir que el dato sigue ahí hasta vaciarla.
+6. **Respaldos que se acumulan**: `~/.claude/settings.json.brote-*.bak`; dejar solo los últimos.
+7. **Antes de repartir Brote a más gente**: una política de privacidad corta (qué se guarda, dónde, a qué empresas
+   va —Anthropic, Google, conectores— y cómo borrarlo), partiendo de "Tus datos" en docs/instalar.md. En Chile
+   rige la Ley 21.719 desde diciembre de 2026 (orientación, no asesoría legal).
+
 ## Orden sugerido
 
 1. Unir a `main` la rama de conectores (`claude/inspiring-clarke-qq0ulj`, con los arreglos de la revisión).

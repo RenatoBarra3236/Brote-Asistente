@@ -67,6 +67,14 @@ export class Agente {
     this.transporte.detener?.(c.runId ?? undefined).catch(() => {});
   }
 
+  /**
+   * Una señal de vida que no llega como evento de Brote: por ejemplo, un especialista del equipo
+   * trabajando mientras Brote espera su resultado.
+   */
+  senal(): void {
+    this.ultimaSenal = this.reloj();
+  }
+
   /** Corta el turno en curso. La isla se libera al tiro, aunque OpenClaw tarde en confirmarlo. */
   async detener(): Promise<void> {
     const c = this.actual;

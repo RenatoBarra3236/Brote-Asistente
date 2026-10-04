@@ -9,7 +9,9 @@
   ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite|app|reiniciado
   (el uso del plan de Claude en la pestaña Claude: con datos, sin datos todavía, sin la statusline instalada,
   cerca del límite con el aviso de 95 %, leído de la app de Claude con la hora estimada, o con la sesión de
-  5 h ya reiniciada). El botón ↻ simula la consulta mínima.
+  5 h ya reiniciada). El botón ↻ simula la consulta mínima. ?delegar=1 (Brote le pasa la pregunta a su
+  equipo: 🔎 Investigador con Gemini y 📚 Tutor con Claude trabajando, y después la respuesta) ·
+  ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo).
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -131,7 +133,7 @@
       const lista = (nombre) => (parametros.get(nombre) ?? "").split(",").filter(Boolean);
       const funciones = {
         activas: Object.fromEntries(
-          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local"].map((id) => [id, !lista("apagadas").includes(id)]),
+          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local", "especialistas"].map((id) => [id, !lista("apagadas").includes(id)]),
         ),
         tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: lista("ocultas") },
       };
@@ -220,7 +222,38 @@
                 case "equipo-estado":
                   t += 1;
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
+                case "especialistas-estado":
+                  return responder(id, { datos: { lista: [], frenado: parametros.has("freno") } });
                 case "enviar":
+                  // Con ?delegar=1 Brote le pasa la pregunta a su equipo (así lo dejaría el puente).
+                  if (parametros.has("delegar")) {
+                    responder(id, {});
+                    const marco = (stream, data) => emitir({ tipo: "evento", marco: { event: "agent", payload: { runId: "r2", stream, data } } });
+                    const ahora = Date.now();
+                    const miembro = (extra) => ({
+                      sesion: `agent:${extra.id}:subagent:1`,
+                      tarea: null,
+                      herramienta: null,
+                      estado: "trabajando",
+                      inicioMs: ahora,
+                      finMs: null,
+                      ...extra,
+                    });
+                    const investigador = { id: "investigador", nombre: "Investigador", emoji: "🔎", ia: "Gemini", color: "#5b8def", tarea: "Busca fuentes sobre la fotosíntesis para primer año" };
+                    const tutor = { id: "tutor", nombre: "Tutor", emoji: "📚", ia: "Claude", color: "#d9825b", tarea: "Arma 3 preguntas de práctica sobre la fotosíntesis" };
+                    setTimeout(() => marco("lifecycle", { phase: "start" }), 200);
+                    setTimeout(() => marco("tool", { phase: "start", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1", args: {} }), 400);
+                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, herramienta: "web_search" }), miembro(tutor)] }), 700);
+                    setTimeout(() => marco("tool", { phase: "result", name: "mcp__openclaw__sessions_spawn", toolCallId: "t1" }), 900);
+                    setTimeout(() => marco("tool", { phase: "start", name: "mcp__openclaw__subagents", toolCallId: "t2", args: {} }), 1000);
+                    const final = parametros.get("pestana") === "chat" ? 9000 : 60_000;
+                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, estado: "termino", finMs: Date.now() }), miembro({ ...tutor, herramienta: "Write" })] }), 4000);
+                    setTimeout(() => emitir({ tipo: "especialistas", lista: [miembro({ ...investigador, estado: "termino", finMs: Date.now() }), miembro({ ...tutor, estado: "termino", finMs: Date.now() })] }), final - 1500);
+                    setTimeout(() => marco("tool", { phase: "result", name: "mcp__openclaw__subagents", toolCallId: "t2" }), final - 1200);
+                    setTimeout(() => marco("assistant", { text: "¡Listo! El Investigador encontró que la fotosíntesis es cuando las plantas usan la luz para convertir agua y CO₂ en glucosa y oxígeno (Khan Academy), y el Tutor te dejó 3 preguntas para practicar 🌱" }), final - 800);
+                    setTimeout(() => marco("lifecycle", { phase: "end" }), final);
+                    return;
+                  }
                   // Con ?permiso=1 la pregunta va al "agente", que pide permiso para un comando.
                   if (parametros.has("permiso")) {
                     responder(id, {});
@@ -266,16 +299,18 @@
 
       // Cerca del límite: el aviso de 95 % de la sesión, como llegaría del puente.
       if (cerca) setTimeout(() => emitir({ tipo: "plan-aviso", texto: "Llevas 95 % de tu sesión de Claude; se reinicia a las 18:40" }), 2500);
+      // El freno por plan, como lo avisaría el puente.
+      if (parametros.has("freno")) setTimeout(() => emitir({ tipo: "especialistas-aviso", texto: "Tu plan semanal de Claude va alto (87 %): no le paso tareas a los especialistas con Claude hasta que baje. Los de otras IA siguen." }), 2000);
       // Una descarga en curso, como llegaría del puente.
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.
       const pestana = parametros.get("pestana");
-      if (pestana || parametros.has("permiso")) {
+      if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
           const titulos = { brote: "Brote", claude: "Claude", equipo: "Equipo" };
-          if (pestana === "chat" || parametros.has("permiso")) {
+          if (pestana === "chat" || parametros.has("permiso") || parametros.has("delegar")) {
             const entrada = document.querySelector(".entrada");
-            entrada.value = "¿cuánto llevo esta semana?";
+            entrada.value = parametros.has("delegar") ? "Pídele al equipo que me ayude a estudiar la fotosíntesis" : "¿cuánto llevo esta semana?";
             entrada.dispatchEvent(new Event("input"));
             document.querySelector(".formulario").requestSubmit();
           } else document.querySelector(`.pestana[title="${titulos[pestana]}"]`)?.click();

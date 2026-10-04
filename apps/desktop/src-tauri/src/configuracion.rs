@@ -87,6 +87,11 @@ fn comando_terminal(cual: &str, brew: Option<&'static str>) -> Option<String> {
     match cual {
         "login-claude" => Some("claude".into()),
         "memoria-local" => Some("openclaw configure --section model".into()),
+        // Cuentas de IA del equipo de Brote: inicios de sesión en el navegador y, si pegarla en la
+        // ventana falla, la clave de Gemini en la terminal (OpenClaw la pide sin mostrarla).
+        "login-chatgpt" => Some("openclaw models auth login --provider openai".into()),
+        "login-grok" => Some("openclaw models auth login --provider xai --method oauth".into()),
+        "clave-gemini" => Some("openclaw models auth paste-api-key --provider google".into()),
         "brew-node" => brew.filter(|ruta| RUTAS_BREW.contains(ruta)).map(|ruta| format!("{ruta} install node")),
         _ => None,
     }
@@ -114,6 +119,7 @@ pub fn abrir_enlace(cual: String) -> Result<(), String> {
     let direccion = match cual.as_str() {
         "node" => "https://nodejs.org/es/download",
         "claude-code" => "https://claude.com/claude-code",
+        "aistudio-clave" => "https://aistudio.google.com/apikey",
         "privacidad-calendarios" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
         "privacidad-descargas" => "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
         "privacidad-automatizacion" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
@@ -260,6 +266,8 @@ mod pruebas {
         assert!(comando_terminal("brew-node", None).is_none());
         assert!(comando_terminal("brew-node", Some("/tmp/brew")).is_none());
         assert!(comando_terminal("rm -rf ~", None).is_none());
+        assert_eq!(comando_terminal("login-grok", None).unwrap(), "openclaw models auth login --provider xai --method oauth");
+        assert_eq!(comando_terminal("clave-gemini", None).unwrap(), "openclaw models auth paste-api-key --provider google");
         let sin = serde_json::from_str::<serde_json::Value>(&sin_node(false)).unwrap();
         assert_eq!(sin[0]["accion"]["enlace"], "node");
         let con = serde_json::from_str::<serde_json::Value>(&sin_node(true)).unwrap();

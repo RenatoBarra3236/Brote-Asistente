@@ -59,6 +59,8 @@ Lo que apagas no corre por detrás, no pide permisos y no aparece en la isla. Si
 |---|---|
 | **Estado** | "Brote está funcionando" o qué le falta, con **Reparar** |
 | **Funciones** | Prender y apagar funciones, y elegir qué tarjetas ves en la isla y en qué orden |
+| **Cuentas de IA** | Claude (la de siempre), Gemini, ChatGPT y Grok, para el equipo de Brote (abajo) |
+| **Equipo** | Los especialistas en los que Brote puede delegar y con qué IA trabaja cada uno (abajo) |
 | **Conectores** | Todoist, Notion, GitHub, Canva (abajo) |
 | **Aula** | Canvas o Moodle (abajo) |
 | **Permisos** | Cada permiso de macOS: qué función lo usa, si está dado y cuáles ya no hacen falta (con cómo quitarlos) |
@@ -155,6 +157,18 @@ En 🌱 → **Configurar Brote** → **Conectores**, cada servicio tiene su bot�
 
 Al conectar, la IA lo puede usar desde tu próximo mensaje. Lo que solo lee (buscar tareas, leer una página, ver un diseño) no te pregunta; todo lo que cambia algo sí, y la isla te dice qué servicio y qué acción. **Desconectar** cierra la sesión y lo quita.
 
+### El equipo de Brote (opcional)
+
+Brote puede pasarle tareas largas a **especialistas**: 📚 Tutor (explica y arma ejercicios), 🔎 Investigador (busca fuentes y cita), ✍️ Redactor (borradores), ✅ Revisor (corrige contra una rúbrica) y 🗓️ Planificador (planes de estudio). Tú sigues hablando solo con Brote: él decide cuándo vale la pena delegar, espera y te cuenta el resultado. Mientras trabajan, la isla muestra "Mi equipo está trabajando" con cada especialista, la IA que usa y qué está haciendo.
+
+1. Prende **Equipo de Brote** en **Configurar Brote → Funciones**.
+2. En **Cuentas de IA**, conecta las IA que quieras usar además de Claude:
+   - **Gemini:** pulsa **Crear una clave en AI Studio**, copia la clave gratis, pégala en Brote, marca la casilla y pulsa **Guardar clave** (o **Pegarla en la terminal**). Ojo: en el plan gratis, Google puede usar lo que le mandes para entrenar sus modelos; no le pases datos privados.
+   - **ChatGPT** (tu cuenta de ChatGPT) y **Grok** (SuperGrok o X Premium): **Iniciar sesión en la terminal** abre una terminal con el comando de OpenClaw para entrar en el navegador. Están marcados **sin probar**: cuéntanos si te funcionan.
+3. En **Equipo**, prende a cada especialista, elige con qué IA trabaja (solo aparecen las que conectaste) y, si quieres, cambia sus instrucciones. Apagar uno lo saca del equipo (su carpeta va a la Papelera).
+
+Los especialistas con Claude gastan de tu plan, como Brote. Si tu plan semanal de Claude pasa el 85 %, Brote deja de pasarles tareas (los de otras IA siguen) y te avisa; vuelven cuando baja del 80 %. Para esto necesita la función **Uso del plan de Claude**.
+
 ### Permisos que tu Mac te va a preguntar
 
 macOS pide permiso la primera vez que Brote necesita algo, y solo para las funciones que tengas prendidas. Puedes cambiarlos después en **Configuración del Sistema → Privacidad y seguridad**; **Configurar Brote → Permisos** te dice cuáles usa cada función y cuáles ya no hacen falta.
@@ -175,7 +189,8 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 
 - Tus gastos, lo que Brote recuerda y las frases que aprendió quedan **solo en tu computador** (`~/.asistente-prototipo` y la carpeta de OpenClaw).
 - Los nombres de tus descargas, lo que escuchas y tus eventos no salen del computador; solo los ve la IA si le preguntas por ellos. La dirección iCal se usa solo para descargar tu calendario directo de Google.
-- Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code.
+- Las conversaciones con la IA pasan por tu cuenta de Claude, como cuando usas Claude Code. Si prendes el equipo, lo que Brote le pasa a un especialista va a la IA que elegiste para él (Gemini, ChatGPT o Grok, con tu cuenta o tu clave).
+- Las claves y sesiones de Gemini, ChatGPT y Grok las guarda OpenClaw en tu computador; Brote nunca las muestra ni las anota en registros.
 - El uso del plan (el % y tus tokens) se calcula en tu computador con lo que Claude Code ya guarda ahí; Brote no se conecta a tu cuenta para eso.
 - El token del aula y la autorización de cada conector quedan solo en tu computador; Brote nunca los muestra ni los anota en registros. Un conector ve lo que le pidas a Brote que haga con él.
 - En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
@@ -192,6 +207,8 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 | La pestaña Claude dice "Pulsa ↻ para revisar tu plan" | Pulsa **↻**: Brote le pregunta a Claude Code tus límites (necesita Claude Code con tu sesión iniciada). Para que se mantenga al día sin consultas, deja abierta la app de Claude con su ícono en la barra de menú o usa Claude Code con la statusline de Brote |
 | La tarjeta de Entregas dice "No pude leer tu aula" | El token venció o lo borraste: crea uno nuevo y pégalo en **Configurar Brote → Aula** |
 | Un conector dice "Guardado, pero falta autorizar" | Pulsa **Autorizar** (o pega un token nuevo, en GitHub) |
+| Brote no delega en un especialista | Revisa que **Equipo de Brote** esté prendido en Funciones y el especialista en **Equipo**; si usa Claude y tu semana pasó el 85 %, espera a que baje del 80 % |
+| Un especialista con Gemini falla | La clave venció o se borró: créala de nuevo en AI Studio y pégala en **Cuentas de IA** |
 | No sé cómo cerrarlo | 🌱 → **Salir de Brote** |
 
 ## Desinstalar

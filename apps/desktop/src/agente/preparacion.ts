@@ -36,7 +36,7 @@ export const TRABAJANDO_EN: Record<string, string> = {
   gateway: "Encendiendo OpenClaw…",
   identidad: "Dándole su personalidad a Brote…",
   permisos: "Ajustando los permisos…",
-  skill: "Enseñándole tus gastos…",
+  skill: "Enseñándole tus gastos y a delegar en su equipo…",
   mcp: "Conectando tus gastos…",
   memoria: "Ajustando la memoria…",
 };

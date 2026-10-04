@@ -61,6 +61,9 @@ function configuracionDe(funcion: Funcion, activa: boolean): HTMLElement[] {
     case "memoria-local":
       partes.push(subpaso(paso("memoria-local"), "Modelo de búsqueda"));
       break;
+    case "especialistas":
+      partes.push(crear("p", "nota", "Elige quiénes están en el equipo y con qué IA trabaja cada uno en Configurar Brote → Equipo (y conecta Gemini, ChatGPT o Grok en Cuentas de IA)."));
+      break;
   }
   return partes.filter((p): p is HTMLElement => p !== null);
 }

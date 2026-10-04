@@ -1092,3 +1092,59 @@ button.tarjeta:hover {
 .uso-precios-titulo:hover {
   color: var(--texto);
 }
+
+/* ---------- El equipo de Brote trabajando (pestaña Brote) ---------- */
+
+.equipo-trabajando {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 2px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+}
+.equipo-titulo {
+  color: var(--texto-3);
+  font: 10px var(--sans);
+  letter-spacing: 0.02em;
+}
+.fila-equipo {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  font: 12px var(--sans);
+  color: var(--texto);
+}
+.equipo-nombre {
+  white-space: nowrap;
+}
+.equipo-ia {
+  color: var(--texto-2);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.equipo-detalle {
+  overflow: hidden;
+  color: var(--texto-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.equipo-estado {
+  display: flex;
+  width: 14px;
+  justify-content: center;
+  color: var(--verde);
+}
+.equipo-estado svg {
+  width: 12px;
+  height: 12px;
+}
+.fila-equipo.fallo .equipo-estado {
+  color: var(--ambar);
+}
+.fila-equipo.termino .equipo-detalle {
+  color: var(--texto-3);
+}

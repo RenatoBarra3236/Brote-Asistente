@@ -85,6 +85,17 @@
 //     mientras corre la consulta). `refrescar` solo lo manda la isla con la pestaña Claude a la vista.
 //   pedido { "tipo": "plan-actualizar" }   → "datos": lo mismo, después de revisar la app y correr la consulta mínima
 //
+// Equipo de Brote (función "especialistas"; docs/plan-multiagente.md): Brote delega en especialistas
+// (agentes de OpenClaw, cada uno con su IA). Los eventos de sus sesiones hijas y el turno del anuncio
+// "[Inter-session message]" no se reenvían como si fueran de Brote (delegacion.ts): con ellos se arma
+// la lista del equipo trabajando. Las respuestas NO_REPLY no se muestran.
+//   aviso { "tipo": "especialistas", "lista": [{ sesion, id, nombre, emoji, ia, color, tarea, herramienta, estado, inicioMs, finMs }] }
+//   aviso { "tipo": "especialistas-aviso", "texto": "Tu plan semanal de Claude va alto…" }   una vez por cambio del freno
+//   pedido { "tipo": "especialistas-estado" }   → "datos": { lista, frenado }
+// Freno por plan: sobre 85 % de la semana, Brote deja de delegar en los especialistas con Claude
+// (salen de `allowAgents`; los de otras IA siguen) y vuelven bajo 80 % (equipo.json guarda el estado).
+// Las solicitudes de permiso de un especialista siempre llegan a la isla: nunca se permiten solas.
+//
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
 // `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
@@ -173,9 +184,15 @@ import {
   vigente,
   type LecturaPlan,
   type ResumenUso,
+  fichaEspecialista,
+  frenoPlan,
+  miembrosDeConfig,
+  permitidosEquipo,
+  textoFreno,
 } from "@asistente/motor";
 import {
   type Decision,
+  AGENTE,
   SESION,
   crearCliente,
   detenerTurno,
@@ -194,6 +211,8 @@ import { leerSettings } from "./hooks-claude.ts";
 import { statuslineInstalada } from "./statusline-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
+import { FiltroDelegacion } from "./delegacion.ts";
+import { argsDelegacion, correrOpenclaw, delegacionActual, guardarFreno, leerFreno } from "./equipo.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
 const IGNORADOS = new Set(["tick", "health", "presence", "heartbeat", "cron"]);
@@ -676,6 +695,7 @@ function aplicarLecturaPlan(nueva: LecturaPlan): void {
     registrar("plan: aviso");
     avisar({ tipo: "plan-aviso", texto });
   }
+  revisarFreno();
   planGuardado = { lectura, avisados: limpiarAvisados(avisadosPlan, ahora) };
   try {
     guardarPlan(planGuardado);
@@ -683,6 +703,58 @@ function aplicarLecturaPlan(nueva: LecturaPlan): void {
     registrar(`plan: no pude guardar plan.json (${mensajeDe(error)})`);
   }
   avisarUso();
+}
+
+// Equipo de Brote: quién está trabajando (lo arma el filtro con los eventos de las sesiones hijas) y
+// el freno por plan, que saca de `allowAgents` a los especialistas con Claude sobre el 85 % semanal.
+let frenado = leerFreno();
+let saliendo = false;
+const filtroDelegacion = new FiltroDelegacion(SESION, (agente) => fichaEspecialista(agente, leerConfigOpenclaw()));
+let sincronizando: Promise<void> = Promise.resolve();
+
+function leerConfigOpenclaw(): unknown {
+  try {
+    return JSON.parse(readFileSync(CONFIG_OPENCLAW, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function avisarEquipo(): void {
+  avisar({ tipo: "especialistas", lista: filtroDelegacion.equipo() });
+}
+
+/**
+ * Deja `allowAgents` de Brote como corresponde: los especialistas que existen (menos los de Claude con
+ * el freno puesto), o nadie si el equipo está apagado. Uno a la vez; solo llama a OpenClaw si cambia.
+ */
+function sincronizarDelegacion(): Promise<void> {
+  sincronizando = sincronizando.then(async () => {
+    const config = leerConfigOpenclaw();
+    if (!config) return;
+    const permitidos = activa("especialistas") ? permitidosEquipo(miembrosDeConfig(config), frenado) : [];
+    if (JSON.stringify(permitidos) === JSON.stringify(delegacionActual(config, AGENTE))) return;
+    const { codigo, salida } = await correrOpenclaw(argsDelegacion(AGENTE, permitidos));
+    registrar(codigo === 0 ? `equipo: Brote delega en [${permitidos.join(", ")}]` : `equipo: no pude actualizar allowAgents (${salida.trim().split("\n").pop()})`);
+  });
+  return sincronizando;
+}
+
+/** Revisa el freno por plan con la semana de Claude; si cambia, lo guarda, avisa una vez y actualiza la delegación. */
+function revisarFreno(): void {
+  if (!activa("especialistas")) return;
+  const semana = vigente(lecturaPlan, Date.now())?.semana?.porcentaje ?? null;
+  const nuevo = frenoPlan(semana, frenado);
+  if (nuevo === frenado) return;
+  frenado = nuevo;
+  try {
+    guardarFreno(frenado);
+  } catch (error) {
+    registrar(`equipo: no pude guardar equipo.json (${mensajeDe(error)})`);
+  }
+  registrar(`equipo: freno por plan ${frenado ? "puesto" : "quitado"}`);
+  avisar({ tipo: "especialistas-aviso", texto: textoFreno(frenado, semana) });
+  void sincronizarDelegacion();
 }
 
 // Las otras dos fuentes del % del plan: el archivo de la app de Claude y la consulta mínima.
@@ -963,6 +1035,18 @@ const tareas = new TareasPorFuncion({
     void actualizarUso(true);
     return detenerUso;
   },
+  // Al prender el equipo: el freno con lo último del plan y la lista de Brote. Al apagarlo, Brote deja
+  // de delegar (no al cerrar la app: eso no es apagar la función).
+  especialistas: () => {
+    revisarFreno();
+    void sincronizarDelegacion();
+    avisarEquipo();
+    return () => {
+      if (saliendo) return;
+      void sincronizarDelegacion();
+      avisar({ tipo: "especialistas", lista: [] });
+    };
+  },
   programador: () => () => {
     for (const permiso of permisosClaude.values()) permiso.soltar({});
     sesionesClaude = new SesionesClaude();
@@ -1077,52 +1161,15 @@ const cliente = (() => {
           avisar({ tipo: "conexion", conectado: false, detalle: `No pude suscribirme a la sesión: ${mensajeDe(error)}` });
         }
       },
-      onEvent: (marco: any) => {
-        if (IGNORADOS.has(marco?.event)) return;
+      onEvent: (crudo: any) => {
+        if (IGNORADOS.has(crudo?.event)) return;
         // Tras un "/reset" la sesión cambia de id y las solicitudes de permiso dejan de llegar a
         // una suscripción vieja (sin nadie que responda, OpenClaw las deniega): hay que renovarla.
-        if (marco.event === "sessions.changed") renovarSuscripcion(cliente);
-        const reenviar = () =>
-          avisar({ tipo: "evento", marco: { event: marco.event, payload: marco.payload, seq: marco.seq } });
-        const aprobacion = marco.event === "session.approval" && marco.payload?.phase === "pending" ? marco.payload.approval : null;
-        const herramienta = aprobacion?.presentation?.toolName;
-        // Lo que anotó el agente llega en la solicitud de permiso y en el evento de la herramienta.
-        if (herramienta === "mcp__gastos__gastos_anotar") {
-          try {
-            recordarAnotacion(JSON.parse(aprobacion.presentation.detail));
-          } catch {
-            // Detalle sin JSON: queda el evento de la herramienta.
-          }
-        }
-        const datos = marco.payload?.data;
-        if (marco.event === "agent" && marco.payload?.stream === "tool" && datos?.phase === "start") {
-          if (String(datos.name ?? "").endsWith("gastos_anotar")) recordarAnotacion(datos.args);
-        }
-        if (aprobacion) anotarConector(aprobacion.presentation, herramienta);
-        if ((marco.event === "agent" && (marco.payload?.stream === "tool" || marco.payload?.stream === "item")) && datos?.phase === "start") {
-          anotarConector(datos, datos.name);
-        }
-        if (
-          (PERMITIDAS_SIN_PREGUNTAR.has(herramienta) ||
-            esDeMemoria(herramienta, aprobacion?.presentation?.detail) ||
-            esDeConectorSinPreguntar(herramienta)) &&
-          aprobacion.presentation.allowedDecisions?.includes("allow-once")
-        ) {
-          // La isla no ve la solicitud; si permitirla falla, se la muestra para que decida el usuario.
-          registrar(`permiso automático: ${herramienta}`);
-          resolverAprobacion(cliente, aprobacion.id, aprobacion.presentation.kind ?? "plugin", "allow-once").catch(
-            (error) => {
-              registrar(`no se pudo permitir ${herramienta}: ${mensajeDe(error)}`);
-              reenviar();
-            },
-          );
-          return;
-        }
-        reenviar();
-        if (marco.event === "agent" && marco.payload?.stream === "lifecycle" && marco.payload?.data?.phase === "end") {
-          aprenderDelTurno();
-          avisarPropuestas();
-        }
+        if (crudo.event === "sessions.changed") renovarSuscripcion(cliente);
+        // Las sesiones hijas del equipo y el turno del anuncio no son de Brote (delegacion.ts).
+        const { reenviar: marcos, equipo } = filtroDelegacion.procesar(crudo, Date.now());
+        if (equipo && activa("especialistas")) avisarEquipo();
+        for (const marco of marcos) alEventoDeBrote(marco);
       },
       onConnectError: (error: Error) => {
         conectado = false;
@@ -1147,6 +1194,56 @@ const cliente = (() => {
     return null;
   }
 })();
+
+/** Un evento de Brote (ya filtrado): permisos automáticos, aprender del turno y reenviarlo a la isla. */
+function alEventoDeBrote(marco: any): void {
+  const reenviar = () =>
+    avisar({ tipo: "evento", marco: { event: marco.event, payload: marco.payload, seq: marco.seq } });
+  const aprobacion = marco.event === "session.approval" && marco.payload?.phase === "pending" ? marco.payload.approval : null;
+  const herramienta = aprobacion?.presentation?.toolName;
+  // Lo que anotó el agente llega en la solicitud de permiso y en el evento de la herramienta.
+  if (herramienta === "mcp__gastos__gastos_anotar") {
+    try {
+      recordarAnotacion(JSON.parse(aprobacion.presentation.detail));
+    } catch {
+      // Detalle sin JSON: queda el evento de la herramienta.
+    }
+  }
+  const datos = marco.payload?.data;
+  if (marco.event === "agent" && marco.payload?.stream === "tool" && datos?.phase === "start") {
+    if (String(datos.name ?? "").endsWith("gastos_anotar")) recordarAnotacion(datos.args);
+  }
+  if (aprobacion) anotarConector(aprobacion.presentation, herramienta);
+  if ((marco.event === "agent" && (marco.payload?.stream === "tool" || marco.payload?.stream === "item")) && datos?.phase === "start") {
+    anotarConector(datos, datos.name);
+  }
+  // Lo que pide un especialista siempre pasa por la isla: lee páginas y archivos de afuera, y no debe
+  // escribir solo en la memoria de Brote ni en sus gastos.
+  const deEspecialista = Boolean(aprobacion?.presentation?.especialista);
+  if (
+    cliente &&
+    !deEspecialista &&
+    (PERMITIDAS_SIN_PREGUNTAR.has(herramienta) ||
+      esDeMemoria(herramienta, aprobacion?.presentation?.detail) ||
+      esDeConectorSinPreguntar(herramienta)) &&
+    aprobacion.presentation.allowedDecisions?.includes("allow-once")
+  ) {
+    // La isla no ve la solicitud; si permitirla falla, se la muestra para que decida el usuario.
+    registrar(`permiso automático: ${herramienta}`);
+    resolverAprobacion(cliente, aprobacion.id, aprobacion.presentation.kind ?? "plugin", "allow-once").catch(
+      (error) => {
+        registrar(`no se pudo permitir ${herramienta}: ${mensajeDe(error)}`);
+        reenviar();
+      },
+    );
+    return;
+  }
+  reenviar();
+  if (marco.event === "agent" && marco.payload?.stream === "lifecycle" && marco.payload?.data?.phase === "end") {
+    aprenderDelTurno();
+    avisarPropuestas();
+  }
+}
 
 /** Lo que se agrega a la respuesta: con `local`, el motor resolvió el pedido sin IA. */
 type Extra = { local?: { texto: string; intencion: string; datos?: unknown }; mensaje?: string; datos?: unknown };
@@ -1256,6 +1353,8 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: activa("temporizadores") ? temporizadores.activos() : [] };
     case "funciones-estado":
       return { datos: funciones };
+    case "especialistas-estado":
+      return { datos: { lista: activa("especialistas") ? filtroDelegacion.equipo() : [], frenado } };
     case "permisos-estado":
       return { datos: estadoPermisos() };
     case "conversacion-nueva":
@@ -1298,6 +1397,7 @@ entrada.on("line", (linea) => {
 });
 
 async function salir(): Promise<void> {
+  saliendo = true;
   tareas.detenerTodo();
   await cliente?.stopAndWait().catch(() => {});
   gastos.cerrar();

@@ -9,17 +9,45 @@
 //   node configurar.mjs conectar-propio <nombre> <url>   igual, para un servidor MCP agregado por URL
 //   node configurar.mjs conectar-token <id>              igual; el token llega en la primera línea de la entrada
 //   node configurar.mjs desconectar <id> → JSON { ok, detalle }
+//   node configurar.mjs equipo           → JSON { cuentas, especialistas, delegacion, frenado }: el equipo de Brote
+//   node configurar.mjs especialista <id> <modelo>   → JSON { ok, detalle }; las instrucciones llegan por la entrada
+//   node configurar.mjs especialista-quitar <id>     → JSON { ok, detalle }
+//   node configurar.mjs cuenta-clave <cuenta>        → JSON { ok, detalle }; la clave llega por la entrada
 //
 // Con `OPENCLAW_PROFILE=prueba` trabaja sobre un OpenClaw aislado (~/.openclaw-prueba), para
 // probar una instalación desde cero sin tocar la de verdad.
 
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { descargarIcal, describirErrorAula, eventosDeIcal, leerAula, leerCalendarioMacAhora, leerConfigAula, leerUrlIcal, pendientes } from "@asistente/motor";
+import {
+  ESPECIALISTAS,
+  IAS,
+  MAX_INSTRUCCIONES,
+  MODELOS_PERMITIDOS,
+  bloqueAgents,
+  conBloque,
+  cuentaDe,
+  descargarIcal,
+  describirErrorAula,
+  especialistaDe,
+  eventosDeIcal,
+  iaDeModelo,
+  instruccionesDeAgents,
+  leerAula,
+  leerCalendarioMacAhora,
+  leerConfigAula,
+  leerFunciones,
+  leerUrlIcal,
+  limpiarInstrucciones,
+  miembrosDeConfig,
+  nombreModeloIA,
+  pendientes,
+  permitidosEquipo,
+} from "@asistente/motor";
 import {
   ARGS_PROBAR,
   ARGS_RECARGAR,
@@ -41,7 +69,25 @@ import {
 } from "./conectores.ts";
 import { agregarHooks, comandoHook, escribirSettings, hooksInstalados, leerSettings, quitarHooks, rutaSettings } from "./hooks-claude.ts";
 import { borrarOriginal, guardarOriginal, instalarStatusline, leerOriginalGuardada, quitarStatusline, statuslineInstalada } from "./statusline-claude.ts";
-import { CONFIG_OPENCLAW } from "./rutas.ts";
+import { CONFIG_OPENCLAW, agenteDeBrote } from "./rutas.ts";
+import {
+  argsAgregar,
+  argsBorrar,
+  argsClave,
+  argsDelegacion,
+  argsIdentidad,
+  argsListaAuth,
+  argsModelo,
+  argsRuntimeClaude,
+  carpetaEspecialista,
+  claveValida,
+  cuentasConectadas,
+  delegacionActual,
+  leerFreno,
+  leerPerfiles,
+  sinClave,
+  type Perfil,
+} from "./equipo.ts";
 
 /** La versión de OpenClaw con la que se probó Brote (ver CLAUDE.md). */
 export const VERSION_OPENCLAW = "2026.9.7";
@@ -78,6 +124,9 @@ export interface Paso {
   quitar?: { paso: string; etiqueta: string };
 }
 
+/** Las skills que Brote le instala al agente (packages/motor/skill/<nombre>). */
+const SKILLS = ["gastos", "delegar"] as const;
+
 /** Dónde quedan los archivos que OpenClaw usa de Brote (el servidor de gastos), fuera de la app. */
 const CARPETA_APP = join(homedir(), ".asistente-prototipo", "app");
 
@@ -87,14 +136,14 @@ const CARPETA_APP = join(homedir(), ".asistente-prototipo", "app");
  * desarrollo, donde se registra el `.ts` del repo tal cual porque importa otros módulos).
  */
 type Copia = { origen: string | null; destino: string };
-function recursos(): { mcp: string[]; servidor: string; skill: string; plantillas: string; hook: Copia; statusline: Copia } {
+function recursos(): { mcp: string[]; servidor: string; skills: string; plantillas: string; hook: Copia; statusline: Copia } {
   const aqui = dirname(fileURLToPath(import.meta.url));
   if (existsSync(join(aqui, "mcp.mjs"))) {
     return {
       // El servidor y los módulos que Vite separó en archivos comunes (se copian todos).
       mcp: ["mcp.mjs", ...readdirSync(aqui).filter((n) => n.startsWith("comun-") && n.endsWith(".mjs"))].map((n) => join(aqui, n)),
       servidor: join(CARPETA_APP, "mcp.mjs"),
-      skill: join(aqui, "skill", "gastos"),
+      skills: join(aqui, "skill"),
       plantillas: join(aqui, "plantillas"),
       hook: { origen: join(aqui, "hook.mjs"), destino: join(CARPETA_APP, "hook.mjs") },
       statusline: { origen: join(aqui, "statusline.mjs"), destino: join(CARPETA_APP, "statusline.mjs") },
@@ -104,7 +153,7 @@ function recursos(): { mcp: string[]; servidor: string; skill: string; plantilla
   return {
     mcp: [],
     servidor: join(repo, "packages", "motor", "src", "mcp.ts"),
-    skill: join(repo, "packages", "motor", "skill", "gastos"),
+    skills: join(repo, "packages", "motor", "skill"),
     plantillas: join(repo, "packages", "adapter", "plantillas"),
     // En desarrollo se usa el .ts del repo tal cual (Node lo corre sin compilar).
     hook: { origen: null, destino: join(repo, "packages", "adapter", "src", "hook.ts") },
@@ -141,9 +190,10 @@ export function buscarPrograma(nombre: string): string | null {
  * `ANTHROPIC_API_KEY`: OpenClaw no la tiene, y Claude Code debe revisarse como lo verá OpenClaw (si
  * la clave viene de la configuración de Claude Code, igual se detecta).
  */
-function ejecutar(programa: string, args: string[], tiempoMs = 60_000): { codigo: number; salida: string; stdout: string } {
+function ejecutar(programa: string, args: string[], tiempoMs = 60_000, entrada?: string): { codigo: number; salida: string; stdout: string } {
   const resultado = spawnSync(programa, EN_WINDOWS ? args.map(citar) : args, {
     encoding: "utf8",
+    ...(entrada !== undefined ? { input: entrada } : {}),
     timeout: tiempoMs,
     shell: EN_WINDOWS,
     windowsHide: true,
@@ -170,10 +220,10 @@ function conPerfil(args: readonly string[]): string[] {
   return perfil ? ["--profile", perfil, ...args] : [...args];
 }
 
-function openclaw(args: readonly string[], tiempoMs?: number): { codigo: number; salida: string; stdout: string } {
+function openclaw(args: readonly string[], tiempoMs?: number, entrada?: string): { codigo: number; salida: string; stdout: string } {
   const programa = buscarPrograma("openclaw");
   if (!programa) return { codigo: 1, salida: "OpenClaw no está instalado", stdout: "" };
-  return ejecutar(programa, conPerfil(args), tiempoMs);
+  return ejecutar(programa, conPerfil(args), tiempoMs, entrada);
 }
 
 function leerConfig(): any {
@@ -184,14 +234,31 @@ function leerConfig(): any {
   }
 }
 
+/** Brote: el primer agente que no es un especialista del equipo. */
 function agente(config: any): { id: string; workspace: string } | null {
-  const entradas = Object.entries<any>(config?.agents?.entries ?? {});
-  if (entradas.length === 0) return null;
-  const [id, datos] = entradas[0];
+  const id = agenteDeBrote(config?.agents?.entries);
+  if (!id) return null;
+  const datos = config.agents.entries[id];
   return { id, workspace: datos?.workspace ?? config?.agents?.defaults?.workspace ?? join(dirname(CONFIG_OPENCLAW), "workspace") };
 }
 
 // ---------------------------------------------------------------- revisión
+
+/** Claude Code y la sesión con la cuenta del usuario (`claude auth status`; nunca lee credenciales). */
+function estadoClaude(): { claude: string | null; sesion: any; suscripcion: string; conPlan: boolean } {
+  const claude = buscarPrograma("claude");
+  let sesion: any = null;
+  if (claude) {
+    try {
+      sesion = JSON.parse(ejecutar(claude, ["auth", "status"]).stdout);
+    } catch {
+      sesion = null;
+    }
+  }
+  const suscripcion = String(sesion?.subscriptionType ?? "");
+  const conPlan = sesion?.loggedIn === true && /pro|max|team|enterprise/i.test(suscripcion);
+  return { claude, sesion, suscripcion, conPlan };
+}
 
 export function revisar(): Paso[] {
   const pasos: Paso[] = [];
@@ -224,17 +291,7 @@ export function revisar(): Paso[] {
         : { tipo: "automatica", etiqueta: versionOpenclaw ? `Cambiar a ${VERSION_OPENCLAW}` : "Instalar OpenClaw" },
   });
 
-  const claude = buscarPrograma("claude");
-  let sesion: any = null;
-  if (claude) {
-    try {
-      sesion = JSON.parse(ejecutar(claude, ["auth", "status"]).stdout);
-    } catch {
-      sesion = null;
-    }
-  }
-  const suscripcion = String(sesion?.subscriptionType ?? "");
-  const conPlan = sesion?.loggedIn === true && /pro|max|team|enterprise/i.test(suscripcion);
+  const { claude, sesion, suscripcion, conPlan } = estadoClaude();
   pasos.push({
     id: "claude",
     titulo: "Claude Code con tu cuenta",
@@ -312,13 +369,16 @@ export function revisar(): Paso[] {
     accion: prudente || !configurado ? undefined : { tipo: "automatica", etiqueta: "Pedir permiso siempre" },
   });
 
-  const conSkill = configurado && /\bgastos\b/.test(openclaw(["skills", "list"]).salida);
+  const skills = configurado ? openclaw(["skills", "list"]).salida : "";
+  const conSkill = SKILLS.every((nombre) => new RegExp(`\\b${nombre}\\b`).test(skills));
   pasos.push({
     id: "skill",
-    titulo: "Skill de gastos",
+    titulo: "Skills de Brote",
     estado: conSkill ? "ok" : "falta",
-    detalle: conSkill ? "El agente sabe cuándo usar tus gastos." : "Falta enseñarle al agente a usar tus gastos.",
-    accion: conSkill || !configurado ? undefined : { tipo: "automatica", etiqueta: "Instalar skill" },
+    detalle: conSkill
+      ? "El agente sabe cuándo usar tus gastos y cuándo pasarle una tarea a su equipo."
+      : "Falta enseñarle al agente a usar tus gastos y a delegar en su equipo.",
+    accion: conSkill || !configurado ? undefined : { tipo: "automatica", etiqueta: "Instalar skills" },
   });
 
   const servidor = config?.mcp?.servers?.gastos;
@@ -612,8 +672,10 @@ export function aplicar(id: string): string {
       exigir(openclaw(["exec-policy", "preset", "cautious"]), "No pude ajustar los permisos");
       return "Brote te pedirá permiso antes de ejecutar comandos.";
     case "skill":
-      exigir(openclaw(["skills", "install", recursos().skill, "--as", "gastos", "--force"]), "No pude instalar la skill");
-      return "Skill de gastos instalada.";
+      for (const nombre of SKILLS) {
+        exigir(openclaw(["skills", "install", join(recursos().skills, nombre), "--as", nombre, "--force"]), `No pude instalar la skill ${nombre}`);
+      }
+      return "Skills de gastos y de delegación instaladas.";
     case "mcp": {
       // Se copia fuera de la app para que la ruta registrada no cambie si la app se mueve.
       const { mcp, servidor } = recursos();
@@ -851,6 +913,161 @@ async function ordenConectar(orden: string, args: string[]): Promise<void> {
   return conectarOauth(nombre, url, nombre, entrada.cancelado);
 }
 
+// ---------------------------------------------------------------- equipo de Brote
+
+/** Los perfiles de modelos de OpenClaw: los compartidos y los de cada especialista (nunca las claves). */
+function perfilesDeModelos(config: any): Perfil[] {
+  const perfiles = leerPerfiles(openclaw(argsListaAuth()).stdout);
+  for (const { id } of miembrosDeConfig(config)) perfiles.push(...leerPerfiles(openclaw(argsListaAuth(id)).stdout));
+  return perfiles;
+}
+
+/** La carpeta de trabajo de un especialista según openclaw.json, o la que le daría Brote. */
+function workspaceDe(config: any, id: string): string {
+  const ruta = config?.agents?.entries?.[id]?.workspace;
+  return typeof ruta === "string" && ruta ? ruta : carpetaEspecialista(id, dirname(CONFIG_OPENCLAW));
+}
+
+/** Solo se escribe dentro de la carpeta de OpenClaw (nunca en una ruta cualquiera de la configuración). */
+function dentroDeOpenclaw(ruta: string): boolean {
+  const base = resolve(dirname(CONFIG_OPENCLAW));
+  const real = resolve(ruta);
+  return real.startsWith(base + sep);
+}
+
+/** El estado para Configurar Brote → Cuentas de IA y Equipo. */
+export function equipo() {
+  const config = leerConfig();
+  const brote = agente(config);
+  const conectadas = cuentasConectadas(config ? perfilesDeModelos(config) : []);
+  const claude = estadoClaude();
+  const cuentas = IAS.map((c) => ({
+    id: c.id,
+    nombre: c.nombre,
+    probado: c.probado,
+    conexion: c.conexion,
+    terminal: c.terminal ?? null,
+    requisito: c.requisito,
+    aviso: c.aviso ?? null,
+    modelos: c.modelos,
+    conectada: c.id === "claude" ? claude.conPlan && !claude.sesion?.apiKeySource : conectadas.has(c.id),
+  }));
+  const miembros = miembrosDeConfig(config);
+  const especialistas = ESPECIALISTAS.map((e) => {
+    const miembro = miembros.find((m) => m.id === e.id);
+    const workspace = workspaceDe(config, e.id);
+    const instrucciones = miembro ? instruccionesDeAgents(leerTexto(join(workspace, "AGENTS.md"))) : null;
+    return {
+      id: e.id,
+      nombre: e.nombre,
+      emoji: e.emoji,
+      rol: e.rol,
+      sugerido: e.sugerido,
+      activo: Boolean(miembro),
+      modelo: miembro?.modelo ?? null,
+      instrucciones: instrucciones ?? e.instrucciones,
+      // Los creados a mano antes (fase 0) quedaron dentro del workspace de Brote.
+      dentroDeBrote: Boolean(miembro && brote && resolve(workspace).startsWith(resolve(brote.workspace) + sep)),
+    };
+  });
+  return { cuentas, especialistas, delegacion: delegacionActual(config, brote?.id ?? null), frenado: leerFreno() };
+}
+
+/**
+ * Le da a Brote la lista de especialistas a los que puede delegar, si el equipo está prendido en
+ * Funciones (si no, la deja como está: el puente la quita al apagar la función). Con el freno por
+ * plan puesto, sin los que usan Claude.
+ */
+function sincronizarDelegacion(): string[] | null {
+  const config = leerConfig();
+  const brote = agente(config);
+  if (!brote || !leerFunciones().activas.especialistas) return null;
+  const permitidos = permitidosEquipo(miembrosDeConfig(config), leerFreno());
+  if (JSON.stringify(permitidos) === JSON.stringify(delegacionActual(config, brote.id))) return permitidos;
+  exigir(openclaw(argsDelegacion(brote.id, permitidos)), "No pude actualizar a quiénes delega Brote");
+  return permitidos;
+}
+
+/** Prende (o actualiza) un especialista: lo crea si no existe, le pone su IA y sus instrucciones. */
+export function guardarEspecialista(id: string, modelo: string, texto: string): string {
+  const especialista = especialistaDe(id);
+  if (!especialista) throw new Error("Especialista desconocido");
+  if (!MODELOS_PERMITIDOS.includes(modelo)) throw new Error("Ese modelo no está en la lista");
+  const instrucciones = limpiarInstrucciones(texto);
+  if (instrucciones === null) throw new Error(`Las instrucciones deben ser texto simple, de hasta ${MAX_INSTRUCCIONES} caracteres.`);
+  let config = leerConfig();
+  if (!agente(config)) throw new Error("Primero hay que configurar OpenClaw (Estado → Reparar)");
+  const ia = iaDeModelo(modelo)!;
+  if (ia.id !== "claude" && !cuentasConectadas(perfilesDeModelos(config)).has(ia.id)) {
+    throw new Error(`Primero conecta ${ia.nombre} en Cuentas de IA.`);
+  }
+  const existia = Boolean(config?.agents?.entries?.[id]);
+  if (!existia) {
+    const carpeta = carpetaEspecialista(id, dirname(CONFIG_OPENCLAW));
+    mkdirSync(carpeta, { recursive: true });
+    exigir(openclaw(argsAgregar(especialista, carpeta), 120_000), `No pude crear a ${especialista.nombre}`);
+    openclaw(argsIdentidad(especialista));
+  }
+  exigir(openclaw(argsModelo(id, modelo)), `No pude elegir la IA de ${especialista.nombre}`);
+  config = leerConfig();
+  if (ia.id === "claude" && config?.agents?.defaults?.models?.[modelo]?.agentRuntime?.id !== "claude-cli") {
+    exigir(openclaw(argsRuntimeClaude(modelo)), "No pude conectar ese modelo con Claude Code");
+  }
+  const workspace = workspaceDe(config, id);
+  if (!dentroDeOpenclaw(workspace)) throw new Error(`La carpeta de ${especialista.nombre} está fuera de OpenClaw: no la toco.`);
+  mkdirSync(workspace, { recursive: true });
+  const agentsMd = join(workspace, "AGENTS.md");
+  writeFileSync(agentsMd, conBloque(leerTexto(agentsMd), bloqueAgents(especialista, instrucciones)));
+  sincronizarDelegacion();
+  return `${especialista.emoji} ${especialista.nombre} ${existia ? "quedó actualizado" : "se unió al equipo"} (${nombreModeloIA(modelo)}).`;
+}
+
+/** Apaga un especialista: lo borra de OpenClaw (su carpeta va a la Papelera) y Brote deja de delegarle. */
+export function quitarEspecialista(id: string): string {
+  const especialista = especialistaDe(id);
+  if (!especialista) throw new Error("Especialista desconocido");
+  const config = leerConfig();
+  if (!config?.agents?.entries?.[id]) return `${especialista.nombre} no estaba en el equipo.`;
+  // Primero se le quita a Brote, para que nunca quede una delegación a un agente que ya no existe.
+  const brote = agente(config);
+  if (brote) {
+    const quedan = delegacionActual(config, brote.id).filter((otro) => otro !== id);
+    if (quedan.length !== delegacionActual(config, brote.id).length) exigir(openclaw(argsDelegacion(brote.id, quedan)), "No pude actualizar a quiénes delega Brote");
+  }
+  exigir(openclaw(argsBorrar(id), 120_000), `No pude sacar a ${especialista.nombre}`);
+  sincronizarDelegacion();
+  return `${especialista.emoji} ${especialista.nombre} salió del equipo. Su carpeta quedó en la Papelera.`;
+}
+
+/**
+ * Guarda la clave de una cuenta de IA (hoy, Gemini) en OpenClaw: en la configuración compartida (la
+ * heredan los especialistas que no tienen la suya) y en cada especialista que ya usa esa IA. La clave
+ * llega por la entrada estándar y nunca se muestra ni se registra.
+ */
+export function guardarClave(cuenta: string, clave: string): string {
+  const ia = cuentaDe(cuenta);
+  if (!ia || ia.conexion !== "clave") throw new Error("Esa cuenta no se conecta con una clave");
+  if (!claveValida(clave)) throw new Error("Esa clave no parece válida: cópiala completa desde AI Studio.");
+  const config = leerConfig();
+  if (!agente(config)) throw new Error("Primero hay que configurar OpenClaw (Estado → Reparar)");
+  const destinos: (string | undefined)[] = [undefined, ...miembrosDeConfig(config).filter((m) => iaDeModelo(m.modelo)?.id === ia.id).map((m) => m.id)];
+  for (const destino of destinos) {
+    const resultado = openclaw(argsClave(ia.proveedor, destino), 60_000, `${clave}\n`);
+    if (resultado.codigo !== 0) throw new Error(`No pude guardar la clave: ${sinClave(ultimas(resultado.salida), clave)}`);
+  }
+  if (!cuentasConectadas(perfilesDeModelos(leerConfig())).has(ia.id)) {
+    throw new Error(`OpenClaw no muestra la clave de ${ia.nombre}. Prueba con «Pegarla en la terminal».`);
+  }
+  return `${ia.nombre} quedó conectado. ${ia.aviso ?? ""}`.trim();
+}
+
+/** Lee toda la entrada (las instrucciones o la clave) hasta que se cierre. */
+async function leerEntrada(): Promise<string> {
+  const partes: Buffer[] = [];
+  for await (const parte of process.stdin) partes.push(parte as Buffer);
+  return Buffer.concat(partes).toString("utf8");
+}
+
 // ---------------------------------------------------------------- línea de comandos
 
 /** Pasos que no tocan la configuración de OpenClaw: no hace falta reiniciarlo. */
@@ -865,6 +1082,10 @@ if (import.meta.main) {
   }
   try {
     if (orden === "conectores") respuesta = conectores();
+    else if (orden === "equipo") respuesta = equipo();
+    else if (orden === "especialista" && paso && resto[0]) respuesta = { ok: true, detalle: guardarEspecialista(paso, resto[0], await leerEntrada()) };
+    else if (orden === "especialista-quitar" && paso) respuesta = { ok: true, detalle: quitarEspecialista(paso) };
+    else if (orden === "cuenta-clave" && paso) respuesta = { ok: true, detalle: guardarClave(paso, (await leerEntrada()).trim()) };
     else if (orden === "desconectar" && paso) respuesta = { ok: true, detalle: desconectar(paso) };
     else if (orden === "revisar") respuesta = [...revisar(), ...(await revisarOpcionales())];
     else if (orden === "rapido") respuesta = rapido();

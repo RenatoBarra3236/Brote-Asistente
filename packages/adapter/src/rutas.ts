@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { IDS_ESPECIALISTAS } from "@asistente/motor";
 
 /**
  * La carpeta de OpenClaw. Respeta sus perfiles (`OPENCLAW_PROFILE=prueba` → `~/.openclaw-prueba`),
@@ -27,8 +28,16 @@ function leerConfig(): any {
 const config = leerConfig();
 const entradas: Record<string, any> = config?.agents?.entries ?? {};
 
-/** El agente del personaje: `OPENCLAW_AGENT`, o el primero configurado, o "main". */
-export const AGENTE: string = process.env.OPENCLAW_AGENT ?? Object.keys(entradas)[0] ?? "main";
+/**
+ * El id de Brote entre los agentes configurados: el primero que no es un especialista del equipo
+ * (`openclaw agents add` los agrega a la misma lista).
+ */
+export function agenteDeBrote(entries: Record<string, unknown> | null | undefined): string | null {
+  return Object.keys(entries ?? {}).find((id) => !(IDS_ESPECIALISTAS as readonly string[]).includes(id)) ?? null;
+}
+
+/** El agente del personaje: `OPENCLAW_AGENT`, o el primero configurado que no es del equipo, o "main". */
+export const AGENTE: string = process.env.OPENCLAW_AGENT ?? agenteDeBrote(entradas) ?? "main";
 
 /** El workspace del agente, donde OpenClaw guarda su memoria (memory/, MEMORY.md, USER.md). */
 export const WORKSPACE: string =

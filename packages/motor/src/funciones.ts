@@ -18,6 +18,7 @@ export const IDS_FUNCIONES = [
   "programador",
   "uso-del-plan",
   "memoria-local",
+  "especialistas",
 ] as const;
 export type IdFuncion = (typeof IDS_FUNCIONES)[number];
 
@@ -102,6 +103,15 @@ export const FUNCIONES: readonly Funcion[] = [
     id: "memoria-local",
     nombre: "Búsqueda por significado",
     descripcion: "Brote encuentra mejor lo que recuerda. Descarga un modelo de ~0,3 GB y funciona sin internet.",
+    permiso: null,
+    tarjeta: null,
+  },
+  {
+    // "equipo" ya es "Reacciones al computador": por eso este id es otro.
+    id: "especialistas",
+    nombre: "Equipo de Brote",
+    descripcion:
+      "Brote le pasa tareas a especialistas (Tutor, Investigador…), cada uno con la IA que conectes: Claude, Gemini, ChatGPT o Grok. Tú sigues hablando solo con Brote.",
     permiso: null,
     tarjeta: null,
   },

@@ -10,7 +10,8 @@
     ?escenario=roto     ya se usaba Brote, pero OpenClaw está apagado: Estado ofrece "Reparar"
     ?escenario=permiso  todo listo, pero la música no tiene el permiso de Automatización, el Calendario del
                         Mac está negado y las descargas están apagadas (su permiso "ya no hace falta")
-    ?seccion=estado|funciones|conectores|aula|permisos|memoria · ?paso=2|3 (asistente) ·
+    ?seccion=estado|funciones|cuentas|equipo|conectores|aula|permisos|memoria · ?paso=2|3 (asistente) ·
+    ?freno=1 (el plan semanal pasó el 85 %: el Equipo lo avisa) ·
     ?plataforma=windows (sin permisos de macOS)
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
@@ -52,7 +53,7 @@
             ? null
             : JSON.stringify({
                 version: 1,
-                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false },
+                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false, especialistas: escenario === "listo" },
                 tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: [] },
               }),
       };
@@ -207,6 +208,31 @@
         propios: [],
       };
 
+      // ---- El equipo de Brote (Cuentas de IA y Equipo), como lo manda `configurar equipo`.
+      const MODELOS = {
+        claude: [{ ref: "anthropic/claude-sonnet-5-5", nombre: "Claude Sonnet 5.5" }, { ref: "anthropic/claude-haiku-4-5", nombre: "Claude Haiku 4.5 (más liviano)" }],
+        gemini: [{ ref: "google/gemini-3.5-flash", nombre: "Gemini 3.5 Flash" }, { ref: "google/gemini-3-flash-preview", nombre: "Gemini 3 Flash (vista previa)" }],
+        chatgpt: [{ ref: "openai/gpt-6-astra", nombre: "GPT-6 Astra" }, { ref: "openai/gpt-5.4-mini", nombre: "GPT-5.4 mini (más liviano)" }],
+        grok: [{ ref: "xai/grok-4.7", nombre: "Grok 4.7" }],
+      };
+      const equipo = {
+        cuentas: [
+          { id: "claude", nombre: "Claude", probado: true, conexion: "claude-code", terminal: null, requisito: "Claude Code con tu cuenta Pro o Max (la misma de Brote).", aviso: "Cada especialista con Claude gasta de tu plan, como Brote.", modelos: MODELOS.claude, conectada: escenario !== "nuevo" },
+          { id: "gemini", nombre: "Gemini", probado: true, conexion: "clave", terminal: "clave-gemini", requisito: "Una clave gratis de Google AI Studio (Google ya no deja entrar con la cuenta personal).", aviso: "En el plan gratis, Google puede usar lo que le mandes para entrenar sus modelos. No le pases datos privados.", modelos: MODELOS.gemini, conectada: false },
+          { id: "chatgpt", nombre: "ChatGPT", probado: false, conexion: "terminal", terminal: "login-chatgpt", requisito: "Tu cuenta de ChatGPT (inicio de sesión de Codex en el navegador).", aviso: null, modelos: MODELOS.chatgpt, conectada: false },
+          { id: "grok", nombre: "Grok", probado: false, conexion: "terminal", terminal: "login-grok", requisito: "SuperGrok o X Premium (inicio de sesión en el navegador).", aviso: null, modelos: MODELOS.grok, conectada: false },
+        ],
+        especialistas: [
+          { id: "tutor", nombre: "Tutor", emoji: "📚", rol: "Explica materia y arma ejercicios y quizzes.", sugerido: "anthropic/claude-sonnet-5-5", activo: true, modelo: "anthropic/claude-sonnet-5-5", instrucciones: "Explica paso a paso, con ejemplos simples y en español de Chile.", dentroDeBrote: false },
+          { id: "investigador", nombre: "Investigador", emoji: "🔎", rol: "Busca y lee fuentes, y entrega un resumen con citas.", sugerido: "google/gemini-3.5-flash", activo: true, modelo: "google/gemini-3.5-flash", instrucciones: "Busca en fuentes confiables y cita cada dato con su enlace.", dentroDeBrote: true },
+          { id: "redactor", nombre: "Redactor", emoji: "✍️", rol: "Resúmenes, ensayos y correos, siempre como borrador.", sugerido: "anthropic/claude-sonnet-5-5", activo: false, modelo: null, instrucciones: "Escribe claro y breve, en el tono que te pidan.", dentroDeBrote: false },
+          { id: "revisor", nombre: "Revisor", emoji: "✅", rol: "Corrige y verifica citas contra una rúbrica.", sugerido: "google/gemini-3.5-flash", activo: false, modelo: null, instrucciones: "Revisa ortografía, claridad y que cada cita exista.", dentroDeBrote: false },
+          { id: "planificador", nombre: "Planificador", emoji: "🗓️", rol: "Arma planes de estudio con tus fechas y entregas.", sugerido: "anthropic/claude-haiku-4-5", activo: false, modelo: null, instrucciones: "Arma planes realistas, en bloques de pomodoro.", dentroDeBrote: false },
+        ],
+        delegacion: ["tutor", "investigador"],
+        frenado: parametros.has("freno"),
+      };
+
       // ---- Tauri simulado.
       const callbacks = new Map();
       const oyentes = new Map();
@@ -248,6 +274,28 @@
               if (args.cual === "login-claude") sim.claude = true;
               if (args.cual === "memoria-local") sim["memoria-local"] = true;
               setTimeout(() => window.dispatchEvent(new Event("focus")), 400);
+              return null;
+            case "equipo_estado":
+              await esperar(300);
+              return JSON.stringify(equipo);
+            case "cuenta_clave":
+              await esperar(600);
+              equipo.cuentas.find((c) => c.id === args.cuenta).conectada = true;
+              return JSON.stringify({ ok: true, detalle: "Gemini quedó conectado. En el plan gratis, Google puede usar lo que le mandes para entrenar sus modelos." });
+            case "especialista_guardar": {
+              await esperar(700);
+              const e = equipo.especialistas.find((x) => x.id === args.id);
+              const nuevo = !e.activo;
+              Object.assign(e, { activo: true, modelo: args.modelo, instrucciones: args.instrucciones, dentroDeBrote: false });
+              return JSON.stringify({ ok: true, detalle: `${e.emoji} ${e.nombre} ${nuevo ? "se unió al equipo" : "quedó actualizado"}.` });
+            }
+            case "especialista_quitar": {
+              await esperar(500);
+              const e = equipo.especialistas.find((x) => x.id === args.id);
+              Object.assign(e, { activo: false, modelo: null });
+              return JSON.stringify({ ok: true, detalle: `${e.emoji} ${e.nombre} salió del equipo. Su carpeta quedó en la Papelera.` });
+            }
+            case "abrir_enlace":
               return null;
             case "leer_funciones":
               return sim.funciones;

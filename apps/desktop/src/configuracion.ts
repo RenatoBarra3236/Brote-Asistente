@@ -6,7 +6,8 @@
 //        consentimiento del agente). Los nombres técnicos quedan plegados en "Detalles".
 //     2. Qué quieres que haga Brote: presets y una tarjeta con interruptor por función.
 //     3. Listo: "Empezar" guarda las funciones y reinicia Brote.
-//   Uso diario: barra lateral con Estado (y Reparar), Funciones, Conectores, Aula, Permisos y Memoria.
+//   Uso diario: barra lateral con Estado (y Reparar), Funciones, Cuentas de IA, Equipo, Conectores,
+//   Aula, Permisos y Memoria.
 //
 // La revisión y los arreglos los hace Rust con el script `configurar` (ver configuracion.rs); esta
 // ventana solo pide pasos conocidos y abre terminales o páginas de listas cerradas.
@@ -19,12 +20,15 @@ import { revisarConectores, vistaConectores } from "./configurar/conectores";
 import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
 import { vistaFunciones, vistaTarjetasInicio } from "./configurar/funciones";
+import { revisarEquipo, vistaCuentas, vistaEquipo } from "./configurar/equipo";
 
-type Seccion = "estado" | "funciones" | "conectores" | "aula" | "permisos" | "memoria";
+type Seccion = "estado" | "funciones" | "cuentas" | "equipo" | "conectores" | "aula" | "permisos" | "memoria";
 
 const SECCIONES: { id: Seccion; icono: string; titulo: string }[] = [
   { id: "estado", icono: "🌱", titulo: "Estado" },
   { id: "funciones", icono: "✨", titulo: "Funciones" },
+  { id: "cuentas", icono: "🔑", titulo: "Cuentas de IA" },
+  { id: "equipo", icono: "👥", titulo: "Equipo" },
   { id: "conectores", icono: "🔌", titulo: "Conectores" },
   { id: "aula", icono: "📚", titulo: "Aula" },
   { id: "permisos", icono: "🔒", titulo: "Permisos" },
@@ -134,6 +138,9 @@ function asistenteListo(): HTMLElement[] {
     );
   }
   partes.push(crear("p", "nota", "¿Usas Todoist, Notion, GitHub o Canva? Conéctalos después en Configurar Brote → Conectores."));
+  if (estado.funciones.activas.especialistas) {
+    partes.push(crear("p", "nota", "Elige a tu equipo (Tutor, Investigador…) y con qué IA trabaja cada uno en Configurar Brote → Equipo."));
+  }
   return partes;
 }
 
@@ -293,18 +300,17 @@ function pintarDiario(): void {
     lateral.append(b);
   }
   const contenido = crear("main", "contenido");
-  const partes =
-    seccion === "estado"
-      ? seccionEstado()
-      : seccion === "funciones"
-        ? seccionFunciones()
-        : seccion === "conectores"
-          ? [cabecera("Conectores", "Servicios que Brote puede usar cuando se lo pidas. Lo que solo lee no te pregunta; lo que cambia algo te pide permiso en la isla."), vistaConectores()]
-          : seccion === "aula"
-            ? seccionAula()
-            : seccion === "permisos"
-              ? seccionPermisos()
-              : seccionMemoria();
+  const vistas: Record<Seccion, () => HTMLElement[]> = {
+    estado: seccionEstado,
+    funciones: seccionFunciones,
+    cuentas: () => [cabecera("Cuentas de IA", "Las IA que pueden usar los especialistas del equipo. Brote sigue usando Claude con tu cuenta."), ...vistaCuentas()],
+    equipo: () => [cabecera("Equipo de Brote", "Especialistas en los que Brote puede delegar. Tú sigues hablando solo con Brote."), ...vistaEquipo()],
+    conectores: () => [cabecera("Conectores", "Servicios que Brote puede usar cuando se lo pidas. Lo que solo lee no te pregunta; lo que cambia algo te pide permiso en la isla."), vistaConectores()],
+    aula: seccionAula,
+    permisos: seccionPermisos,
+    memoria: seccionMemoria,
+  };
+  const partes = vistas[seccion]();
   contenido.append(...partes);
   raiz.replaceChildren(lateral, contenido);
   raiz.className = "raiz modo-diario";
@@ -340,6 +346,7 @@ async function pedirPermisos(): Promise<void> {
 
 async function revisarTodo(): Promise<void> {
   void revisarConectores();
+  void revisarEquipo();
   void pedirPermisos();
   await revisar();
 }
@@ -353,6 +360,7 @@ async function iniciar(): Promise<void> {
     // Archivo roto: se parte de los valores por defecto (el próximo guardado lo arregla).
   }
   void revisarConectores();
+  void revisarEquipo();
   void pedirPermisos();
   await revisar();
   modo = necesitaAsistente(estado.pasos, estado.hayArchivoFunciones) ? "asistente" : "diario";

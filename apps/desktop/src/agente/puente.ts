@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./transporte.ts";
 import type { ConfigFunciones } from "./funciones.ts";
 import type { EstadoUso } from "./uso.ts";
+import type { Trabajando } from "./especialistas.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -129,6 +130,8 @@ type Aviso =
   | ({ tipo: "funciones" } & ConfigFunciones)
   | ({ tipo: "uso" } & EstadoUso)
   | { tipo: "plan-aviso"; texto: string }
+  | { tipo: "especialistas"; lista: Trabajando[] }
+  | { tipo: "especialistas-aviso"; texto: string }
   | {
       tipo: "respuesta";
       id: string;
@@ -168,6 +171,8 @@ export class TransportePuente implements Transporte {
   private readonly oyentesFunciones = new Set<(config: ConfigFunciones) => void>();
   private readonly oyentesUso = new Set<(estado: EstadoUso) => void>();
   private readonly oyentesAvisoPlan = new Set<(texto: string) => void>();
+  private readonly oyentesEspecialistas = new Set<(lista: Trabajando[]) => void>();
+  private readonly oyentesAvisoEspecialistas = new Set<(texto: string) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -298,6 +303,18 @@ export class TransportePuente implements Transporte {
     return () => this.oyentesAvisoPlan.delete(oyente);
   }
 
+  /** El equipo de Brote trabajando (los especialistas en los que delegó). */
+  alCambiarEspecialistas(oyente: (lista: Trabajando[]) => void): () => void {
+    this.oyentesEspecialistas.add(oyente);
+    return () => this.oyentesEspecialistas.delete(oyente);
+  }
+
+  /** El freno por plan: los especialistas con Claude salen o vuelven (una vez por cambio). */
+  alAvisoEspecialistas(oyente: (texto: string) => void): () => void {
+    this.oyentesAvisoEspecialistas.add(oyente);
+    return () => this.oyentesAvisoEspecialistas.delete(oyente);
+  }
+
   async decidirPermisoClaude(id: string, decision: "allow" | "deny"): Promise<void> {
     await this.pedir({ tipo: "programador-decidir", permiso: id, decision });
   }
@@ -414,6 +431,12 @@ export class TransportePuente implements Transporte {
         return;
       case "plan-aviso":
         for (const oyente of this.oyentesAvisoPlan) oyente(aviso.texto);
+        return;
+      case "especialistas":
+        for (const oyente of this.oyentesEspecialistas) oyente(aviso.lista);
+        return;
+      case "especialistas-aviso":
+        for (const oyente of this.oyentesAvisoEspecialistas) oyente(aviso.texto);
         return;
       case "programador-reaccion":
         for (const oyente of this.oyentesReaccion) oyente({ reaccion: aviso.reaccion, proyecto: aviso.proyecto });

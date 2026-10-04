@@ -16,6 +16,7 @@ import {
 import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
+import type { Trabajando } from "./agente/especialistas";
 import { Isla, type Ala } from "./isla";
 import { Panel, cuentaRegresiva } from "./panel";
 import type { Estado } from "./personaje/estados";
@@ -239,6 +240,20 @@ async function iniciar(): Promise<void> {
     setInterval(() => uso && panel.mostrarUso(uso), 30_000);
     puente.alAvisoPlan((texto) => {
       panel.mostrarAviso(`📊 ${texto}`);
+      personaje.tocar();
+    });
+
+    // El equipo de Brote: los especialistas trabajando en la pestaña Brote. Mientras alguno trabaja,
+    // Brote no está "en silencio" (el vigilante no corta la espera). Los que terminaron se van solos.
+    const cambiarEspecialistas = (lista: Trabajando[]) => {
+      panel.mostrarEspecialistas(lista);
+      if (lista.some((t) => t.estado === "trabajando")) agente.senal();
+    };
+    puente.alCambiarEspecialistas(cambiarEspecialistas);
+    void puente.consultar<{ lista: Trabajando[] }>({ tipo: "especialistas-estado" }).then(({ lista }) => cambiarEspecialistas(lista), () => {});
+    setInterval(() => panel.mostrarEspecialistas(), 5000);
+    puente.alAvisoEspecialistas((texto) => {
+      panel.mostrarAviso(`🌱 ${texto}`);
       personaje.tocar();
     });
 

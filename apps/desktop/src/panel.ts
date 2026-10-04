@@ -33,6 +33,7 @@ import type {
 import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
+import { filasEquipo, tituloEquipo, type Trabajando } from "./agente/especialistas";
 import { icono, type NombreIcono } from "./iconos";
 
 export { cuentaRegresiva } from "./agente/formato";
@@ -122,6 +123,10 @@ export class Panel {
 
   // Conversación
   private readonly burbuja: HTMLDivElement;
+  /** "El equipo trabajando": los especialistas en los que Brote delegó. */
+  private readonly equipoTrabajando: HTMLDivElement;
+  private especialistas: Trabajando[] = [];
+  private equipoPintado = "";
   private readonly usuario: HTMLParagraphElement;
   private readonly respuesta: HTMLDivElement;
   /** El texto ya pintado en la respuesta, para no rehacerla si no cambió. */
@@ -296,7 +301,10 @@ export class Panel {
     this.aprender = boton("boton boton-primario", "Sí, aprende");
     botonesPropuesta.append(this.noAprender, this.aprender);
     this.propuesta.append(propuestaTitulo, this.propuestaDetalle, botonesPropuesta);
-    inicio.append(this.cabeceraInicio, this.tarjetas, this.pildoras, this.burbuja, this.aprobacion, this.propuesta);
+    this.equipoTrabajando = crear("div", "equipo-trabajando");
+    this.equipoTrabajando.hidden = true;
+    this.equipoTrabajando.setAttribute("aria-live", "polite");
+    inicio.append(this.cabeceraInicio, this.tarjetas, this.pildoras, this.equipoTrabajando, this.burbuja, this.aprobacion, this.propuesta);
 
     // --- Claude ---
     const codigo = crear("div", "vista vista-claude");
@@ -603,6 +611,45 @@ export class Panel {
    * API, lo que más gasta y los precios de los modelos usados, plegados. Se repinta solo cada tanto
    * (main.ts) para que "hace 3 min" no quede viejo.
    */
+  /**
+   * "El equipo trabajando" en la pestaña Brote: cada especialista con su emoji, la IA que usa ("·
+   * Gemini", en su color; sin logos de esas marcas), qué hace y si terminó. Los que terminaron se van
+   * solos después de un minuto (main repinta cada pocos segundos).
+   */
+  mostrarEspecialistas(lista: Trabajando[] = this.especialistas): void {
+    this.especialistas = lista;
+    const filas = filasEquipo(lista, Date.now());
+    const texto = JSON.stringify(filas);
+    if (texto === this.equipoPintado) return;
+    this.equipoPintado = texto;
+    this.equipoTrabajando.hidden = filas.length === 0;
+    if (filas.length === 0) {
+      this.equipoTrabajando.replaceChildren();
+      return;
+    }
+    const titulo = crear("div", "equipo-titulo");
+    titulo.textContent = tituloEquipo(filas);
+    this.equipoTrabajando.replaceChildren(
+      titulo,
+      ...filas.map((f) => {
+        const fila = crear("div", `fila-equipo ${f.estado}`);
+        if (f.titulo) fila.title = f.titulo;
+        const nombre = crear("span", "equipo-nombre");
+        nombre.textContent = f.nombre;
+        const ia = crear("span", "equipo-ia");
+        ia.textContent = f.ia ? `· ${f.ia}` : "";
+        if (f.color) ia.style.color = f.color;
+        const detalle = crear("span", "equipo-detalle");
+        detalle.textContent = f.detalle;
+        const estado = crear("span", "equipo-estado");
+        if (f.estado === "trabajando") estado.append(icono("girando", "gira"));
+        else estado.textContent = f.estado === "termino" ? "✓" : "!";
+        fila.append(nombre, ia, detalle, estado);
+        return fila;
+      }),
+    );
+  }
+
   mostrarUso(estado: EstadoUso | null): void {
     this.estadoUso = estado;
     const ahora = Date.now();

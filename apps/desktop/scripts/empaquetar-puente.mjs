@@ -6,6 +6,7 @@
 //   src-tauri/recursos/hook.mjs         el hook de Claude Code del modo programador (sin dependencias)
 //   src-tauri/recursos/statusline.mjs   la statusline de Claude Code del uso del plan (sin dependencias)
 //   src-tauri/recursos/skill/gastos     la skill de gastos para el agente
+//   src-tauri/recursos/skill/delegar    la skill de delegación en el equipo de Brote
 //   src-tauri/recursos/plantillas       la identidad de Brote (IDENTITY.md, SOUL.md)
 
 import { execFileSync } from "node:child_process";
@@ -31,6 +32,8 @@ rmSync(join(recursos, "node_modules"), { recursive: true, force: true });
 mkdirSync(join(recursos, "node_modules"), { recursive: true });
 cpSync(ws, join(recursos, "node_modules", "ws"), { recursive: true, dereference: true });
 
-cpSync(join(app, "../../packages/motor/skill/gastos"), join(recursos, "skill", "gastos"), { recursive: true });
+for (const skill of ["gastos", "delegar"]) {
+  cpSync(join(app, "../../packages/motor/skill", skill), join(recursos, "skill", skill), { recursive: true });
+}
 cpSync(join(app, "../../packages/adapter/plantillas"), join(recursos, "plantillas"), { recursive: true });
 console.log(`Listo: ${recursos}`);

@@ -4,6 +4,7 @@ mod conectores;
 mod configuracion;
 mod descargas;
 mod entorno;
+mod especialistas;
 mod funciones;
 mod puente;
 
@@ -272,6 +273,10 @@ pub fn run() {
             conectores::conector_conectar,
             conectores::conector_cancelar,
             conectores::abrir_autorizacion,
+            especialistas::equipo_estado,
+            especialistas::especialista_guardar,
+            especialistas::especialista_quitar,
+            especialistas::cuenta_clave,
             descargas::mostrar_descarga
         ])
         .build(tauri::generate_context!())

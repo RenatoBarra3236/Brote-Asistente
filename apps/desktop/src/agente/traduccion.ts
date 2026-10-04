@@ -148,6 +148,9 @@ export function etiquetaHerramienta(nombre: string, args?: any, meta?: unknown):
   // Sin argumentos (evento `item`), `meta` trae lo esencial: "from ~/ruta" o el comando.
   const resto = typeof meta === "string" ? meta.replace(/^from\s+/, "").trim() : "";
   const ruta = String(args?.file_path ?? args?.notebook_path ?? args?.path ?? resto);
+  // Las de OpenClaw para delegar llegan como "mcp__openclaw__sessions_spawn".
+  const delegacion = ETIQUETAS_DELEGACION[nombre.replace(/^mcp__openclaw__/, "")];
+  if (delegacion) return delegacion;
   switch (nombre) {
     case "Read":
       return ruta ? `Leyendo ${nombreArchivo(ruta)}…` : "Leyendo un archivo…";
@@ -184,6 +187,17 @@ export function etiquetaHerramienta(nombre: string, args?: any, meta?: unknown):
       return `Usando ${nombre}…`;
   }
 }
+
+/** Las herramientas de OpenClaw con que Brote delega en su equipo (y las de búsqueda de un especialista). */
+const ETIQUETAS_DELEGACION: Record<string, string> = {
+  agents_list: "Mirando quién está en el equipo…",
+  sessions_spawn: "Pasándole la tarea al equipo…",
+  subagents: "Esperando al equipo…",
+  sessions_yield: "Esperando al equipo…",
+  sessions_history: "Leyendo lo que hizo el equipo…",
+  web_search: "Buscando en la web…",
+  web_fetch: "Leyendo una página…",
+};
 
 /** Un conector (Todoist, Notion…) con el nombre que le pone el puente: "Todoist · Buscar tareas". */
 interface Conector {
@@ -222,6 +236,13 @@ export function describirAprobacion(presentacion: any): { titulo: string; detall
     // El detalle no siempre es JSON: se muestra tal cual.
   }
   const ruta = args?.file_path ?? args?.notebook_path;
+  // Lo pide un especialista del equipo (el puente agrega quién): "🔎 Investigador: ¿Ejecuto este comando?".
+  const quien = presentacion?.especialista;
+  if (typeof quien?.nombre === "string" && typeof quien?.emoji === "string") {
+    const { especialista: _quien, ...resto } = presentacion;
+    const base = describirAprobacion(resto);
+    return { ...base, titulo: `${quien.emoji} ${quien.nombre}: ${base.titulo}` };
+  }
   if (esConector(presentacion?.conector)) {
     const { servicio, accion, propio } = presentacion.conector;
     return { titulo: `${servicio} · ${accion}${propio ? " (servicio agregado por ti)" : ""}`, detalle: resumirArgumentos(args, crudo) };

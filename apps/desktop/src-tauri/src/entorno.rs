@@ -17,6 +17,12 @@ pub fn sin_consola(comando: &mut Command) -> &mut Command {
     comando
 }
 
+/// Brote usa el plan de Claude Code, no la clave de API (que es solo para programar y vive en `~/.zshrc`):
+/// si la app se abre desde una terminal que la tiene, los procesos de Node no deben heredarla.
+pub fn sin_clave_api(comando: &mut Command) -> &mut Command {
+    comando.env_remove("ANTHROPIC_API_KEY")
+}
+
 /// La versión mínima de Node: la que pide OpenClaw y la que usa el puente (`node:sqlite`).
 pub const NODE_MINIMO: u32 = 24;
 
@@ -102,5 +108,21 @@ pub fn script_del_puente(app: &AppHandle) -> PathBuf {
     match recursos(app) {
         Some(carpeta) => carpeta.join("puente.mjs"),
         None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../packages/adapter/src/puente.ts"),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod pruebas {
+    use super::*;
+
+    #[test]
+    fn quita_la_clave_heredada_y_deja_el_resto() {
+        let mut comando = Command::new("sh");
+        comando.args(["-c", "printf '%s|%s' \"${ANTHROPIC_API_KEY-vacia}\" \"$PRUEBA_OTRA\""]).env("PRUEBA_OTRA", "se-conserva");
+        // Simula la herencia: la clave está en el entorno del proceso padre (esta prueba).
+        std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-falsa");
+        let salida = sin_clave_api(&mut comando).output().unwrap();
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        assert_eq!(String::from_utf8_lossy(&salida.stdout), "vacia|se-conserva");
     }
 }

@@ -208,7 +208,16 @@ Cuando Brote quiera ejecutar algo en tu computador, te pide permiso con dos boto
 - Las claves y sesiones de Gemini, ChatGPT y Grok las guarda OpenClaw en tu computador; Brote nunca las muestra ni las anota en registros.
 - El uso del plan (el % y tus tokens) se calcula en tu computador con lo que Claude Code ya guarda ahí; Brote no se conecta a tu cuenta para eso.
 - El token del aula y la autorización de cada conector quedan solo en tu computador; Brote nunca los muestra ni los anota en registros. Un conector ve lo que le pidas a Brote que haga con él.
-- En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda.
+- En **Lo que sé de ti** puedes ver y borrar todo lo que Brote recuerda. En Mac, lo que olvidas va a la Papelera y sigue en tu disco hasta que la vacíes; en Windows se borra de inmediato, sin Papelera.
+
+Más detalle (qué se guarda, a qué empresas llega algo y cómo borrarlo): [privacidad.md](privacidad.md).
+
+### Cifra el disco de tu computador (recomendado)
+
+Tus gastos, lo que Brote recuerda, las conversaciones guardadas y las transcripciones de Claude Code quedan como archivos normales en tu disco, sin cifrar por Brote. Si alguien se lleva tu computador (o el disco) y este no está cifrado, puede abrir esos archivos y leerlos. Cifrar el disco lo evita: sin tu contraseña, el contenido es ilegible.
+
+- **Mac**: activa **FileVault** en Ajustes del Sistema → Privacidad y seguridad → FileVault. Guarda bien la clave de recuperación.
+- **Windows**: activa **BitLocker** (o "Cifrado de dispositivo") en Configuración → Privacidad y seguridad → Cifrado de dispositivo. BitLocker viene en Windows Pro; en Home, el cifrado de dispositivo aparece si tu equipo lo permite. Guarda bien la clave de recuperación.
 
 ## Si algo falla
 

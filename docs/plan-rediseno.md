@@ -132,7 +132,7 @@ propuesta "¿Aprendo esto?"). Lo demás es una **notificación discreta con la i
 - En el modo flotante (ya no es el de Windows, que usa la misma isla; solo con `ASISTENTE_MODO=flotante`) igual: Brote reacciona y muestra el aviso en una burbuja chica junto a él,
   sin desplegar el panel.
 
-## 6. Privacidad y protección de datos (revisión del 4-10-2026; pendiente)
+## 6. Privacidad y protección de datos (revisión del 4-10-2026; puntos 1, 4, 5, 6 y 7 (borrador) hechos; faltan 2, 3 y 8)
 
 Revisado en el Mac del usuario: todos los archivos con datos o secretos están en 600 (`~/.asistente-prototipo/*`,
 `openclaw.json`, las bases de OpenClaw, `gateway.log`), FileVault activado, telemetría de funciones de OpenClaw
@@ -147,13 +147,19 @@ nunca se leen credenciales de Claude y el repo no tiene secretos. Lo que falta, 
    macOS / Administrador de credenciales de Windows donde se pueda (los de OpenClaw dependen de OpenClaw).
 3. **Registros con conversaciones**: `~/Library/Logs/openclaw/gateway.log` guarda fragmentos de lo conversado
    (28 líneas el 4-10-2026). Limpieza periódica o bajar lo que registra OpenClaw.
-4. **Datos en claro en el disco** (gastos, memoria, transcripciones): docs/instalar.md debe recomendar FileVault
-   (Mac) o BitLocker (Windows) a quien pruebe Brote.
-5. **"Olvidar" va a la Papelera**: la interfaz debe decir que el dato sigue ahí hasta vaciarla.
+4. **Datos en claro en el disco** (hecho el 4-10-2026): docs/instalar.md, en "Tus datos", recomienda FileVault
+   (Mac) o BitLocker (Windows) y explica por qué (gastos, memoria y transcripciones quedan en claro).
+5. **"Olvidar" va a la Papelera** (hecho el 4-10-2026, `src/agente/papelera.ts`): en macOS la ventana dice que el dato sigue en la
+   Papelera hasta vaciarla; en Windows y Linux `aLaPapelera` borra de verdad (sin Papelera) y el texto lo dice así.
 6. **Respaldos que se acumulan** (hecho el 4-10-2026: `podarRespaldos` deja los 3 últimos): `~/.claude/settings.json.brote-*.bak`.
-7. **Antes de repartir Brote a más gente**: una política de privacidad corta (qué se guarda, dónde, a qué empresas
+7. **Antes de repartir Brote a más gente** (borrador hecho el 4-10-2026 en `docs/privacidad.md`, falta que alguien lo revise): una política de privacidad corta (qué se guarda, dónde, a qué empresas
    va —Anthropic, Google, conectores— y cómo borrarlo), partiendo de "Tus datos" en docs/instalar.md. En Chile
    rige la Ley 21.719 desde diciembre de 2026 (orientación, no asesoría legal).
+8. **Avisar si Brote quedó con una clave de API** (anotado el 4-10-2026; pendiente): hoy `entorno::sin_clave_api` solo evita
+   heredarla desde la terminal; no impide que alguien la ponga a propósito (`env` de `~/.claude/settings.json`, la
+   config de OpenClaw o el plist del Gateway). Configurar Brote → Estado debe avisar cuando `claude auth status`
+   (sin la variable) muestre `apiKeySource`, o cuando `settings.json` tenga `ANTHROPIC_API_KEY` en `env`. Solo leer
+   el estado y los nombres de las variables, nunca sus valores ni credenciales.
 
 ## 7. Calendario como sección propia de la isla (anotado el 4-10-2026; pendiente)
 
@@ -171,6 +177,20 @@ usuario: resúmenes, apuntes, tareas y fechas que salen a la vista (alimentando 
 Por decidir antes de programar: transcripción local o en la nube, permiso de micrófono de macOS/Windows,
 dónde se guardan los audios y textos (privacidad, sección 6: datos personales en claro en el disco) y consentimiento
 de grabar a otras personas.
+
+## 9. Ideas para después (anotadas el 4-10-2026; paréntesis, nada empezado)
+
+1. **Brote recibe archivos y hace lo que el usuario pida con ellos.** El usuario le suelta un archivo (por ejemplo
+   arrastrándolo a la isla) y le dice qué hacer: resumirlo, extraer fechas, ordenar apuntes, etc. Con una animación
+   propia (Brote "recibe" el archivo, lo mastica, lo revisa). Por pensar: qué tipos de archivo, cómo llega al agente
+   (OpenClaw), permisos de lectura de la carpeta y privacidad (sección 6: el contenido va a la IA que elija el usuario).
+2. **Distintos estilos de Brote**: otros animales, cosas u objetos, o disfraces. Probablemente haya que **rediseñar el
+   personaje** para que sea fácil de variar (hoy es un cuerpo crema con brote dibujado en el lienzo, y las mascotas del
+   equipo ya usan `Apariencia` con cuerpo, hoja y accesorio: ahí hay una base). Respetar la regla de no copiar
+   personajes ni dibujos de otros proyectos.
+3. **Quizás cambiar el nombre del proyecto**, a raíz del punto 2: si Brote puede ser un animal o un objeto, "Brote"
+   (un brote de planta) deja de calzar. Decidirlo junto con el rediseño; el nombre está en la app, `Brote.app`, los
+   textos, la identidad del agente (`IDENTITY.md`/`SOUL.md`), `docs/` y el repo.
 
 ## Orden sugerido
 

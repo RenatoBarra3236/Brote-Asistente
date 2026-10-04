@@ -63,7 +63,7 @@ async fn correr(app: AppHandle, argumentos: Vec<String>, entrada: Option<String>
     let (node, _) = entorno::buscar_node().ok_or("no encontré Node")?;
     let script = crate::configuracion::script(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        let mut hijo = entorno::sin_consola(&mut Command::new(node))
+        let mut hijo = entorno::sin_consola(entorno::sin_clave_api(&mut Command::new(node)))
             .arg(script)
             .args(argumentos)
             .stdin(Stdio::piped())

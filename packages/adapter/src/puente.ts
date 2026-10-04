@@ -229,6 +229,7 @@ import { CARPETA_OPENCLAW, CONFIG_OPENCLAW, WORKSPACE, memoriaDeClaudeCode } fro
 import { leerSettings } from "./hooks-claude.ts";
 import { statuslineInstalada } from "./statusline-claude.ts";
 import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
+import { quitarClaveDeApi } from "./sin-clave.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
 import { FiltroDelegacion, leerHistorial } from "./delegacion.ts";
 import { argsDelegacion, correrOpenclaw, delegacionActual, guardarFreno, leerFreno } from "./equipo.ts";
@@ -1475,6 +1476,8 @@ async function atender(pedido: any): Promise<Extra> {
   }
   throw new Error("Pedido no válido");
 }
+
+quitarClaveDeApi();
 
 const entrada = createInterface({ input: process.stdin });
 entrada.on("line", (linea) => {

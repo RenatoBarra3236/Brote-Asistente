@@ -69,7 +69,7 @@ pub async fn configuracion(app: AppHandle, orden: String, paso: Option<String>) 
     let script = script(&app);
     // El script puede tardar (instalar OpenClaw, configurarlo): se corre fuera del hilo principal.
     tauri::async_runtime::spawn_blocking(move || {
-        let salida = entorno::sin_consola(&mut Command::new(node))
+        let salida = entorno::sin_consola(entorno::sin_clave_api(&mut Command::new(node)))
             .arg(script)
             .args(argumentos)
             .stdin(Stdio::null())

@@ -3,6 +3,7 @@
 // memoria, así que siempre se pone como texto, nunca como HTML.
 
 import { invoke } from "@tauri-apps/api/core";
+import { avisoOlvidado, avisoTemaOlvidado, pieOlvidar } from "./agente/papelera";
 import { TransportePuente } from "./agente/puente";
 
 type TipoRecuerdo = "brote" | "conversacion" | "importado";
@@ -42,6 +43,8 @@ const SECCIONES: { tipo: TipoRecuerdo | "frases"; titulo: string; nota?: string;
 
 /** Cuánto espera el segundo toque de "Olvidar" antes de volver atrás. */
 const CONFIRMACION_MS = 3000;
+
+const EN_MAC = navigator.userAgent.includes("Mac");
 
 const puente = new TransportePuente();
 const secciones = document.querySelector<HTMLElement>("#secciones")!;
@@ -123,7 +126,7 @@ function tarjetaRecuerdo(recuerdo: Recuerdo): HTMLElement {
   botones.append(
     botonOlvidar(async () => {
       await puente.consultar({ tipo: "memoria-olvidar", recuerdo: recuerdo.id });
-      mostrarAviso("Listo, lo olvidé. Para que deje de usarlo ya, empieza una conversación nueva.");
+      mostrarAviso(avisoOlvidado(EN_MAC));
       await cargar();
     }),
   );
@@ -262,7 +265,7 @@ temaOlvidar.addEventListener("click", async () => {
   temaOlvidar.disabled = true;
   try {
     const { olvidados } = await puente.consultar<{ olvidados: number }>({ tipo: "memoria-olvidar-tema", tema: buscado });
-    mostrarAviso(`Olvidé ${olvidados} ${olvidados === 1 ? "cosa" : "cosas"} sobre «${buscado}» y empecé una conversación nueva. 🌱`);
+    mostrarAviso(avisoTemaOlvidado(EN_MAC, olvidados, buscado));
     buscar.value = filtro = "";
     await cargar();
   } catch (error) {
@@ -289,5 +292,7 @@ document.querySelector("#configurar")!.addEventListener("click", () => void invo
 
 // Al volver a la ventana se recarga, por si Brote aprendió o recordó algo mientras tanto.
 window.addEventListener("focus", () => void cargar());
+
+document.querySelector("#pie-olvidar")!.textContent = pieOlvidar(EN_MAC);
 
 void puente.iniciar().then(cargar, (error) => mostrarAviso(`No pude conectar con el puente: ${mensajeDe(error)}`, true));

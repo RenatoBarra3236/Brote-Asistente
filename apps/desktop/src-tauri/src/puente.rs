@@ -33,7 +33,7 @@ impl Puente {
             return Puente { hijo: Mutex::new(None), entrada: Mutex::new(None), conexion };
         };
 
-        let lanzado = crate::entorno::sin_consola(&mut Command::new(&node))
+        let lanzado = crate::entorno::sin_consola(crate::entorno::sin_clave_api(&mut Command::new(&node)))
             .arg(&script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

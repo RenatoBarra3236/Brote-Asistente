@@ -127,7 +127,7 @@ pub fn conector_conectar(
         return Err("ya hay una conexión en curso".into());
     }
     let (node, _) = entorno::buscar_node().ok_or("no encontré Node")?;
-    let mut hijo = entorno::sin_consola(&mut Command::new(node))
+    let mut hijo = entorno::sin_consola(entorno::sin_clave_api(&mut Command::new(node)))
         .arg(crate::configuracion::script(&app))
         .args(&argumentos)
         .stdin(Stdio::piped())

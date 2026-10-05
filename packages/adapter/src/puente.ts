@@ -265,6 +265,8 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__calendario_proximos",
   "mcp__gastos__aula_entregas",
   "mcp__gastos__claude_uso",
+  "mcp__gastos__transcripciones_listar",
+  "mcp__gastos__transcripciones_leer",
 ]);
 
 /**

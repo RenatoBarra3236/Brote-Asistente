@@ -183,7 +183,7 @@ con "Acceso completo" (captura del 4-10-2026), porque con `tauri dev` el permiso
 Brote.app empaquetada tiene que pedir y tener el suyo (ver `Info.plist` y el paso "Calendario del Mac" de
 Configurar Brote), y la sección nueva debe explicar qué hacer si falta.
 
-## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; sin código todavía)
+## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; fase 1 hecha el 5-10-2026, sin micrófono; el resto sin código)
 
 Grabar audio (por ejemplo una clase), transcribirlo y que Brote ayude con el texto: resúmenes y, en la fase 2,
 tareas y fechas para Agenda (sección 7). El proyecto vivirá además en el celular (app Tauri móvil) y en una "casa"
@@ -247,6 +247,16 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
    verdad con `Brote.app` en un Mac.
 4. **Isla y memoria:** botón 🎙, frases sin IA, sección en "Lo que sé de ti", vista previa, `docs/privacidad.md`.
 5. **Fase 2 (B):** tareas y fechas hacia Agenda, con confirmación en la isla.
+
+### Pruebas pendientes de la fase 1 (anotadas el 5-10-2026, para hacer en un Mac)
+
+- [ ] Borrado de audios vencidos a la Papelera real: en un Mac, con `ASISTENTE_GRABACIONES` apuntando a una carpeta de prueba, crear `2026-01-01-080000.wav` y llamar `borrarAudiosVencidos(7)`; revisar que va a la Papelera de Finder (la prueba automática se salta en Mac a propósito).
+- [ ] MCP bajo OpenClaw: detener los procesos `node …/packages/motor/src/mcp.ts` y el `claude … --resume`, abrir sesión nueva y pedir "lista mis transcripciones" y "léeme la transcripción X" con una transcripción armada a mano en `~/.asistente-prototipo/transcripciones/` (el MCP corre bajo launchd: comprobar que lee esa carpeta y que `openclaw mcp probe gastos` muestra las dos herramientas).
+- [ ] Función apagada: con `grabaciones` apagada, el agente recibe el mensaje de apagada y no lee nada; prenderla desde Configurar Brote → Funciones (aparece en el listado genérico; comprobar que el interruptor guarda).
+- [ ] Skill `delegar`: reinstalarla (`openclaw skills install ./packages/motor/skill/delegar --as delegar --agent <id> --force`, sesión nueva) y comprobar que, con un especialista de Gemini, Brote se niega a pasarle una transcripción.
+- [ ] Permisos reales: que `~/.asistente-prototipo/transcripciones/` y `grabaciones/` queden 700 y los archivos 600 al crearlos la app (hoy solo probado en carpeta temporal en Linux/Mac de desarrollo).
+- [ ] Windows: `aLaPapelera` borra de verdad (sin Papelera); comprobar que los textos de la isla lo dicen cuando exista la ventana (fase 4).
+- [ ] Texto de `docs/privacidad.md` sobre voces de terceros: que lo revise alguien antes de repartir Brote.
 
 ### Sin probar hasta tener un Mac (y otros aparatos)
 

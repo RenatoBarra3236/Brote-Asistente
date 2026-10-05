@@ -19,6 +19,7 @@ export const IDS_FUNCIONES = [
   "uso-del-plan",
   "memoria-local",
   "especialistas",
+  "grabaciones",
 ] as const;
 export type IdFuncion = (typeof IDS_FUNCIONES)[number];
 
@@ -112,6 +113,14 @@ export const FUNCIONES: readonly Funcion[] = [
     nombre: "Equipo de Brote",
     descripcion:
       "Brote le pasa tareas a especialistas (Tutor, Investigador…), cada uno con la IA que conectes: Claude, Gemini, ChatGPT o Grok. Tú sigues hablando solo con Brote.",
+    permiso: null,
+    tarjeta: null,
+  },
+  {
+    id: "grabaciones",
+    nombre: "Grabar y transcribir",
+    descripcion:
+      "Brote transcribe en tu computador lo que tú decidas grabar (por ejemplo una clase) y te ayuda con el texto. El audio no sale de tu equipo y se borra solo a los 7 días. Apagado de fábrica.",
     permiso: null,
     tarjeta: null,
   },
@@ -225,6 +234,7 @@ export function funcionDeHerramienta(nombre: string): IdFuncion | null {
   if (nombre === "equipo_estado") return "equipo";
   if (nombre === "programador_sesiones") return "programador";
   if (nombre === "claude_uso") return "uso-del-plan";
+  if (nombre.startsWith("transcripciones_")) return "grabaciones";
   return null;
 }
 

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
 import { Gastos } from "../src/gastos.ts";
+import { MENSAJE_APAGADA_MCP } from "../src/funciones.ts";
 import { atender } from "../src/mcp.ts";
+import { guardarTranscripcion } from "../src/transcripciones-archivo.ts";
 
 let gastos: Gastos;
 let id = 0;
@@ -17,7 +19,9 @@ process.env.ASISTENTE_CONEXION_HOOKS = join(CARPETA, "hooks.json");
 process.env.ASISTENTE_FUNCIONES = join(CARPETA, "funciones.json");
 // Y el plan de Claude guardado, tampoco el del computador.
 process.env.ASISTENTE_PLAN = join(CARPETA, "plan.json");
-writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan"].map((id) => [id, true])) }));
+// Y sus propias transcripciones, nunca las del computador.
+process.env.ASISTENTE_TRANSCRIPCIONES = join(CARPETA, "transcripciones");
+writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "grabaciones"].map((id) => [id, true])) }));
 after(() => rmSync(CARPETA, { recursive: true, force: true }));
 
 beforeEach(() => {
@@ -42,7 +46,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
     );
   });
 
@@ -228,6 +232,44 @@ describe("servidor MCP de gastos", () => {
       if (antes === undefined) delete process.env.ASISTENTE_DESCARGAS;
       else process.env.ASISTENTE_DESCARGAS = antes;
       rmSync(carpeta, { recursive: true, force: true });
+    }
+  });
+
+  it("transcripciones: lista y lee por partes, solo de su carpeta", () => {
+    const carpeta = process.env.ASISTENTE_TRANSCRIPCIONES!;
+    const base = { fecha: "2026-10-04T10:30:00-03:00", duracionSeg: 600, origen: "pc" as const, modelo: "small", idioma: "es", avisoAPresentes: "si" as const };
+    guardarTranscripcion({ ...base, id: "2026-10-04-103000", segmentos: [{ inicioSeg: 0, finSeg: 5, texto: "hola clase" }] }, carpeta);
+    const larga = Array.from({ length: 400 }, (_, i) => ({ inicioSeg: i, finSeg: i + 1, texto: `frase ${i} de la clase de derivadas y límites` }));
+    guardarTranscripcion({ ...base, id: "2026-10-05-090000", avisoAPresentes: "no", segmentos: larga }, carpeta);
+    writeFileSync(join(carpeta, "../secreto.md"), "---\n---");
+
+    const { transcripciones } = JSON.parse(llamar("transcripciones_listar", {}).texto);
+    assert.deepEqual(transcripciones.map((t: any) => [t.id, t.avisoAPresentes]), [["2026-10-05-090000", "no"], ["2026-10-04-103000", "si"]]);
+    assert.equal("texto" in transcripciones[0], false);
+
+    assert.equal(JSON.parse(llamar("transcripciones_leer", { id: "2026-10-04-103000" }).texto).texto, "[00:00:00] hola clase");
+    const primera = JSON.parse(llamar("transcripciones_leer", { id: "2026-10-05-090000" }).texto);
+    assert.ok(primera.totalPartes >= 2);
+    assert.equal(primera.parte, 1);
+    const segunda = JSON.parse(llamar("transcripciones_leer", { id: "2026-10-05-090000", parte: 2 }).texto);
+    assert.equal(segunda.parte, 2);
+    assert.ok(segunda.desdeSeg > 0);
+    assert.equal(llamar("transcripciones_leer", { id: "2026-10-05-090000", parte: 99 }).error, true);
+    for (const id of ["../secreto", "2026-10-04-103000.md", "/etc/passwd", "no-existe", ""]) assert.equal(llamar("transcripciones_leer", { id }).error, true, id);
+    assert.equal(llamar("transcripciones_leer", {}).error, true);
+  });
+
+  it("transcripciones: con la función apagada no lee nada", async () => {
+    const ruta = process.env.ASISTENTE_FUNCIONES!;
+    const original = readFileSync(ruta, "utf8");
+    try {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, JSON.stringify({ activas: { grabaciones: false } }));
+      assert.equal(llamar("transcripciones_listar", {}).texto, MENSAJE_APAGADA_MCP);
+      assert.equal(llamar("transcripciones_leer", { id: "2026-10-04-103000" }).texto, MENSAJE_APAGADA_MCP);
+    } finally {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, original);
     }
   });
 });

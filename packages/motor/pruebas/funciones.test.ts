@@ -39,6 +39,14 @@ describe("funciones.json", () => {
     assert.deepEqual(leerFunciones(roto), porDefecto);
   });
 
+  it("grabaciones está apagada de fábrica y fuera de los presets que no son «Todo»", () => {
+    assert.ok(IDS_FUNCIONES.includes("grabaciones"));
+    assert.equal(leerFunciones(join(CARPETA, "no-existe.json")).activas.grabaciones, false);
+    for (const preset of ["estudiante", "programador", "minimo"] as const) assert.equal(activasDePreset(preset).grabaciones, false, preset);
+    assert.equal(funcionDeHerramienta("transcripciones_listar"), "grabaciones");
+    assert.equal(funcionDeHerramienta("transcripciones_leer"), "grabaciones");
+  });
+
   it("ignora lo inválido y completa lo que falta", () => {
     const config = normalizarFunciones({
       activas: { musica: false, programador: true, inventada: true, gastos: "sí" },

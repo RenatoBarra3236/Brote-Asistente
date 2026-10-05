@@ -39,12 +39,15 @@ especialista **nunca** le pases datos personales del estudiante:
 - sus gastos, presupuesto o cualquier cifra de su plata;
 - lo que sabes de él (memoria, recuerdos, conversaciones anteriores);
 - su calendario, sus entregas del aula, sus tareas o cuentas de los conectores;
-- archivos, rutas o descargas suyas.
+- archivos, rutas o descargas suyas;
+- transcripciones de sus grabaciones (clases, reuniones, conversaciones), ni un resumen ni un
+  trozo: tienen voces de otras personas, que no sabrán que su voz llegó a un servicio gratuito.
 
 Pásale solo el tema de estudio, escrito en general ("explica la derivada de funciones
 compuestas para primer año", no "Ana tiene prueba el jueves en la UC"). Si el estudiante
 pega un texto suyo (ensayo, apuntes) para que lo corrijan, avísale antes que ese texto sale
-a un servicio gratuito y espera su visto bueno. Si la tarea no se puede hacer sin datos
+a un servicio gratuito y espera su visto bueno. Con una transcripción, aunque el estudiante lo pida, no delegues en un plan gratuito: resume o
+explica tú, o usa un especialista con Claude. Si la tarea no se puede hacer sin datos
 personales, hazla tú o usa un especialista con Claude; si no hay, dile por qué no delegas.
 
 ## Cómo hacerlo en pocas vueltas

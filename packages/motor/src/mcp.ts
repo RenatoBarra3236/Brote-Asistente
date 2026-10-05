@@ -30,6 +30,8 @@ import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./d
 import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
+import { MAX_CARACTERES_TROZO, partirEnTrozos } from "./transcripciones.ts";
+import { leerTranscripcionGuardada, listarTranscripciones } from "./transcripciones-archivo.ts";
 import { vigente, type LecturaPlan, type VentanaPlan } from "./plan.ts";
 import { tokensDe, type ResumenPeriodo, type ResumenUso, type TotalUso } from "./uso.ts";
 import { leerPlanGuardado } from "./uso-archivo.ts";
@@ -157,6 +159,32 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Descargas recientes", readOnlyHint: true },
+  },
+  {
+    name: "transcripciones_listar",
+    description:
+      "Las transcripciones de las grabaciones que el usuario hizo con Brote (por ejemplo una clase): id, fecha, duración " +
+      "y si avisó a los presentes, de la más nueva a la más vieja. Solo lectura; no trae el texto.",
+    inputSchema: {
+      type: "object",
+      properties: { limite: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Transcripciones: lista", readOnlyHint: true },
+  },
+  {
+    name: "transcripciones_leer",
+    description:
+      "El texto de una transcripción (por su id, el de transcripciones_listar), con marcas de tiempo. Las largas vienen " +
+      "por partes: pide «parte» 1, 2, 3… hasta «totalPartes». Es información privada de terceros y del usuario: no la " +
+      "mandes fuera de esta conversación.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" }, parte: { type: "integer", minimum: 1, default: 1 } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Transcripciones: leer", readOnlyHint: true },
   },
   {
     name: "musica_estado",
@@ -598,6 +626,35 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
           bytes: d.tamano,
           fecha: new Date(d.fechaMs).toISOString(),
         })),
+      });
+    }
+    case "transcripciones_listar": {
+      const limite = Number.isInteger(args.limite) ? Math.min(Math.max(args.limite, 1), 50) : 20;
+      return JSON.stringify({
+        transcripciones: listarTranscripciones()
+          .slice(0, limite)
+          .map(({ id, fecha, duracionSeg, origen, modelo, avisoAPresentes }) => ({ id, fecha, duracionSeg, origen, modelo, avisoAPresentes })),
+      });
+    }
+    case "transcripciones_leer": {
+      if (typeof args.id !== "string") throw new ErrorDeUso("Falta «id»");
+      const transcripcion = leerTranscripcionGuardada(args.id);
+      if (!transcripcion) throw new ErrorDeUso("No hay una transcripción con ese id");
+      const trozos = partirEnTrozos(transcripcion.segmentos, MAX_CARACTERES_TROZO);
+      const parte = Number.isInteger(args.parte) ? args.parte : 1;
+      if (!trozos.length) return JSON.stringify({ id: transcripcion.id, totalPartes: 0, texto: "" });
+      if (parte < 1 || parte > trozos.length) throw new ErrorDeUso(`La transcripción tiene ${trozos.length} partes`);
+      const trozo = trozos[parte - 1];
+      return JSON.stringify({
+        id: transcripcion.id,
+        fecha: transcripcion.fecha,
+        duracionSeg: transcripcion.duracionSeg,
+        avisoAPresentes: transcripcion.avisoAPresentes,
+        parte: trozo.numero,
+        totalPartes: trozo.total,
+        desdeSeg: trozo.desdeSeg,
+        hastaSeg: trozo.hastaSeg,
+        texto: trozo.texto,
       });
     }
     case "motor_proponer_plantilla": {

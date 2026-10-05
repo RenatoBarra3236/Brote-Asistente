@@ -22,6 +22,9 @@ import { describirUso, type ResumenUso } from "./uso.ts";
 import { TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, type AccionGrabar } from "./grabaciones-frases.ts";
 import type { CabeceraTranscripcion } from "./transcripciones.ts";
 import { Ramos } from "./ramos.ts";
+import { Notas } from "./notas.ts";
+import { interpretarNotas, responderNotas } from "./notas-motor.ts";
+import type { AccionNotas } from "./notas-motor.ts";
 import { describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";
 import { emparejarRamo, normalizarRamo, limpiarTexto, MAX_NOMBRE_RAMO } from "./ramos-tipos.ts";
 import { describirHoy, describirPresupuestoPuesto, describirQueda, presupuestoDelMes, type PresupuestoMes } from "./plata.ts";
@@ -67,7 +70,8 @@ export type Accion =
   | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" }
   | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" }
   | { intencion: "ramos-agregar" | "ramos-archivar"; nombre: string }
-  | { intencion: "ramos-ver" };
+  | { intencion: "ramos-ver" }
+  | AccionNotas;
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -129,6 +133,14 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "transcripciones-hoy":
     case "ramos-ver":
       return { intencion };
+    case "notas-anotar":
+    case "notas-evaluaciones":
+    case "notas-agregar-eval":
+    case "notas-necesaria":
+    case "notas-como-voy":
+    case "notas-borrar":
+    case "notas-ajuste":
+      return interpretarNotas(intencion, ranuras, originales);
     case "ramos-agregar":
     case "ramos-archivar": {
       const nombre = limpiarTexto(sinArticulo(originales.cosa?.trim() ?? ""), MAX_NOMBRE_RAMO);
@@ -179,6 +191,7 @@ export class Motor {
   private readonly uso: (() => UsoClaude) | null;
   private readonly transcripciones: (() => CabeceraTranscripcion[]) | null;
   private readonly ramos: Ramos | null;
+  private readonly notas: Notas | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -209,9 +222,12 @@ export class Motor {
       transcripciones?: () => CabeceraTranscripcion[];
       /** Los ramos del usuario (la pestaña Estudio). Sin esto, esas frases van al agente. */
       ramos?: Ramos;
+      /** Las evaluaciones y notas por ramo. Sin esto (o sin ramos), esas frases van al agente. */
+      notas?: Notas;
     } = {},
   ) {
     this.ramos = opciones.ramos ?? null;
+    this.notas = opciones.notas ?? null;
     this.uso = opciones.uso ?? null;
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
@@ -281,6 +297,11 @@ export class Motor {
     if (accion.intencion === "ramos-agregar" || accion.intencion === "ramos-archivar" || accion.intencion === "ramos-ver") {
       if (!this.ramos) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ramear(accion) };
+    }
+    if (accion.intencion.startsWith("notas-")) {
+      if (!this.ramos || !this.notas) return null;
+      const texto = responderNotas(accion as AccionNotas, { ramos: this.ramos, notas: this.notas, ahoraMs: this.reloj().getTime() });
+      return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
     }
     if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {
       if (!this.aula) return null;

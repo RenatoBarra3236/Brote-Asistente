@@ -136,6 +136,13 @@
 //   pedido { "tipo": "ramo-editar", "ramo": 3, "nombre"?, "alias"?, "color"? }   → "datos": Ramo
 //   pedido { "tipo": "ramo-archivar", "ramo": 3, "archivado"?: true }   no borra nada
 //   pedido { "tipo": "ramo-borrar", "ramo": 3 }   definitivo; lo suyo queda «sin ramo» («Lo que sé de ti»)
+//   aviso { "tipo": "notas", "fichas": FichaNotas[] }   notas por ramo (A2); también si lo cambia el MCP
+//   pedido { "tipo": "notas-estado" }   → "datos": FichaNotas[] (de los ramos activos; con la función apagada, [])
+//   pedido { "tipo": "notas-todas" }   → "datos": { ramos: Ramo[], fichas: FichaNotas[] } (no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "evaluacion-guardar", "ramo": 3, "evaluacion"?: 7, "nombre"?, "peso"?, "nota"?: number | null, "fecha"? }   crea (sin "evaluacion") o edita
+//   pedido { "tipo": "evaluacion-borrar", "evaluacion": 7 }   (definitivo: es una base de datos, no hay Papelera)
+//   pedido { "tipo": "notas-ajustes", "ramo": 3, "aprobacion"?, "examenPeso"?, "examenMinimo"?, "presentacionMinima"? }
+//   pedido { "tipo": "notas-borrar", "ramo": 3 | null }   null = todas
 //   pedido { "tipo": "ramo-asignar", "que": "tarea"|"propuesta"|"pomodoro"|"grabacion", "ref": 7 | "AAAA-MM-DD-HHMMSS", "ramo": 3 | null }
 //
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
@@ -243,6 +250,8 @@ import {
   resumenPlata,
   type EstadoPlata,
   Ramos,
+  Notas,
+  armarFichaNotas,
   armarFichas,
   sugerirRamos,
 } from "@asistente/motor";
@@ -302,6 +311,9 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__claude_uso",
   // Solo lectura. `ramos_crear` sí pregunta: escribe en la pestaña Estudio del usuario.
   "mcp__gastos__ramos_listar",
+  // Notas: lectura y cálculo. `notas_anotar` sí pregunta: escribe una nota del usuario.
+  "mcp__gastos__notas_resumen",
+  "mcp__gastos__notas_necesaria",
   "mcp__gastos__transcripciones_listar",
   "mcp__gastos__transcripciones_leer",
   // Solo deja propuestas pendientes: nada llega a la Agenda sin que el usuario lo acepte en la isla.
@@ -392,6 +404,8 @@ const temporizadores = new Temporizadores(gastos);
 const tareasAgenda = new TareasAgenda(gastos);
 /** Los ramos del usuario (pestaña Estudio). */
 const ramos = new Ramos(gastos);
+/** Las evaluaciones y notas por ramo (A2). */
+const notas = new Notas(gastos, ramos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -414,6 +428,7 @@ const motor = new Motor(gastos, {
   },
   transcripciones: () => listarTranscripciones(),
   ramos,
+  notas,
   activa,
 });
 
@@ -1162,6 +1177,26 @@ function detenerRamos(): void {
   marcaRamos = "";
   avisar({ tipo: "ramos", ramos: [] });
 }
+
+// Notas: igual que los ramos, se mira la marca cada 2 s (lo que anota el agente por MCP es otro proceso).
+let marcaNotas = "";
+/** Las fichas de los ramos activos que tienen evaluaciones o ajustes. Nunca se registran: son notas del usuario. */
+function fichasNotas(incluirArchivados = false) {
+  return ramos
+    .listar(incluirArchivados)
+    .map((r) => armarFichaNotas(r.id, notas.listar(r.id), notas.ajustes(r.id)))
+    .filter((f) => f.evaluaciones.length > 0 || f.ajustes.examenPeso !== null);
+}
+function revisarNotas(forzar = false): void {
+  const marca = `${notas.marca()}|${ramos.marca()}`;
+  if (!forzar && marca === marcaNotas) return;
+  marcaNotas = marca;
+  avisar({ tipo: "notas", fichas: fichasNotas() });
+}
+function detenerNotas(): void {
+  marcaNotas = "";
+  avisar({ tipo: "notas", fichas: [] });
+}
 /** La pestaña Estudio: ramos con su ficha y lo que se sugiere agregar. Lee las fuentes solo si su función está prendida. */
 async function estadoEstudio() {
   if (activa("calendario")) await leerCalendarios();
@@ -1188,6 +1223,8 @@ async function estadoEstudio() {
     fuentes: { calendario: activa("calendario"), aula: activa("aula") },
     // Cuál ramo tiene cada tarea de la Agenda y cada pomodoro, para pintar su punto de color.
     ramoDeTarea: Object.fromEntries(ramos.enlaces("tarea")),
+    // Notas por ramo (A2): la ficha de cada ramo trae sus evaluaciones y lo que falta para aprobar.
+    notas: fichasNotas(),
   };
 }
 
@@ -1263,10 +1300,14 @@ const tareas = new TareasPorFuncion({
     };
   },
   estudio: () => {
-    const detener = cada(2000, () => revisarRamos());
+    const detener = cada(2000, () => {
+      revisarRamos();
+      revisarNotas();
+    });
     return () => {
       detener();
       detenerRamos();
+      detenerNotas();
     };
   },
   grabaciones: () => {
@@ -1503,6 +1544,7 @@ async function atender(pedido: any): Promise<Extra> {
       registrar(`resuelto sin IA (${resuelto.plantilla})`);
       // Lo anotado (o el presupuesto nuevo) aparece al tiro en la pestaña Plata.
       if (activa("gastos")) revisarPlata();
+      if (activa("estudio")) revisarNotas();
       return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
     if (!conectado) throw new Error("OpenClaw no está conectado; sin él solo funcionan los comandos de gastos");
@@ -1670,7 +1712,7 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: vista };
     }
     case "ramos-estado":
-      return { datos: activa("estudio") ? await estadoEstudio() : { ramos: [], fichas: [], sugerencias: [], fuentes: { calendario: false, aula: false }, ramoDeTarea: {} } };
+      return { datos: activa("estudio") ? await estadoEstudio() : { ramos: [], fichas: [], sugerencias: [], fuentes: { calendario: false, aula: false }, ramoDeTarea: {}, notas: [] } };
     // «Lo que sé de ti»: lo guardado es del usuario y debe poder verlo y borrarlo aunque apague la función.
     case "ramos-todos":
       return { datos: ramos.listar(true) };
@@ -1699,6 +1741,45 @@ async function atender(pedido: any): Promise<Extra> {
       registrar("estudio: ramo borrado");
       revisarRamos();
       return {};
+    // Notas (A2). Los datos son del usuario: se ven y se borran aunque la función esté apagada; escribir exige la función.
+    case "notas-estado":
+      return { datos: activa("estudio") ? fichasNotas() : [] };
+    case "notas-todas":
+      return { datos: { ramos: ramos.listar(true), fichas: fichasNotas(true) } };
+    case "evaluacion-guardar": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.ramo) && !Number.isInteger(pedido.evaluacion)) break;
+      const cambios = { nombre: pedido.nombre, peso: pedido.peso, nota: pedido.nota, fecha: pedido.fecha };
+      const r = Number.isInteger(pedido.evaluacion)
+        ? notas.editar(pedido.evaluacion, cambios)
+        : notas.crear(pedido.ramo, { nombre: pedido.nombre, peso: pedido.peso, nota: pedido.nota ?? null, fecha: pedido.fecha ?? null }, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      revisarNotas();
+      return { datos: r.evaluacion };
+    }
+    case "evaluacion-borrar":
+      if (!Number.isInteger(pedido.evaluacion)) break;
+      if (!notas.borrar(pedido.evaluacion)) throw new Error("Esa evaluación ya no existe");
+      registrar("estudio: evaluación borrada");
+      revisarNotas();
+      return {};
+    case "notas-ajustes": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.ramo)) break;
+      const actual = notas.ajustes(pedido.ramo);
+      const campo = (k: string) => (pedido[k] === undefined ? (actual as any)[k] : pedido[k]);
+      const r = notas.ponerAjustes(pedido.ramo, { aprobacion: campo("aprobacion"), examenPeso: campo("examenPeso"), examenMinimo: campo("examenMinimo"), presentacionMinima: campo("presentacionMinima") });
+      if (!r.ok) throw new Error(r.motivo);
+      revisarNotas();
+      return { datos: r.ajustes };
+    }
+    case "notas-borrar": {
+      if (pedido.ramo !== null && !Number.isInteger(pedido.ramo)) break;
+      const n = pedido.ramo === null ? notas.borrarTodas() : notas.borrarDeRamo(pedido.ramo);
+      registrar(`estudio: notas borradas (${n})`);
+      revisarNotas();
+      return { datos: { borradas: n } };
+    }
     case "ramo-asignar": {
       if (!["tarea", "propuesta", "pomodoro", "grabacion"].includes(pedido.que)) break;
       if (typeof pedido.ref !== "string" && !Number.isInteger(pedido.ref)) break;

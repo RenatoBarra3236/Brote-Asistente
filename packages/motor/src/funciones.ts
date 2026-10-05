@@ -229,7 +229,7 @@ export function funcionDeIntencion(intencion: string): IdFuncion | null {
   if (intencion === "programador-sesiones") return "programador";
   if (intencion.startsWith("plan-")) return "uso-del-plan";
   if (intencion.startsWith("grabar-") || intencion.startsWith("transcripciones-")) return "grabaciones";
-  if (intencion.startsWith("ramos-")) return "estudio";
+  if (intencion.startsWith("ramos-") || intencion.startsWith("notas-")) return "estudio";
   return null;
 }
 
@@ -245,7 +245,7 @@ export function funcionDeHerramienta(nombre: string): IdFuncion | null {
   if (nombre === "programador_sesiones") return "programador";
   if (nombre === "claude_uso") return "uso-del-plan";
   if (nombre.startsWith("transcripciones_") || nombre === "agenda_proponer") return "grabaciones";
-  if (nombre.startsWith("ramos_")) return "estudio";
+  if (nombre.startsWith("ramos_") || nombre.startsWith("notas_")) return "estudio";
   return null;
 }
 

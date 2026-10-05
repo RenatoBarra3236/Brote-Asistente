@@ -149,6 +149,7 @@ type Aviso =
   | { tipo: "especialistas-aviso"; texto: string }
   | { tipo: "plata"; plata: EstadoPlata | null }
   | { tipo: "ramos"; ramos: Ramo[] }
+  | { tipo: "notas"; fichas: unknown[] }
   | { tipo: "plata-aviso"; texto: string }
   | {
       tipo: "respuesta";
@@ -385,6 +386,19 @@ export class TransportePuente implements Transporte {
     await this.pedir({ tipo: "ramo-borrar", ramo });
   }
 
+  /** Crea (sin `evaluacion`) o edita una evaluación; `nota: null` la deja pendiente. */
+  async guardarEvaluacion(datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null; fecha?: string | null }): Promise<void> {
+    await this.pedir({ tipo: "evaluacion-guardar", ...datos });
+  }
+
+  async borrarEvaluacion(evaluacion: number): Promise<void> {
+    await this.pedir({ tipo: "evaluacion-borrar", evaluacion });
+  }
+
+  async ajustesNotas(ramo: number, ajustes: { aprobacion?: number; examenPeso?: number | null; examenMinimo?: number | null; presentacionMinima?: number | null }): Promise<void> {
+    await this.pedir({ tipo: "notas-ajustes", ramo, ...ajustes });
+  }
+
   /** Pone (o quita, con `null`) el ramo de una tarea, pomodoro o transcripción. */
   async asignarRamo(que: "tarea" | "propuesta" | "pomodoro" | "grabacion", ref: number | string, ramo: number | null): Promise<void> {
     await this.pedir({ tipo: "ramo-asignar", que, ref, ramo });
@@ -545,6 +559,10 @@ export class TransportePuente implements Transporte {
         return;
       case "ramos":
         for (const oyente of this.oyentesRamos) oyente(aviso.ramos);
+        return;
+      case "notas":
+        // Las notas viajan dentro de `ramos-estado`: el aviso solo hace que la pestaña Estudio se vuelva a pedir.
+        for (const oyente of this.oyentesRamos) oyente([]);
         return;
       case "plata":
         for (const oyente of this.oyentesPlata) oyente(aviso.plata);

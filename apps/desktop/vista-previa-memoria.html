@@ -21,7 +21,23 @@
       Object.defineProperty(navigator, "userAgent", { get: () => ua });
       const modo = parametros.get("grabaciones") ?? "con";
       const dia = (d, h, m) => new Date(2026, 9, d, h, m, 0).toISOString();
+      const ficha = (ramoId, evaluaciones, promedio, necesaria) => ({
+        ramoId,
+        ajustes: { aprobacion: 4, examenPeso: null, examenMinimo: null, presentacionMinima: null },
+        evaluaciones,
+        calculo: { pesoTotal: 100, pesoRendido: 30, pesoPendiente: 70, promedio, acumulado: 1.26, necesariaEnPendientes: necesaria, maximoPosible: 6.2, veredicto: "alcanza", avisoPeso: null },
+        necesarias: {},
+        examen: null,
+      });
       const sim = {
+        // Datos inventados (A2): nunca notas reales.
+        notas: {
+          ramos: [{ id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false }, { id: 2, nombre: "Química", color: "rojo", alias: [], archivado: true }],
+          fichas: [
+            ficha(1, [{ id: 1, ramoId: 1, nombre: "Certamen 1", peso: 30, nota: 4.2, fecha: null }, { id: 2, ramoId: 1, nombre: "Certamen 2", peso: 70, nota: null, fecha: null }], 4.2, 3.9),
+            ficha(2, [{ id: 3, ramoId: 2, nombre: "Control 1", peso: 30, nota: 5.5, fecha: null }, { id: 4, ramoId: 2, nombre: "Control 2", peso: 70, nota: null, fecha: null }], 5.5, 3.4),
+          ],
+        },
         transcripciones:
           modo === "sin"
             ? []
@@ -87,6 +103,20 @@
                     { id: 2, nombre: "Química", color: "rojo", alias: [], archivado: true },
                   ];
                   break;
+                case "notas-todas":
+                  datos = sim.notas;
+                  break;
+                case "evaluacion-borrar":
+                  sim.notas.fichas.forEach((f) => (f.evaluaciones = f.evaluaciones.filter((e) => e.id !== pedido.evaluacion)));
+                  sim.notas.fichas = sim.notas.fichas.filter((f) => f.evaluaciones.length > 0);
+                  datos = {};
+                  break;
+                case "notas-borrar": {
+                  const antes = sim.notas.fichas.flatMap((f) => (pedido.ramo === null || f.ramoId === pedido.ramo ? f.evaluaciones : []));
+                  sim.notas.fichas = sim.notas.fichas.filter((f) => pedido.ramo !== null && f.ramoId !== pedido.ramo);
+                  datos = { borradas: antes.length };
+                  break;
+                }
                 case "ramo-borrar":
                 case "ramo-archivar":
                   datos = {};

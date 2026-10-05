@@ -3,6 +3,7 @@
 
 import type { FichaRamo, SugerenciaRamo } from "../../../../packages/motor/src/ramos-ficha.ts";
 import type { ColorRamo, Ramo } from "../../../../packages/motor/src/ramos-tipos.ts";
+import type { FichaNotas } from "../../../../packages/motor/src/notas-ficha.ts";
 
 export type { FichaRamo, SugerenciaRamo, Ramo, ColorRamo };
 
@@ -14,6 +15,8 @@ export interface EstadoEstudio {
   fuentes: { calendario: boolean; aula: boolean };
   /** Id de la tarea → id de su ramo (para el punto de color en la Agenda). */
   ramoDeTarea: Record<string, number>;
+  /** Evaluaciones y notas de cada ramo que tiene (A2). Un puente más viejo no la manda. */
+  notas?: FichaNotas[];
 }
 
 /** Colores de la paleta de ramos (los mismos de `COLORES_RAMO`), para el punto y la barra. */

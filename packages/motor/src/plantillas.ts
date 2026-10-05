@@ -56,9 +56,16 @@ export type Intencion =
   | "transcripciones-hoy"
   | "ramos-agregar"
   | "ramos-ver"
-  | "ramos-archivar";
+  | "ramos-archivar"
+  | "notas-anotar"
+  | "notas-evaluaciones"
+  | "notas-agregar-eval"
+  | "notas-necesaria"
+  | "notas-como-voy"
+  | "notas-borrar"
+  | "notas-ajuste";
 
-export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
+export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista";
 
 export interface Plantilla {
   id: string;
@@ -90,6 +97,13 @@ const RANURAS: Record<Ranura, string> = {
   cosa: ".+?",
   tiempo: PATRON_DURACION,
   hora: PATRON_HORA,
+  // Notas (A2): una nota 1–7 con coma o punto, y un peso en % (la coma entre dígitos no se pierde al normalizar).
+  nota: "\\d(?:[.,]\\d{1,2})?",
+  peso: "\\d{1,3}(?: ?%| por ciento)?",
+  evaluacion: ".+?",
+  ramo: ".+?",
+  objetivo: ".+?",
+  lista: ".+",
   periodo: alternancia(Object.keys(FORMAS_DE_PERIODO)),
   categoria: alternancia(Object.keys(NOMBRES_DE_CATEGORIA)),
 };
@@ -359,4 +373,22 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "ramos-ver", intencion: "ramos-ver", patron: "[(muestrame|ver|dame|lista|listame|revisa)] [mis|los|todos mis] ramos" },
   { id: "ramos-ver-cuales", intencion: "ramos-ver", patron: "(que|cuales) ramos (tengo|estoy viendo|estoy cursando|curso)" },
   { id: "ramos-archivar", intencion: "ramos-archivar", patron: "(quita|quitar|archiva|archivar|elimina|eliminar|saca|sacar|borra|borrar) [el|mi] ramo [de] {cosa}" },
+  // Notas (A2). Van al final: las de plan y gastos ganan si calzan. Cada una lleva una palabra fija
+  // ("nota", "evaluacion", "ramo"…) o el verbo «me saqué», para no calzar con gastos ni conversación.
+  { id: "notas-me-saque", intencion: "notas-anotar", patron: "(me saque|saque|obtuve|tuve|tengo) [un|una] {nota} en {cosa}" },
+  { id: "notas-agregar-nota", intencion: "notas-anotar", patron: "(agrega|agregar|anade|anota|anotar|pon|ponme|apunta|apuntar) [una|mi] nota [de] {nota} en {cosa}" },
+  { id: "notas-evaluaciones", intencion: "notas-evaluaciones", patron: "(evaluaciones|ponderaciones) de {lista}" },
+  { id: "notas-agregar-eval", intencion: "notas-agregar-eval", patron: "(agrega|agregar|anade|crea|crear|pon|ponme) [una|la] evaluacion {evaluacion} (de|con|que vale|vale) {peso} (en|de|para) [el|la|mi] {ramo}" },
+  { id: "notas-necesaria-con", intencion: "notas-necesaria", patron: "con {nota} en [el|la] {evaluacion} cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) en [el|la] {objetivo} (de|en) [el|la|mi] {ramo} [para (aprobar|pasar)]" },
+  { id: "notas-necesaria-con-corta", intencion: "notas-necesaria", patron: "con {nota} en [el|la] {evaluacion} cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) en [el|la] {objetivo} [para (aprobar|pasar)]" },
+  { id: "notas-necesaria-en-ramo", intencion: "notas-necesaria", patron: "cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) en [el|la] {objetivo} (de|en) [el|la|mi] {ramo} [para (aprobar|pasar)]" },
+  { id: "notas-necesaria-en", intencion: "notas-necesaria", patron: "cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) en [el|la] {objetivo} [para (aprobar|pasar)]" },
+  { id: "notas-necesaria-ramo", intencion: "notas-necesaria", patron: "cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) para (aprobar|pasar) [el|la|mi] [ramo] {ramo}" },
+  { id: "notas-como-voy-todos", intencion: "notas-como-voy", patron: "(como voy|como me va|como estoy|como van) (con|en) (mis ramos|mis notas|todos mis ramos)" },
+  { id: "notas-promedio-todos", intencion: "notas-como-voy", patron: "(mi promedio|mis notas|mis promedios)" },
+  { id: "notas-como-voy", intencion: "notas-como-voy", patron: "(como voy|como me va|como estoy|como ando) (con|en) [el|la|mi] [ramo] {ramo}" },
+  { id: "notas-promedio", intencion: "notas-como-voy", patron: "[cual es] [mi] promedio (de|en) [el|la|mi] [ramo] {ramo}" },
+  { id: "notas-borrar", intencion: "notas-borrar", patron: "(borra|borrar|elimina|eliminar|quita|quitar) [la] nota (del|de la|de el|de) {cosa}" },
+  { id: "notas-ajuste-aprobacion", intencion: "notas-ajuste", patron: "la nota de aprobacion (de|en) [el|la|mi] [ramo] {ramo} es [un|una] {nota}" },
+  { id: "notas-ajuste-examen", intencion: "notas-ajuste", patron: "el examen (de|en) [el|la|mi] [ramo] {ramo} vale {peso}" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

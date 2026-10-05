@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estudio";
+import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
 import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
 import {
   textoAviso,
@@ -73,6 +74,8 @@ const temaOlvidar = document.querySelector<HTMLButtonElement>("#tema-olvidar")!;
 let memoria: Memoria | null = null;
 /** Los ramos guardados, con los archivados (`null`: todavía no se leyeron o no se pudo). */
 let ramosGuardados: Ramo[] | null = null;
+/** Las notas guardadas, por ramo (con los archivados). Se ven y se borran aunque la función Estudio esté apagada. */
+let notasGuardadas: { ramos: Ramo[]; fichas: FichaNotas[] } | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
 /** Lo que se está buscando y los ids que lo mencionan (según el contenido completo, que ve el puente). */
@@ -255,6 +258,69 @@ function seccionRamos(lista: Ramo[]): HTMLElement {
   return seccion;
 }
 
+// ---- Notas (A2): ver y borrar una evaluación, las de un ramo o todas ----
+
+async function cargarNotas(): Promise<void> {
+  try {
+    notasGuardadas = await puente.consultar<{ ramos: Ramo[]; fichas: FichaNotas[] }>({ tipo: "notas-todas" });
+  } catch {
+    notasGuardadas = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+function tarjetaNotasRamo(ficha: FichaNotas, ramo: Ramo | undefined): HTMLElement {
+  const nombre = ramo?.nombre ?? "Ramo";
+  const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+  if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, nombre), crear("span", "fecha", ramo?.archivado ? "Archivado" : ""));
+  tarjeta.append(cabeza, crear("p", "meta", resumenNotas(ficha)));
+  for (const e of ficha.evaluaciones) {
+    const fila = crear("div", "botones fila-nota");
+    fila.append(crear("span", "meta", `${e.nombre} · ${e.peso} % · ${e.nota === null ? "pendiente" : formatearNota(e.nota)}`));
+    fila.append(
+      botonOlvidar(async () => {
+        await puente.consultar({ tipo: "evaluacion-borrar", evaluacion: e.id });
+        mostrarAviso(avisoNotasBorradas(nombre, 1));
+        await cargarNotas();
+        pintarTodo();
+      }, "Borrar"),
+    );
+    tarjeta.append(fila);
+  }
+  const botones = crear("div", "botones");
+  botones.append(
+    botonOlvidar(async () => {
+      const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "notas-borrar", ramo: ficha.ramoId });
+      mostrarAviso(avisoNotasBorradas(nombre, borradas));
+      await cargarNotas();
+      pintarTodo();
+    }, "Borrar las de este ramo"),
+  );
+  tarjeta.append(botones);
+  return tarjeta;
+}
+
+function seccionNotas(datos: { ramos: Ramo[]; fichas: FichaNotas[] }): HTMLElement {
+  const seccion = crear("section", "seccion seccion-ramos");
+  const total = datos.fichas.reduce((n, f) => n + f.evaluaciones.length, 0);
+  const encabezado = crear("h2", undefined, "Notas");
+  encabezado.append(crear("span", "cuenta", String(total)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_NOTAS_MEMORIA));
+  seccion.append(...datos.fichas.map((f) => tarjetaNotasRamo(f, datos.ramos.find((r) => r.id === f.ramoId))));
+  const todo = crear("div", "botones");
+  todo.append(
+    botonOlvidar(async () => {
+      const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "notas-borrar", ramo: null });
+      mostrarAviso(avisoNotasBorradas(null, borradas));
+      await cargarNotas();
+      pintarTodo();
+    }, "Borrar todas las notas"),
+  );
+  seccion.append(todo);
+  return seccion;
+}
+
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
 
 async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
@@ -392,6 +458,7 @@ function pintar(memoria: Memoria): void {
   });
   // Buscar es sobre lo que Brote recuerda; las grabaciones son aparte (y «olvidar todo sobre» no las toca).
   if (ramosGuardados && ramosGuardados.length > 0 && !coincidencias) contenido.push(seccionRamos(ramosGuardados));
+  if (notasGuardadas && notasGuardadas.fichas.length > 0 && !coincidencias) contenido.push(seccionNotas(notasGuardadas));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
@@ -401,6 +468,7 @@ async function cargar(): Promise<void> {
     memoria = await puente.consultar<Memoria>({ tipo: "memoria-listar" });
     await cargarGrabaciones();
     await cargarRamos();
+    await cargarNotas();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

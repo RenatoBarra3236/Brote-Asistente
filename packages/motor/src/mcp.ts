@@ -30,7 +30,9 @@ import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./d
 import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { Ramos } from "./ramos.ts";
-import { COLORES_RAMO } from "./ramos-tipos.ts";
+import { Notas } from "./notas.ts";
+import { calcularRamo, formatearNota, notaNecesaria, notaNecesariaExamen } from "./notas-tipos.ts";
+import { COLORES_RAMO, emparejarRamo, normalizarRamo } from "./ramos-tipos.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
 import { MAX_CARACTERES_TROZO, partirEnTrozos } from "./transcripciones.ts";
 import { TareasAgenda, idDeGrabacionValido } from "./tareas-agenda.ts";
@@ -303,6 +305,51 @@ const HERRAMIENTAS = [
     annotations: { title: "Agregar ramo", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   {
+    name: "notas_resumen",
+    description:
+      "Las evaluaciones y notas del usuario por ramo (nombre, peso en %, nota o pendiente), con el promedio, lo que falta para " +
+      "aprobar y los ajustes del ramo (nota de aprobación, examen). Es un dato personal del usuario: úsala solo si te pregunta " +
+      "por sus notas, y no se las pases a otros agentes. Escala chilena 1,0–7,0. Solo lectura.",
+    inputSchema: { type: "object", properties: { ramo: { type: "string", description: "Opcional: nombre del ramo; sin él, todos" } }, additionalProperties: false },
+    annotations: { title: "Notas por ramo", readOnlyHint: true },
+  },
+  {
+    name: "notas_necesaria",
+    description:
+      "Calcula, sin guardar nada, qué nota necesita el usuario en una evaluación (o en el examen) de un ramo para aprobar. " +
+      "Opcionalmente con notas hipotéticas («si me saco 4,2 en el certamen 1»). Las demás evaluaciones pendientes se suponen " +
+      "con la misma nota. Solo lectura.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ramo: { type: "string", minLength: 2 },
+        evaluacion: { type: "string", minLength: 2, description: "Nombre de la evaluación pendiente, o «examen»" },
+        hipoteticas: { type: "object", description: "Opcional: { «nombre de evaluación»: nota }", additionalProperties: { type: "number", minimum: 1, maximum: 7 } },
+      },
+      required: ["ramo", "evaluacion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Nota necesaria", readOnlyHint: true },
+  },
+  {
+    name: "notas_anotar",
+    description:
+      "Anota la nota de una evaluación que el usuario ya rindió («me saqué 5,5 en el certamen 1 de Cálculo»), o define una " +
+      "evaluación nueva con su peso. Úsala solo si el usuario te lo pide y te dio la nota; nunca inventes una. No borra nada.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ramo: { type: "string", minLength: 2 },
+        evaluacion: { type: "string", minLength: 2, maxLength: 60 },
+        nota: { type: "number", minimum: 1, maximum: 7, description: "Opcional si solo defines la evaluación" },
+        peso: { type: "integer", minimum: 1, maximum: 100, description: "% de la nota final; obligatorio si la evaluación no existe" },
+      },
+      required: ["ramo", "evaluacion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Anotar nota", readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  {
     name: "agenda_proponer",
     description:
       "Propone tareas, entregas y pruebas que salieron de UNA transcripción del usuario, para que él decida en la isla " +
@@ -567,6 +614,84 @@ async function musicaActual(): Promise<EstadoMusica | null | undefined> {
   return lectura ? lectura.estado : undefined;
 }
 
+function ramoPorNombre(gastos: Gastos, nombre: unknown): { ramos: Ramos; ramo: import("./ramos-tipos.ts").Ramo } {
+  if (typeof nombre !== "string" || normalizarRamo(nombre).length < 2) throw new ErrorDeUso("Falta el «ramo»");
+  const ramos = new Ramos(gastos);
+  const todos = ramos.listar();
+  const ramo = emparejarRamo(nombre, todos) ?? todos.find((r) => normalizarRamo(r.nombre) === normalizarRamo(nombre));
+  if (!ramo) throw new ErrorDeUso(`No hay un ramo «${nombre}» (los ramos se crean con ramos_crear)`);
+  return { ramos, ramo };
+}
+
+function fichaNotas(notas: Notas, ramo: { id: number; nombre: string }) {
+  const evals = notas.listar(ramo.id);
+  const aj = notas.ajustes(ramo.id);
+  const c = calcularRamo(evals, aj);
+  return {
+    ramo: ramo.nombre,
+    aprobacion: aj.aprobacion,
+    examen: aj.examenPeso === null ? null : { peso: aj.examenPeso, notaMinima: aj.examenMinimo, presentacionMinima: aj.presentacionMinima },
+    evaluaciones: evals.map((e) => ({ nombre: e.nombre, peso: e.peso, nota: e.nota, fecha: e.fecha })),
+    promedio: c.promedio,
+    pesoRendido: c.pesoRendido,
+    pesoPendiente: c.pesoPendiente,
+    notaNecesariaEnLoPendiente: c.necesariaEnPendientes === null ? null : Math.ceil(c.necesariaEnPendientes * 10 - 1e-9) / 10,
+    veredicto: c.veredicto,
+    aviso: c.avisoPeso,
+  };
+}
+
+function notasResumen(gastos: Gastos, ramo: string | null): string {
+  const notas = new Notas(gastos, new Ramos(gastos));
+  if (ramo !== null) return JSON.stringify(fichaNotas(notas, ramoPorNombre(gastos, ramo).ramo));
+  const fichas = new Ramos(gastos).listar().filter((r) => notas.listar(r.id).length > 0).map((r) => fichaNotas(notas, r));
+  return JSON.stringify({ ramos: fichas });
+}
+
+function notasNecesaria(gastos: Gastos, args: any): string {
+  const { ramo } = ramoPorNombre(gastos, args.ramo);
+  const notas = new Notas(gastos, new Ramos(gastos));
+  const evals = notas.listar(ramo.id);
+  const aj = notas.ajustes(ramo.id);
+  const buscar = (n: string) => evals.find((e) => normalizarRamo(e.nombre) === normalizarRamo(n));
+  const escenario = new Map<number, number>();
+  for (const [nombre, nota] of Object.entries((args.hipoteticas ?? {}) as Record<string, unknown>)) {
+    const e = buscar(nombre);
+    if (!e) throw new ErrorDeUso(`No hay una evaluación «${nombre}» en ${ramo.nombre}`);
+    if (typeof nota !== "number" || nota < 1 || nota > 7) throw new ErrorDeUso("Las notas hipotéticas van de 1,0 a 7,0");
+    escenario.set(e.id, nota);
+  }
+  if (typeof args.evaluacion !== "string") throw new ErrorDeUso("Falta la «evaluacion»");
+  if (normalizarRamo(args.evaluacion) === "examen") {
+    const r = notaNecesariaExamen(evals.map((e) => ({ ...e, nota: escenario.get(e.id) ?? e.nota })), aj);
+    if (!r) throw new ErrorDeUso(`${ramo.nombre} no tiene examen configurado`);
+    return JSON.stringify({ ramo: ramo.nombre, evaluacion: "examen", ...r });
+  }
+  const objetivo = buscar(args.evaluacion);
+  if (!objetivo) throw new ErrorDeUso(`No hay una evaluación «${args.evaluacion}» en ${ramo.nombre}`);
+  const base = aj.examenPeso === null ? evals : [...evals, { id: -1, ramoId: ramo.id, nombre: "Examen", peso: aj.examenPeso, nota: null, fecha: null }];
+  const r = notaNecesaria(base, objetivo.id, aj, escenario);
+  if (!r) throw new ErrorDeUso(`${objetivo.nombre} ya tiene nota`);
+  return JSON.stringify({ ramo: ramo.nombre, evaluacion: objetivo.nombre, ...r });
+}
+
+function notasAnotar(gastos: Gastos, args: any): string {
+  const { ramos, ramo } = ramoPorNombre(gastos, args.ramo);
+  const notas = new Notas(gastos, ramos);
+  if (typeof args.evaluacion !== "string") throw new ErrorDeUso("Falta la «evaluacion»");
+  const existente = notas.listar(ramo.id).find((e) => normalizarRamo(e.nombre) === normalizarRamo(args.evaluacion));
+  if (existente) {
+    if (args.nota === undefined) throw new ErrorDeUso(`${existente.nombre} ya existe; pasa la «nota» para anotarla`);
+    const r = notas.editar(existente.id, { nota: args.nota, ...(args.peso !== undefined ? { peso: args.peso } : {}) });
+    if (!r.ok) throw new ErrorDeUso(r.motivo);
+    return `Listo: ${r.evaluacion.nombre} de ${ramo.nombre} quedó con ${formatearNota(r.evaluacion.nota as number)}.`;
+  }
+  if (args.peso === undefined) throw new ErrorDeUso(`No existe «${args.evaluacion}» en ${ramo.nombre}: pasa su «peso» (%) para crearla`);
+  const r = notas.crear(ramo.id, { nombre: args.evaluacion, peso: args.peso, nota: args.nota ?? null }, Date.now());
+  if (!r.ok) throw new ErrorDeUso(r.motivo);
+  return `Listo: agregué ${r.evaluacion.nombre} (${r.evaluacion.peso} %) a ${ramo.nombre}${r.evaluacion.nota === null ? "" : ` con ${formatearNota(r.evaluacion.nota)}`}.`;
+}
+
 function usar(gastos: Gastos, nombre: string, args: any): string {
   switch (nombre) {
     case "gastos_anotar": {
@@ -728,6 +853,12 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       if (!r.ok) throw new ErrorDeUso(r.motivo);
       return `Listo: agregué el ramo ${r.ramo.nombre} (${r.ramo.color}). Brote lo muestra en la pestaña Estudio.`;
     }
+    case "notas_resumen":
+      return notasResumen(gastos, typeof args.ramo === "string" ? args.ramo : null);
+    case "notas_necesaria":
+      return notasNecesaria(gastos, args);
+    case "notas_anotar":
+      return notasAnotar(gastos, args);
     case "agenda_proponer": {
       if (!Array.isArray(args.propuestas) || typeof args.grabacion !== "string") throw new ErrorDeUso("Faltan «grabacion» o «propuestas»");
       if (!idDeGrabacionValido(args.grabacion) || !leerTranscripcionGuardada(args.grabacion)) throw new ErrorDeUso("No hay una transcripción con ese id");

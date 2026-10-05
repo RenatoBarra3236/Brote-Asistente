@@ -324,3 +324,13 @@ h3 {
 .ramo.archivado h3 {
   opacity: 0.6;
 }
+
+/* Notas (A2): el nombre de la evaluación a la izquierda y su botón Borrar a la derecha. */
+.botones.fila-nota {
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+.botones.fila-nota .meta {
+  margin: 0;
+}

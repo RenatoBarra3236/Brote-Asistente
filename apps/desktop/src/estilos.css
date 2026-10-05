@@ -1933,6 +1933,54 @@ button.tarjeta:hover {
   opacity: 0.65;
   white-space: nowrap;
 }
+/* Notas (A2): evaluaciones, barra de promedio con la línea de aprobación y la meta. */
+.notas {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notas-meta {
+  margin: 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.notas-barra {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 2px 0 6px;
+}
+.notas-barra-relleno {
+  height: 100%;
+  border-radius: 3px;
+}
+.notas-barra-linea {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 1px;
+}
+.notas-fila {
+  align-items: center;
+}
+.notas-nota {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.notas-nota:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.notas-campo {
+  width: 64px;
+  flex: none;
+}
 .estudio-acciones,
 .estudio-editar {
   display: flex;

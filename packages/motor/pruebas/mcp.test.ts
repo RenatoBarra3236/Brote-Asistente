@@ -46,7 +46,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "agenda_proponer", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "motor_proponer_plantilla"],
     );
   });
 
@@ -280,6 +280,28 @@ describe("servidor MCP de gastos", () => {
     assert.equal(llamar("ramos_crear", { nombre: "Física", color: "fucsia" }).error, true);
   });
 
+  it("notas: define, anota, resume y calcula sin guardar", () => {
+    llamar("ramos_crear", { nombre: "Cálculo" });
+    assert.match(llamar("notas_anotar", { ramo: "cálculo", evaluacion: "Certamen 1", peso: 30 }).texto, /agregué Certamen 1 \(30 %\)/);
+    llamar("notas_anotar", { ramo: "cálculo", evaluacion: "Certamen 2", peso: 70 });
+    assert.match(llamar("notas_anotar", { ramo: "cálculo", evaluacion: "certamen 1", nota: 4.2 }).texto, /quedó con 4,2/);
+    const resumen = JSON.parse(llamar("notas_resumen", { ramo: "cálculo" }).texto);
+    assert.equal(resumen.promedio, 4.2);
+    assert.equal(resumen.veredicto, "alcanza");
+    const n = JSON.parse(llamar("notas_necesaria", { ramo: "cálculo", evaluacion: "certamen 2", hipoteticas: { "certamen 1": 7 } }).texto);
+    assert.equal(n.redondeada, 2.8); // (400 − 7×30) ÷ 70 = 2,71
+    assert.equal(JSON.parse(llamar("notas_resumen", { ramo: "cálculo" }).texto).evaluaciones[0].nota, 4.2);
+  });
+
+  it("notas: lo inválido se rechaza", () => {
+    llamar("ramos_crear", { nombre: "Física" });
+    assert.equal(llamar("notas_anotar", { ramo: "química", evaluacion: "Control", peso: 20 }).error, true);
+    assert.equal(llamar("notas_anotar", { ramo: "física", evaluacion: "Control" }).error, true);
+    assert.equal(llamar("notas_anotar", { ramo: "física", evaluacion: "Control", peso: 20, nota: 9 }).error, true);
+    assert.equal(llamar("notas_necesaria", { ramo: "física", evaluacion: "examen" }).error, true);
+    assert.equal(llamar("notas_necesaria", { ramo: "física", evaluacion: "nada" }).error, true);
+  });
+
   it("ramos: con la función apagada no hace nada", async () => {
     const ruta = process.env.ASISTENTE_FUNCIONES!;
     const original = readFileSync(ruta, "utf8");
@@ -288,6 +310,8 @@ describe("servidor MCP de gastos", () => {
       writeFileSync(ruta, JSON.stringify({ activas: { estudio: false } }));
       assert.equal(llamar("ramos_listar", {}).texto, MENSAJE_APAGADA_MCP);
       assert.equal(llamar("ramos_crear", { nombre: "Historia" }).texto, MENSAJE_APAGADA_MCP);
+      assert.equal(llamar("notas_resumen", {}).texto, MENSAJE_APAGADA_MCP);
+      assert.equal(llamar("notas_anotar", { ramo: "x", evaluacion: "y" }).texto, MENSAJE_APAGADA_MCP);
     } finally {
       await new Promise((listo) => setTimeout(listo, 15));
       writeFileSync(ruta, original);

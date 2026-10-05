@@ -40,3 +40,8 @@ export { Ramos, type ResultadoCrear } from "./ramos.ts";
 export { COLORES_RAMO, MAX_ALIAS, MAX_NOMBRE_RAMO, MAX_RAMOS, colorSiguiente, contienePalabras, emparejarRamo, limpiarTexto, normalizarRamo, validarRamo, type ColorRamo, type Ramo, type ResultadoRamo } from "./ramos-tipos.ts";
 export { MAX_SUGERENCIAS, REPETICIONES_PARA_SUGERIR, armarFichas, sugerirRamos, type FichaRamo, type FuentesFicha, type SugerenciaRamo } from "./ramos-ficha.ts";
 export { EMOJI_COLOR, describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";
+export { Notas, type ResultadoEvaluacionGuardada } from "./notas.ts";
+export { AJUSTES_POR_DEFECTO, APROBACION_POR_DEFECTO, MAX_EVALUACIONES_POR_RAMO, MAX_NOMBRE_EVALUACION, NOTA_MAX, NOTA_MIN, calcularRamo, formatearNota, leerNota, notaNecesaria, notaNecesariaExamen, redondear1, validarAjustes, validarEvaluacion, validarNota, type AjustesNotas, type Evaluacion, type ResultadoExamen, type ResultadoNecesaria, type ResultadoRamoNotas, type Veredicto } from "./notas-tipos.ts";
+export { responderNotas, interpretarNotas, separarEvaluacionYRamo, type AccionNotas, type ContextoNotas } from "./notas-motor.ts";
+export { textoComoVoy, textoEvaluacionCreada, textoExamen, textoNecesaria, textoNotaAnotada, textoSinEvaluaciones } from "./notas-frases.ts";
+export { armarFichaNotas, type FichaNotas } from "./notas-ficha.ts";

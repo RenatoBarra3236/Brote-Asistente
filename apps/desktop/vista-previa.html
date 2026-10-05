@@ -277,6 +277,16 @@
                   setTimeout(() => emitir({ tipo: "ramos", ramos: window.__estudio.ramos }), 150);
                   return responder(id, { datos: r });
                 }
+                case "evaluacion-guardar": {
+                  const r = window.__notas.guardar(pedido);
+                  if (typeof r === "string") return emitir({ tipo: "respuesta", id, ok: false, error: r });
+                  setTimeout(() => emitir({ tipo: "notas", fichas: window.__notas.fichas() }), 150);
+                  return responder(id, { datos: r });
+                }
+                case "evaluacion-borrar":
+                  window.__notas.borrar(pedido.evaluacion);
+                  setTimeout(() => emitir({ tipo: "notas", fichas: window.__notas.fichas() }), 150);
+                  return responder(id, {});
                 case "ramo-archivar": {
                   const r = window.__estudio.ramos.find((x) => x.id === pedido.ramo);
                   if (r) r.archivado = pedido.archivado !== false;
@@ -598,7 +608,40 @@
     <script type="module">
       // La pestaña Estudio: ramos de ejemplo con su ficha armada por el mismo código del motor.
       import { armarFichas, sugerirRamos } from "/../../packages/motor/src/ramos-ficha.ts";
+      import { armarFichaNotas } from "/../../packages/motor/src/notas-ficha.ts";
       const modo = new URLSearchParams(location.search).get("estudio");
+      // ?notas=sin|con|imposible: evaluaciones de ejemplo; el cálculo es el real del motor.
+      const modoNotas = new URLSearchParams(location.search).get("notas") ?? "con";
+      const AJUSTES = { aprobacion: 4, examenPeso: null, examenMinimo: null, presentacionMinima: null };
+      const evaluaciones =
+        modoNotas === "sin"
+          ? []
+          : modoNotas === "imposible"
+            ? [{ id: 1, ramoId: 1, nombre: "Certamen 1", peso: 45, nota: 1.5, fecha: null }, { id: 2, ramoId: 1, nombre: "Certamen 2", peso: 45, nota: 2.0, fecha: null }, { id: 3, ramoId: 1, nombre: "Control", peso: 10, nota: null, fecha: null }]
+            : [{ id: 1, ramoId: 1, nombre: "Certamen 1", peso: 30, nota: 4.2, fecha: null }, { id: 2, ramoId: 1, nombre: "Certamen 2", peso: 30, nota: null, fecha: null }, { id: 3, ramoId: 1, nombre: "Certamen 3", peso: 40, nota: null, fecha: null }, { id: 4, ramoId: 2, nombre: "Control 1", peso: 100, nota: 5.5, fecha: null }];
+      let siguienteEvaluacion = 20;
+      function fichasNotas() {
+        return [1, 2, 3].map((id) => armarFichaNotas(id, evaluaciones.filter((e) => e.ramoId === id), AJUSTES)).filter((f) => f.evaluaciones.length > 0);
+      }
+      window.__notas = {
+        evaluaciones,
+        fichas: fichasNotas,
+        guardar(p) {
+          if (p.evaluacion !== undefined) {
+            const e = evaluaciones.find((x) => x.id === p.evaluacion);
+            if (!e) return "Esa evaluación no existe";
+            if (p.nota !== undefined) e.nota = p.nota;
+            return e;
+          }
+          const e = { id: siguienteEvaluacion++, ramoId: p.ramo, nombre: p.nombre, peso: p.peso, nota: null, fecha: null };
+          evaluaciones.push(e);
+          return e;
+        },
+        borrar(id) {
+          const i = evaluaciones.findIndex((x) => x.id === id);
+          if (i >= 0) evaluaciones.splice(i, 1);
+        },
+      };
       const hoy = new Date();
       const en = (dias, hora, min = 0) => new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias, hora, min).getTime();
       const ramos =
@@ -636,6 +679,7 @@
             sugerencias: modo === "sugerencias" ? sugerirRamos(["Química Orgánica", "Física General"], ["Álgebra lineal", "Álgebra lineal", "Álgebra lineal", "Almuerzo"], ramos) : [],
             fuentes: { calendario: true, aula: true },
             ramoDeTarea: { 1: 1 },
+            notas: fichasNotas(),
           };
         },
         crear(nombre, alias) {

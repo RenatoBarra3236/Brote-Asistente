@@ -66,6 +66,7 @@ import {
   type EstadoEstudio,
   type FichaRamo,
 } from "./agente/estudio";
+import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearNota, resumenNotas, semaforoDe, textoExamenFicha, textoMeta, textoNecesaria } from "./agente/notas";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
@@ -140,6 +141,10 @@ interface Opciones {
   alCrearRamo?: (nombre: string, alias: string[]) => Promise<string>;
   alEditarRamo?: (ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }) => Promise<void>;
   alArchivarRamo?: (ramo: number) => Promise<void>;
+  /** Notas (A2): crear o editar una evaluación, borrarla y cambiar los ajustes de un ramo. */
+  alGuardarEvaluacion?: (datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null }) => Promise<void>;
+  alBorrarEvaluacion?: (evaluacion: number) => Promise<void>;
+  alCambiarAjustesNotas?: (ramo: number, ajustes: { aprobacion?: number; examenPeso?: number | null }) => Promise<void>;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
@@ -299,6 +304,10 @@ export class Panel {
   private ramoAbierto: number | null = null;
   private ramoEditando: number | null = null;
   private errorEstudio = "";
+  /** Notas (A2): qué evaluación se edita, si el formulario «+ Evaluación» está abierto y el último error. */
+  private evaluacionEditando: number | null = null;
+  private evaluacionNueva: number | null = null;
+  private errorNotas = "";
   // Agenda
   private readonly agenda: HTMLDivElement;
   private estadoAgenda: EstadoAgenda | null = null;
@@ -1140,7 +1149,9 @@ export class Panel {
     const nombre = crear("span", "estudio-nombre");
     nombre.textContent = ramo.nombre;
     const resumen = crear("span", "estudio-resumen");
-    resumen.textContent = resumenDeFicha(ficha);
+    const notasDe = estado.notas?.find((f) => f.ramoId === ramo.id);
+    const partesResumen = [resumenDeFicha(ficha), notasDe ? resumenNotas(notasDe) : ""].filter(Boolean);
+    resumen.textContent = partesResumen.join(" · ");
     fila.append(punto, nombre, resumen);
     fila.addEventListener("click", () => {
       this.ramoAbierto = abierto ? null : ramo.id;
@@ -1174,6 +1185,8 @@ export class Panel {
       vacio.textContent = explicarFichaVacia(estado.fuentes, ramo.alias.length > 0);
       cuerpo.append(vacio);
     }
+
+    cuerpo.append(this.bloqueNotas(ramo.id, estado));
 
     if (this.ramoEditando === ramo.id) {
       const formulario = crear("form", "estudio-editar");
@@ -1243,6 +1256,147 @@ export class Panel {
     }
     caja.append(cuerpo);
     return caja;
+  }
+
+
+  /** Notas (A2): evaluaciones con su nota editable, la barra de promedio y lo que hay que sacar para aprobar. */
+  private bloqueNotas(ramoId: number, estado: EstadoEstudio): HTMLElement {
+    const ficha = estado.notas?.find((f) => f.ramoId === ramoId);
+    const caja = crear("div", "notas");
+    const titulo = crear("div", "estudio-seccion");
+    titulo.textContent = "Notas";
+    caja.append(titulo);
+    const fallo = (error: unknown) => {
+      this.errorNotas = error instanceof Error ? error.message : "No pude guardar.";
+      this.mostrarEstudio();
+    };
+    const hecho = () => {
+      this.errorNotas = "";
+      this.evaluacionEditando = null;
+      this.evaluacionNueva = null;
+      this.opciones.alPedirEstudio?.();
+    };
+    if (this.errorNotas) {
+      const error = crear("p", "estudio-error");
+      error.textContent = this.errorNotas;
+      caja.append(error);
+    }
+    if (ficha && ficha.evaluaciones.length > 0) {
+      const color = HEX_SEMAFORO[semaforoDe(ficha)];
+      const meta = crear("p", "notas-meta");
+      meta.textContent = textoMeta(ficha);
+      meta.style.color = color;
+      caja.append(meta);
+      if (ficha.calculo.avisoPeso) {
+        const aviso = crear("p", "vacia-texto");
+        aviso.textContent = ficha.calculo.avisoPeso;
+        caja.append(aviso);
+      }
+      // Barra de 1,0 a 7,0: el promedio y la línea de aprobación.
+      const barra = crear("div", "notas-barra");
+      barra.setAttribute("role", "img");
+      barra.setAttribute("aria-label", ficha.calculo.promedio === null ? "Sin promedio" : `Promedio ${formatearNota(ficha.calculo.promedio)}, se aprueba con ${formatearNota(ficha.ajustes.aprobacion)}`);
+      if (ficha.calculo.promedio !== null) {
+        const relleno = crear("div", "notas-barra-relleno");
+        relleno.style.width = `${posicionEnBarra(ficha.calculo.promedio)}%`;
+        relleno.style.background = color;
+        barra.append(relleno);
+      }
+      const linea = crear("div", "notas-barra-linea");
+      linea.style.left = `${posicionEnBarra(ficha.ajustes.aprobacion)}%`;
+      linea.title = `Se aprueba con ${formatearNota(ficha.ajustes.aprobacion)}`;
+      barra.append(linea);
+      caja.append(barra);
+      for (const e of ficha.evaluaciones) caja.append(this.filaEvaluacion(e, textoNecesaria(ficha.necesarias[e.id]), fallo, hecho));
+      const examen = textoExamenFicha(ficha);
+      if (examen) {
+        const f = crear("div", "estudio-item");
+        const t = crear("span", "estudio-item-texto");
+        t.textContent = examen;
+        f.append(t);
+        caja.append(f);
+      }
+    } else {
+      const vacia = crear("p", "vacia-texto");
+      vacia.textContent = "Agrega tus evaluaciones (certamen 1, 30 %…) y Brote te dice cuánto necesitas para aprobar.";
+      caja.append(vacia);
+    }
+    if (this.evaluacionNueva === ramoId) {
+      const formulario = crear("form", "estudio-editar");
+      const nombreCampo = crear("input", "estudio-campo") as HTMLInputElement;
+      nombreCampo.placeholder = "Evaluación (por ejemplo, Certamen 1)";
+      nombreCampo.maxLength = 60;
+      nombreCampo.setAttribute("aria-label", "Nombre de la evaluación");
+      const pesoCampo = crear("input", "estudio-campo") as HTMLInputElement;
+      pesoCampo.placeholder = "Peso en %";
+      pesoCampo.inputMode = "numeric";
+      pesoCampo.setAttribute("aria-label", "Peso de la evaluación en porcentaje");
+      const guardar = boton("pildora", "Agregar");
+      guardar.type = "submit";
+      const cancelar = boton("pildora", "Cancelar");
+      cancelar.addEventListener("click", () => {
+        this.evaluacionNueva = null;
+        this.mostrarEstudio();
+      });
+      formulario.append(nombreCampo, pesoCampo, guardar, cancelar);
+      formulario.addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const peso = leerCampoPeso(pesoCampo.value);
+        if (!peso.ok) return fallo(new Error(peso.motivo));
+        void (this.opciones.alGuardarEvaluacion?.({ ramo: ramoId, nombre: nombreCampo.value, peso: peso.peso }) ?? Promise.resolve()).then(hecho, fallo);
+      });
+      caja.append(formulario);
+    } else {
+      const acciones = crear("div", "estudio-acciones");
+      const nueva = boton("pildora", "+ Evaluación");
+      nueva.addEventListener("click", () => {
+        this.evaluacionNueva = ramoId;
+        this.mostrarEstudio();
+      });
+      acciones.append(nueva);
+      caja.append(acciones);
+    }
+    return caja;
+  }
+
+  private filaEvaluacion(e: { id: number; nombre: string; peso: number; nota: number | null }, necesita: string, fallo: (e: unknown) => void, hecho: () => void): HTMLElement {
+    const fila = crear("div", "estudio-item notas-fila");
+    const nombre = crear("span", "estudio-item-texto");
+    nombre.textContent = `${e.nombre} · ${e.peso} %`;
+    fila.append(nombre);
+    if (this.evaluacionEditando === e.id) {
+      const campo = crear("input", "estudio-campo notas-campo") as HTMLInputElement;
+      campo.value = e.nota === null ? "" : formatearNota(e.nota);
+      campo.placeholder = "5,5";
+      campo.inputMode = "decimal";
+      campo.setAttribute("aria-label", `Nota de ${e.nombre}`);
+      const guardar = boton("pildora", "Guardar");
+      const quitar = boton("pildora", "Borrar");
+      quitar.title = "Borra la evaluación (no se puede deshacer)";
+      const enviar = () => {
+        const n = leerCampoNota(campo.value);
+        if (!n.ok) return fallo(new Error(n.motivo));
+        void (this.opciones.alGuardarEvaluacion?.({ evaluacion: e.id, nota: n.nota }) ?? Promise.resolve()).then(hecho, fallo);
+      };
+      guardar.addEventListener("click", enviar);
+      campo.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") enviar();
+      });
+      quitar.addEventListener("click", () => void (this.opciones.alBorrarEvaluacion?.(e.id) ?? Promise.resolve()).then(hecho, fallo));
+      fila.append(campo, guardar, quitar);
+      queueMicrotask(() => campo.focus());
+      return fila;
+    }
+    const cuando = crear("button", "estudio-item-cuando notas-nota") as HTMLButtonElement;
+    cuando.type = "button";
+    cuando.textContent = e.nota === null ? (necesita || "pendiente") : formatearNota(e.nota);
+    cuando.title = "Tocar para poner o cambiar la nota";
+    cuando.addEventListener("click", () => {
+      this.evaluacionEditando = e.id;
+      this.mostrarEstudio();
+    });
+    fila.append(cuando);
+    return fila;
   }
 
   /** Las propuestas de tareas y fechas de una grabación (las deja Brote por MCP); la lista cambia por aviso del puente. */

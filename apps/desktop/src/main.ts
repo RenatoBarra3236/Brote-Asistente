@@ -153,6 +153,9 @@ async function iniciar(): Promise<void> {
           alCrearRamo: (nombre, alias) => puente.crearRamo(nombre, alias),
           alEditarRamo: (ramo, cambios) => puente.editarRamo(ramo, cambios),
           alArchivarRamo: (ramo) => puente.archivarRamo(ramo),
+          alGuardarEvaluacion: (datos) => puente.guardarEvaluacion(datos),
+          alBorrarEvaluacion: (evaluacion) => puente.borrarEvaluacion(evaluacion),
+          alCambiarAjustesNotas: (ramo, ajustes) => puente.ajustesNotas(ramo, ajustes),
           alAccionAgenda: (accion: "configurar" | "privacidad-calendarios") =>
             void (accion === "configurar" ? invoke("abrir_configuracion") : invoke("abrir_enlace", { cual: accion })).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           // En la vista previa del navegador (siempre "dev"), `?produccion=1` muestra los textos de la app empaquetada.

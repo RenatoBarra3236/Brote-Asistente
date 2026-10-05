@@ -351,7 +351,6 @@ export class Panel {
       ["agenda", "calendario", "Agenda"],
       ["estudio", "estudio", "Estudio"],
       ["grabar", "microfono", "Grabar"],
-      ["claude", "codigo", "Claude"],
     ];
     for (const [nombre, ic, titulo] of pestanas) {
       const boton = botonIcono("pestana", ic, titulo);
@@ -360,8 +359,12 @@ export class Panel {
       izquierda.append(boton);
     }
     const derecha = crear("div", "barra-grupo");
-    // Equipo (la supervisión del computador) vive a la derecha, con «Lo que sé de ti» y Configurar:
-    // así la izquierda no se llena de pestañas.
+    // Claude (el consumo del plan y tus sesiones) y Equipo (la supervisión del computador) viven a la
+    // derecha, con «Lo que sé de ti» y Configurar: así la izquierda no se llena de pestañas.
+    const claudeBoton = botonIcono("pestana", "codigo", "Claude");
+    claudeBoton.addEventListener("click", () => this.elegir("claude"));
+    this.botonesPestana.set("claude", claudeBoton);
+    derecha.append(claudeBoton);
     const equipoBoton = botonIcono("pestana", "equipo", "Equipo");
     equipoBoton.addEventListener("click", () => this.elegir("equipo"));
     this.botonesPestana.set("equipo", equipoBoton);

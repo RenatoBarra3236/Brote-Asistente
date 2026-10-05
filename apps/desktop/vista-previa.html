@@ -293,6 +293,19 @@
                   setTimeout(() => emitir({ tipo: "ramos", ramos: window.__estudio.ramos.filter((x) => !x.archivado) }), 150);
                   return responder(id, {});
                 }
+                case "repaso-estado":
+                  return responder(id, { datos: window.__repaso.estado() });
+                case "repaso-propuesta-decidir": {
+                  const r = window.__repaso.decidir(pedido);
+                  if (typeof r === "string") return emitir({ tipo: "respuesta", id, ok: false, error: r });
+                  setTimeout(() => emitir({ tipo: "repaso", repaso: window.__repaso.estado() }), 200);
+                  return responder(id, r === true ? { mensaje: "Descartada." } : { datos: r });
+                }
+                case "repaso-responder": {
+                  window.__repaso.responder(pedido.tarjeta, pedido.resultado);
+                  setTimeout(() => emitir({ tipo: "repaso", repaso: window.__repaso.estado() }), 200);
+                  return responder(id, {});
+                }
                 case "propuestas-listar":
                   return responder(id, { datos: window.__propuestas });
                 case "propuesta-decidir": {
@@ -688,6 +701,77 @@
           const r = { id: siguiente++, nombre: limpio, color: colores[ramos.length % colores.length], alias, archivado: false };
           ramos.push(r);
           return r;
+        },
+      };
+    </script>
+    <script type="module">
+      // Repaso (A3): propuesta del agente, tarjetas y temas de ejemplo; el estado lo arma el mismo código del motor.
+      // ?repaso=sin (nada) | propuesta (una propuesta por revisar) | hoy (tarjetas que vencen hoy) | nada (tarjetas, ninguna hoy)
+      import { armarEstadoRepaso, inicioDelDia, siguienteEstado } from "/../../packages/motor/src/repaso-tipos.ts";
+      const modo = new URLSearchParams(location.search).get("repaso") ?? "sin";
+      const ahora = () => Date.now();
+      const G = "2026-10-04-103000";
+      let propuestas =
+        modo === "propuesta"
+          ? [{
+              grabacion: G,
+              ramoId: 1,
+              creadaMs: ahora(),
+              kit: {
+                temas: [
+                  { titulo: "Límites y continuidad", puntos: ["El límite describe a qué valor se acerca la función", "Existen límites laterales", "Continua = sin saltos en el punto"] },
+                  { titulo: "Reglas de derivación", puntos: ["Regla de la cadena para funciones compuestas", "Derivada del producto"] },
+                ],
+                glosario: [
+                  { termino: "Continuidad", definicion: "La función no tiene saltos en ese punto" },
+                  { termino: "Derivada", definicion: "Tasa de cambio instantánea de una función" },
+                  { termino: "Asíntota", definicion: "Recta a la que se acerca la gráfica sin tocarla" },
+                ],
+                preguntas: [
+                  { pregunta: "¿Qué diferencia hay entre un límite y el valor de la función?", respuesta: "El límite es a lo que se acerca; el valor es lo que vale en el punto" },
+                  { pregunta: "¿Cuándo usas la regla de la cadena?", respuesta: "Cuando derivas una función dentro de otra" },
+                ],
+              },
+            }]
+          : [];
+      const t = (id, ramoId, tipo, frente, reverso, caja, dias) => ({ id, grabacion: G, ramoId, tipo, frente, reverso, caja, proximoMs: inicioDelDia(ahora(), dias), ultimaMs: null, aciertos: 0, fallos: 0 });
+      let tarjetas =
+        modo === "hoy" || modo === "nada"
+          ? [
+              t(1, 1, "termino", "Continuidad", "La función no tiene saltos en ese punto", 1, modo === "hoy" ? 0 : 4),
+              t(2, 1, "pregunta", "¿Cuándo usas la regla de la cadena?", "Cuando derivas una función dentro de otra", 2, modo === "hoy" ? -1 : 6),
+              t(3, 1, "termino", "Derivada", "Tasa de cambio instantánea de una función", 3, modo === "hoy" ? 0 : 9),
+              t(4, 2, "pregunta", "¿Qué dice la segunda ley de Newton?", "La fuerza neta es masa por aceleración", 1, modo === "hoy" ? 0 : 3),
+              t(5, 2, "termino", "Inercia", "Resistencia de un cuerpo a cambiar su movimiento", 4, 14),
+            ]
+          : [];
+      const resumenes = tarjetas.length > 0 ? [{ id: 1, grabacion: G, ramoId: 1, creadoMs: ahora(), temas: [{ titulo: "Límites y continuidad", puntos: ["El límite describe a qué valor se acerca", "Existen límites laterales"] }] }] : [];
+      window.__repaso = {
+        estado: () => armarEstadoRepaso(tarjetas, propuestas, resumenes, ahora()),
+        decidir(p) {
+          const prop = propuestas.find((x) => x.grabacion === p.grabacion);
+          if (!prop) return "Esa propuesta ya no existe";
+          propuestas = propuestas.filter((x) => x !== prop);
+          if (p.decision === "descartar") return true;
+          let n = 0;
+          for (const i of p.glosario ?? []) {
+            const g = p.glosarioEditado?.[i] ?? prop.kit.glosario[i];
+            tarjetas.push(t(100 + tarjetas.length, p.ramoId ?? null, "termino", g.termino, g.definicion, 1, 0));
+            n++;
+          }
+          for (const i of p.preguntas ?? []) {
+            const q = p.preguntasEditado?.[i] ?? prop.kit.preguntas[i];
+            tarjetas.push(t(100 + tarjetas.length, p.ramoId ?? null, "pregunta", q.pregunta, q.respuesta, 1, 0));
+            n++;
+          }
+          return { tarjetas: n, repetidas: 0, temas: (p.temas ?? []).length };
+        },
+        responder(id, resultado) {
+          const x = tarjetas.find((y) => y.id === id);
+          if (!x) return;
+          const s = siguienteEstado(x.caja, resultado, ahora());
+          x.caja = s.caja;
+          x.proximoMs = s.proximoMs;
         },
       };
     </script>

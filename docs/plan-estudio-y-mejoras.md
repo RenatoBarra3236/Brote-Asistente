@@ -169,13 +169,114 @@ Anotado el 5-10-2026 a partir de una revisión "como estudiante universitario" p
 
 ### Pendientes de A2 que quedaron abiertos (5-10-2026)
 
-- **Ramos y calculadora ya conviven en una sola vista** (el bloque «Notas» vive dentro de la ficha de cada ramo en «Tus ramos»; decisión del usuario: no hay pestaña aparte). Falta decidir CÓMO se ve, porque hoy «Notas» queda al final de la ficha y hay que abrir el ramo y hacer scroll. Opciones propuestas (recomendada: 1 y 2 juntas): (1) «Notas» arriba de «Próximas clases»; (2) la cabecera del ramo, sin abrirlo, con promedio y «necesitas X» en el color del semáforo; (3) dos pestañas dentro del ramo, «Resumen» y «Notas». Sin decidir ni programar.
+- **HECHO el 5-10-2026 (opciones 1 + 2):** «Notas» va arriba de «Próximas clases» y la cabecera del ramo, sin abrirlo, trae una píldora «promedio 4,2 · necesitas 4,0» con el color del semáforo (`.estudio-notas-chip`). Probado con las vistas previas `notas=sin|con|imposible`; falta verlo en el notch real.
+- (Texto anterior) **Ramos y calculadora ya conviven en una sola vista** (el bloque «Notas» vive dentro de la ficha de cada ramo en «Tus ramos»; decisión del usuario: no hay pestaña aparte). Falta decidir CÓMO se ve, porque hoy «Notas» queda al final de la ficha y hay que abrir el ramo y hacer scroll. Opciones propuestas (recomendada: 1 y 2 juntas): (1) «Notas» arriba de «Próximas clases»; (2) la cabecera del ramo, sin abrirlo, con promedio y «necesitas X» en el color del semáforo; (3) dos pestañas dentro del ramo, «Resumen» y «Notas». Sin decidir ni programar.
 - Editar en la isla el nombre y el peso de una evaluación y los ajustes del ramo (aprobación, examen): hoy solo por frase, MCP o pedido al puente. Decisión abierta.
 - Promedio general del semestre entre ramos: para el bloque B (gráficos).
+
+## Diseño de A3: Resumen y tarjetas de repaso (aprobado y HECHO el 5-10-2026, con las siete recomendaciones de abajo)
+
+**Qué es.** Bajo pedido («hazme un resumen y tarjetas de la clase de ayer»), el agente de Brote lee una transcripción entera y deja una **propuesta pendiente**: resumen por temas, glosario y preguntas de práctica. El usuario decide en la isla qué se queda; lo aceptado se repasa con repetición espaciada. Mismo molde que `agenda_proponer` (fase 5 de grabar): la herramienta no agrega nada por sí sola y la confirmación es el toque en la isla.
+
+**Quién lo hace (privacidad).** Solo el agente de Brote, con la cuenta Pro del usuario. Nunca un especialista ni un plan gratuito (la skill `delegar` ya prohíbe pasar transcripciones; se agrega una línea para resúmenes y tarjetas, con prueba). Solo bajo pedido: nada corre solo ni al terminar de transcribir. La skill `gastos` (o una nueva `estudio`) explica cuándo usar la herramienta; el texto de la herramienta no da órdenes sueltas (lección de la inyección).
+
+**Herramienta MCP** `repaso_proponer` (función `estudio`; además exige `grabaciones` prendida para leer la transcripción; permitida sin preguntar porque solo deja pendientes, como `agenda_proponer`): `{ grabacion, ramo?, temas: [{ titulo, puntos: [≤ 5 de ≤ 160 letras] }], glosario: [{ termino, definicion ≤ 200 }], preguntas: [{ pregunta ≤ 200, respuesta ≤ 300 }] }`. Topes: 8 temas, 20 términos, 20 preguntas. Se valida en el motor (largos, sin repetidos, grabación existente, ramo por `emparejarRamo`; ambiguo = sin ramo, nunca adivina). La descripción pide frases propias y cortas, **no copiar párrafos de la clase**, y nada que no se haya dicho.
+
+**Datos** (`asistente.db`, 600; puro en `packages/motor/src/repaso.ts`, tipos sin Node en `repaso-tipos.ts`):
+- `repaso_propuestas`: la propuesta pendiente completa (JSON acotado) por grabación. Se borra al decidir, al borrar la transcripción o a los 14 días.
+- `tarjetas`: `id`, `grabacion` (id, solo referencia), `ramo_id?`, `tipo` (`termino` | `pregunta`), `frente`, `reverso`, y el estado de repaso (`caja` 0–5, `proximo_ms`, `ultima_ms`, `aciertos`, `fallos`). El enlace al ramo va en la tabla `ramo_de` con tipo nuevo `tarjeta` (o `grabacion` para el kit entero), como en A1.
+- `resumenes`: los temas aceptados (`grabacion`, `ramo_id?`, JSON de temas) para releerlos. La transcripción **no se toca** ni se copia.
+- Lo único del texto de la clase que persiste es lo que el usuario aceptó, ya en palabras cortas del agente. Nada de la propuesta se registra en consola ni en avisos (el aviso dice solo «N cosas para revisar»).
+
+**Repaso espaciado** (puro, sin IA, probado): cajas tipo Leitner con intervalos 1, 3, 7, 14, 30 días; «Sabía» sube una caja, «Casi» se queda, «No sabía» vuelve a la caja 1 (mañana). Sin horas del día: «vence hoy» = antes de las 23:59 locales. Cola del día ordenada por lo más atrasado y tope de 15 por sesión (configurable después).
+
+**Isla** (pestaña Estudio, dentro del ramo y arriba si hay algo pendiente):
+1. Tarjeta «Brote preparó un repaso de tu clase (N temas, M tarjetas)» con **revisar y aceptar**: temas con casilla, tarjetas con casilla (todas marcadas de partida), «Aceptar lo marcado» / «Descartar», y un selector de ramo si no se emparejó solo.
+2. «Repasar (N)»: una tarjeta a la vez, tocar para ver el reverso, tres botones (No sabía / Casi / Sabía), progreso «3 de 12». Al terminar Brote celebra.
+3. En la ficha del ramo: línea «Repaso: 7 tarjetas para hoy · 24 en total» y los temas aceptados plegados.
+Aviso de Novedades (tipo nuevo `repaso`) una vez al día si hay tarjetas que vencen y la isla estuvo cerrada: «Tienes 7 tarjetas para repasar». Nunca abre la isla sola.
+
+**Sin IA** (frases del motor, función `estudio`): «¿tengo tarjetas para repasar?», «repasemos [cálculo]» (abre la sesión; el motor devuelve `datos: { repaso: … }` y la isla decide, como con grabar), «¿cuántas tarjetas tengo?». Pedir el resumen **sí va al agente** (necesita IA): frases tipo «resume la clase de ayer» no calzan con plantillas.
+
+**Puente:** aviso `repaso` (marca cada 2 s: el MCP es otro proceso), pedidos `repaso-estado`, `repaso-propuesta-decidir { grabacion, temas[], tarjetas[], ramo }`, `repaso-responder { tarjeta, resultado }`, `repaso-todo` y `repaso-borrar { que: tarjeta|grabacion|ramo|todo }` (ver y borrar no dependen de la función, como notas y grabaciones). Recuerda: en los pedidos `id` es de correlación, por eso `grabacion`.
+
+**Lo que sé de ti → Repaso:** por ramo y por grabación, con tarjetas, temas y estado; borrar una tarjeta, las de una grabación, las de un ramo o «Borrar todo» con segundo toque; se dice que no hay Papelera (es una base). Borrar una transcripción borra sus propuestas pendientes; las tarjetas **aceptadas** se quedan (son del usuario) salvo que las borre. Borrar el ramo las deja «sin ramo».
+
+**Fuera de A3 (para no mezclar):** exportar a Anki (D5, depende de esto), plan de estudio que use las fechas (A4), estadísticas de repaso y racha (A5), gráficos (B), generar tarjetas desde apuntes o PDF que no sean transcripciones, ajustar intervalos por tarjeta.
+
+**Pruebas previstas:** `pruebas/repaso.test.ts` (validación y topes, repetidos, ramo ambiguo, cajas y fechas con cambio de hora, cola del día, borrados), MCP (`repaso_proponer` con y sin función, grabación inexistente, `grabaciones` apagada), puente real de punta a punta en carpeta temporal, textos de la isla (`src/agente/repaso.ts`), prueba de la skill `delegar`, vista previa `?pestana=estudio&repaso=sin|propuesta|hoy|nada`. Nunca con transcripciones reales; datos inventados.
+
+**Decisiones que necesito de ti antes de programar:**
+1. **Qué se guarda del resumen**: ¿guardo los temas aceptados para releerlos (recomiendo sí, son cortos) o solo las tarjetas?
+2. **Aceptar**: ¿todo marcado de partida y desmarcas lo que no quieres (recomiendo), o aceptas de a una?
+3. **Repaso espaciado**: ¿cajas Leitner 1-3-7-14-30 (recomiendo: simple, explicable, sin parámetros ocultos) o algo tipo SM-2 (más fino, más difícil de explicar)?
+4. **Aviso diario** «tienes N tarjetas»: ¿sí, una vez al día solo con la isla cerrada (recomiendo), o nunca?
+5. **Ramo de la propuesta**: ¿el agente lo sugiere y tú lo confirmas en el selector (recomiendo), o siempre lo eliges tú? (Falta el selector «Poner ramo» en transcripciones; aquí se resuelve dentro de la propuesta.)
+6. **Función**: ¿cuelga de `estudio` y exige también `grabaciones` solo para proponer (recomiendo), o es una función nueva `repaso`?
+7. **Tarjetas de preguntas**: ¿el agente las genera con respuesta y tú las corriges en la isla antes de aceptar (recomiendo editar el texto en la propuesta), o solo aceptas/descartas?
+
+## Lo que quedó hecho en A3 (5-10-2026)
+
+- **Decisiones tomadas** (las siete recomendadas): se guardan los temas aceptados además de las tarjetas; todo viene marcado de partida; cajas 1-3-7-14-30 días; aviso diario solo con la isla cerrada; el agente sugiere el ramo y el usuario lo confirma en un selector; cuelga de `estudio` (y `repaso_proponer` exige además `grabaciones`); las tarjetas de término y de pregunta se corrigen en la propuesta antes de aceptar.
+- **Motor:** `repaso-tipos.ts` (puro, sin Node: `validarKit` deja fuera lo largo o repetido y dice por qué, nunca recorta; `validarDecision`; cajas de Leitner `siguienteEstado`, `colaDelDia` con tope 15, días en hora de pared; `armarEstadoRepaso`), `repaso.ts` (tablas `repaso_propuestas`, `tarjetas` y `resumenes`; un trigger suelta tarjetas y resúmenes «sin ramo» al borrar el ramo; aceptar dos veces no duplica; propuesta sin decidir se descarta a los 14 días; tope 2.000 tarjetas) y `repaso-frases.ts`. Sin IA: «¿tengo tarjetas para repasar?» (siempre con «de repaso» o «para repasar», así «tarjetas de crédito» no calza), «¿qué me toca repasar?», «repasemos [cálculo]», «quiero repasar», «hagamos un repaso». El motor devuelve `datos: { repaso: { ramoId } }` y la isla abre la sesión; un ramo que no calza va al agente.
+- **MCP:** `repaso_proponer` (permitida sin preguntar: solo deja una propuesta pendiente; exige `estudio` y `grabaciones`, la transcripción tiene que existir, el ramo se empareja por nombre o palabra clave y si no calza falla en vez de adivinar). La skill `delegar` prohíbe pasar tarjetas, resúmenes, glosarios y preguntas de práctica a planes gratuitos (con prueba).
+- **Puente:** aviso `repaso` (marca cada 2 s y al cambiar el día), pedidos `repaso-estado`, `repaso-todo` (no depende de la función), `repaso-propuesta-decidir`, `repaso-responder`, `repaso-borrar` (`tarjeta|grabacion|ramo|todo`; ver y borrar no dependen de la función). Borrar una transcripción borra su propuesta pendiente, no las tarjetas ya aceptadas. Nada del contenido se registra (solo «repaso aceptado (N tarjetas)»). Prueba de punta a punta con el puente real (`repaso-puente.test.ts`).
+- **Isla:** `repaso-vista.ts` + `agente/repaso.ts` (con pruebas). En Estudio: tarjeta «Brote preparó un repaso de tu clase…» (Revisar → ramo, temas, términos y preguntas con casilla y «Editar», «Aceptar lo marcado (N)» / Descartar), tarjeta «Repaso» con «Repasar», sesión de una tarjeta a la vez (Mostrar respuesta → No sabía / Casi / Sabía), y en la ficha de cada ramo «Repaso: N para hoy · M en total» con sus temas plegados. La isla no se cierra sola en plena sesión ni con una propuesta abierta. Novedades tipo `repaso` (propuesta nueva y «Tienes N tarjetas para repasar» una vez al día, solo con la isla cerrada; no abre la isla). **Lo que sé de ti → Repaso:** por clase, borrar una tarjeta, lo de una clase, lo de un ramo o todo, con segundo toque. Vistas previas `?pestana=estudio&repaso=sin|propuesta|hoy|nada` y `vista-previa-memoria.html`.
+
+### Pruebas pendientes de A3 (para un Mac)
+
+- [ ] Reiniciar los procesos MCP (`pkill -f packages/motor/src/mcp.ts` y el `claude … --resume`), abrir sesión nueva con el TUI y pedir «hazme un resumen y tarjetas de la clase de ayer» con una grabación de prueba: que lea todas las partes con `transcripciones_leer`, llame a `repaso_proponer` (sin permiso) y que la propuesta aparezca en Estudio. `openclaw mcp probe gastos` debe listar la herramienta nueva. Ojo con la calidad: que NO copie párrafos de la clase.
+- [ ] Aceptar con algunas casillas desmarcadas y un texto corregido; que el ramo sugerido se pueda cambiar.
+- [ ] Repasar con tarjetas reales de prueba: las cajas y las fechas al día siguiente; que la sesión no se corte al cerrar la isla con el cursor.
+- [ ] El aviso «Tienes N tarjetas» una sola vez por día y solo con la isla cerrada; que no abra la isla.
+- [ ] Apagar `estudio`: las frases dicen «Eso está apagado», `repaso_proponer` informa, la pestaña desaparece y lo guardado se ve y se borra en «Lo que sé de ti → Repaso».
+- [ ] Borrar una transcripción con una propuesta pendiente: la propuesta se va y las tarjetas aceptadas se quedan.
+- [ ] El aspecto de la propuesta (lista larga con scroll) y de la sesión en el notch real y en el modo flotante.
+- [ ] Frases reales: «repasemos cálculo», «¿tengo tarjetas para repasar?» desde el teclado del Mac.
+
+**Sin hacer de A3:** exportar a Anki (D5), ajustar intervalos por tarjeta, tope de sesión configurable (hoy 15), «Poner ramo» a una propuesta ya aceptada, y el gráfico/racha de repaso (A5/B).
+
+## Diseño de A4: Plan de estudio antes de una prueba (PROPUESTO el 5-10-2026, SIN aprobar: no hay código)
+
+**Qué es.** Dada una prueba con fecha («Certamen 2 de Cálculo, viernes 9 a las 15:00»), Brote reparte bloques de estudio en los días que faltan, esquivando lo que ya tienes en el calendario, y te lo muestra para que lo confirmes. Todo lo calcula el motor sin IA (determinista, probado); la IA no interviene salvo que el agente lo pida por MCP.
+
+**De dónde sale la prueba.** La evaluación de A2 ya tiene un campo `fecha` (solo día) que nadie llena todavía. A4 le suma hora opcional y tres formas de ponerla: por frase («el certamen 2 de cálculo es el viernes 9 a las 15:00»), con un campo en el bloque «Notas» de la ficha del ramo, y como sugerencia cuando un evento del calendario o una propuesta de Agenda (fase 5 de grabar) calza con una evaluación pendiente del ramo (nunca se asigna sola). Sin fecha no hay plan.
+
+**Cuánto estudiar** (puro, `packages/motor/src/plan-estudio.ts`, tipos sin Node): horas objetivo = 2 h base + 0,2 h por cada 1 % de peso de la evaluación, multiplicadas por la dificultad que ya calcula A2 (si la nota que necesitas es ≤ 4,5: ×1; ≤ 5,5: ×1,3; > 5,5: ×1,6; si «ya no alcanza» o «ya aprobaste», no se ofrece plan y se dice por qué), con tope de 12 h. Es un punto de partida editable: se muestra el total y el usuario puede subirlo o bajarlo antes de agendar. Si hay tarjetas de repaso del ramo (A3), los bloques de repaso lo mencionan («Repasar tarjetas de Cálculo: 7»).
+
+**Dónde caen los bloques.** Ventanas de estudio por defecto: lunes a viernes 16:00–21:30, fin de semana 10:00–19:00; bloques de 50 min con 10 min de descanso, máximo 2 por día, ninguno en la hora previa a una clase o evento, el último termina 3 h antes de la prueba y nada después de las 22:00. Los días se reparten con más peso hacia la prueba (el estudio parejo no funciona: se estudia más cerca) y siempre hay un «Repaso final» el día anterior. Tres tipos: «Estudiar temas» (primeros bloques), «Practicar ejercicios» (los del medio) y «Repaso final». Si queda menos de un día, se arma uno o dos bloques y se avisa «te queda poco tiempo». Tope: 20 bloques por plan, 4 planes activos, horizonte de 30 días. Sin calendario conectado se asume libre y se avisa.
+
+**Datos** (`asistente.db`, 600): tabla `planes_estudio` (`id`, `ramo_id`, `evaluacion_id`, `prueba_ms`, `horas`, `creado_ms`) y `bloques_estudio` (`id`, `plan_id`, `tipo`, `inicio_ms`, `fin_ms`, `estado` pendiente|hecho|saltado, `calendario` 0/1). Borrar un ramo borra sus planes (trigger, como las notas); archivar los conserva. Títulos genéricos: «Estudiar Cálculo», nunca el contenido de la clase.
+
+**Dónde viven.** Los bloques viven en la Agenda de Brote (tipo nuevo `estudio`, con el punto de color del ramo y un check). «Agregar también a mi calendario» es una casilla aparte, apagada de partida y por plan: crea los eventos en el Calendario del Mac con `crearEventoMacAhora`. Limitación honesta: hoy no guardamos el id de lo creado en EventKit, así que borrar un plan borra los bloques de Brote pero **los eventos del calendario se borran a mano** (la isla lo dice antes de agendar).
+
+**Isla.** En la ficha del ramo, cada evaluación con fecha muestra «en 5 días» y un botón «Planear estudio». Eso abre una propuesta (mismo molde de la propuesta de repaso): total de horas con − / +, lista de bloques por día y hora con casilla (todos marcados) y «Quitar», casilla «Agregar también a mi calendario», «Agendar». La Agenda muestra los bloques con su check. Cada bloque tiene «Empezar» que arranca un pomodoro con la etiqueta del ramo (así el pomodoro queda enlazado a su ramo, base de A5). Aviso de Novedades 10 min antes de cada bloque (no abre la isla); nada la noche anterior. Rehacer el plan es manual («Rehacer plan» recalcula lo que queda, conservando lo hecho); no se reprograma solo.
+
+**Sin IA** (función `estudio`): «el certamen 2 de cálculo es el viernes 9 a las 15:00» (pone la fecha; pregunta si el ramo o la evaluación no calzan y nunca adivina), «plan de estudio para el certamen 2 de cálculo» / «organízame el estudio para el certamen 1», «¿qué tengo que estudiar hoy?» (los bloques de hoy). Frases de control que no deben calzar: «estudio para el certamen» sin ramo, «el viernes 9 pago el arriendo», gastos.
+
+**MCP:** `estudio_plan` (solo lectura: calcula un plan y lo devuelve sin guardarlo; sirve para que el agente lo comente) y `estudio_hoy` (bloques de hoy, solo lectura). El agente no agenda: confirmar es un toque en la isla. Tras cambiar `mcp.ts` hay que reiniciar los procesos MCP.
+
+**Puente:** aviso `plan-estudio` (marca cada 2 s), pedidos `plan-estudio-proponer { ramo, evaluacion, horas? }`, `plan-estudio-agendar { …, bloques[], calendario }`, `plan-estudio-bloque { bloque, estado }`, `plan-estudio-borrar` y `plan-estudio-todo` (no depende de la función: «Lo que sé de ti → Plan de estudio»); el aviso de 10 min antes sale del mismo vigilante del calendario.
+
+**Privacidad.** Solo ramos, fechas y horas; nada de texto de clases. La skill `delegar` prohíbe pasar planes, fechas de pruebas y horarios de estudio a planes gratuitos (con prueba). Los eventos que vayan al calendario del Mac pueden sincronizarse con la nube del usuario: por eso la casilla es explícita.
+
+**Fuera de A4:** estadísticas de horas realmente estudiadas (A5), gráficos (B), reprogramación automática, estudio con IA («explícame este tema»), compartir planes en grupo.
+
+**Pruebas previstas:** `pruebas/plan-estudio.test.ts` (horas según peso y dificultad, ventanas y ocupados, cambio de hora, poco tiempo, prueba pasada, tope de bloques, bloque final siempre antes, determinismo), frases con controles, MCP, puente real de punta a punta en carpeta temporal, textos e isla (`src/agente/plan-estudio.ts`), vista previa `?pestana=estudio&abrir=1&plan=sin|propuesta|poco`.
+
+**Decisiones que necesito de ti antes de programar:**
+1. **Cómo se pone la fecha de una prueba**: ¿frase + campo en la isla + sugerencia desde el calendario (recomiendo las tres, la sugerencia sin asignar sola) o solo frase y campo?
+2. **Dónde viven los bloques**: ¿Agenda de Brote y casilla opcional para el calendario, apagada de partida (recomiendo), o directo al calendario del Mac?
+3. **Horario de estudio**: ¿lunes a viernes 16:00–21:30 y fin de semana 10:00–19:00, bloques de 50 min, 2 por día (recomiendo, editable en Configurar), o prefieres dar tú tus horas ahora?
+4. **Cuánto estudiar**: ¿fórmula por peso y dificultad con − / + para ajustarla (recomiendo) o siempre preguntarte las horas?
+5. **Empezar un bloque**: ¿botón «Empezar» que arranca un pomodoro del ramo (recomiendo, alimenta A5) o los bloques son solo informativos?
+6. **Avisos**: ¿10 min antes de cada bloque sin abrir la isla y nada la noche anterior (recomiendo) o también un aviso el día anterior a la prueba?
+7. **Reprogramar**: ¿manual con «Rehacer plan» (recomiendo) o automático al saltarte un bloque?
+8. **Borrar un plan**: ¿te parece bien que no pueda borrar los eventos que ya creó en tu calendario (se hace a mano, y la isla lo avisa antes) o prefieres que A4 parta solo con Agenda de Brote, sin calendario, hasta guardar el id de EventKit?
 
 ## Pendientes previos que no son de este plan
 Probar en un Mac las fases 2 a 5 de grabar y transcribir (`docs/demo/pauta-pruebas-mac-grabaciones.md`); Agenda: diseño estilo Notion y mensaje cuando falla `agenda-estado`; ideas de la sección 9 de `plan-rediseno.md` (no se empiezan sin pedirlo).
 
 ## Progreso
-- [x] A1 Ramos (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A1») · [x] A2 Calculadora de notas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A2») · [ ] A3 Resumen y tarjetas · [ ] A4 Plan de estudio · [ ] A5 Estadísticas
+- [x] A1 Ramos (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A1») · [x] A2 Calculadora de notas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A2») · [x] A3 Resumen y tarjetas (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A3») · [ ] A4 Plan de estudio (diseño propuesto, esperando aprobación) · [ ] A5 Estadísticas
 - [ ] B Gráficos · [ ] C Organizar temas · [ ] D Conectores · [ ] E Cosas chicas · [ ] F Adopción

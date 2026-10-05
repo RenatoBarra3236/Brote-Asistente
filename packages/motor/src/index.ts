@@ -45,3 +45,6 @@ export { AJUSTES_POR_DEFECTO, APROBACION_POR_DEFECTO, MAX_EVALUACIONES_POR_RAMO,
 export { responderNotas, interpretarNotas, separarEvaluacionYRamo, type AccionNotas, type ContextoNotas } from "./notas-motor.ts";
 export { textoComoVoy, textoEvaluacionCreada, textoExamen, textoNecesaria, textoNotaAnotada, textoSinEvaluaciones } from "./notas-frases.ts";
 export { armarFichaNotas, type FichaNotas } from "./notas-ficha.ts";
+export { MAX_TARJETAS, Repaso, type ResultadoDecidir, type ResultadoProponer } from "./repaso.ts";
+export { CAJA_MAX, DIAS_PROPUESTA, INTERVALOS_DIAS, MAX_DE_HOY, MAX_DEFINICION, MAX_PREGUNTA, MAX_PREGUNTAS, MAX_PUNTO, MAX_PUNTOS, MAX_RESPUESTA, MAX_TEMAS, MAX_TERMINO, MAX_TERMINOS, MAX_TITULO_TEMA, RESULTADOS, TOPE_SESION, armarEstadoRepaso, colaDelDia, finDelDia, inicioDelDia, resumirRepaso, siguienteEstado, validarDecision, validarKit, venceHoy, type DecisionRepaso, type EstadoRepaso, type Kit, type Pregunta, type PropuestaRepaso, type RepasoDeRamo, type Resultado as ResultadoRepaso, type ResumenGuardado, type Tarjeta, type Tema, type Termino, type TipoTarjeta } from "./repaso-tipos.ts";
+export { textoEmpezarRepaso, textoHayRepaso } from "./repaso-frases.ts";

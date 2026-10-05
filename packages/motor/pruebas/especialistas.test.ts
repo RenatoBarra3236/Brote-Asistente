@@ -209,6 +209,12 @@ describe("privacidad con planes gratuitos", () => {
     assert.match(seccion, /sus notas y evaluaciones/);
   });
 
+  it("la skill delegar prohíbe pasar tarjetas de repaso y resúmenes de clase a planes gratuitos", () => {
+    const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
+    const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));
+    assert.match(seccion, /tarjetas de repaso, resúmenes de clase, glosarios y preguntas de práctica/);
+  });
+
   it("la skill delegar prohíbe pasar transcripciones a planes gratuitos", () => {
     const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
     const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));

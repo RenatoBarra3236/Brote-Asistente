@@ -38,6 +38,17 @@
             ficha(2, [{ id: 3, ramoId: 2, nombre: "Control 1", peso: 30, nota: 5.5, fecha: null }, { id: 4, ramoId: 2, nombre: "Control 2", peso: 70, nota: null, fecha: null }], 5.5, 3.4),
           ],
         },
+        // Datos inventados (A3): nunca tarjetas reales.
+        repaso: {
+          ramos: [{ id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false }],
+          tarjetas: [
+            { id: 1, grabacion: "2026-10-03-143000", ramoId: 1, tipo: "termino", frente: "Continuidad", reverso: "Sin saltos", caja: 2, proximoMs: Date.now() + 3 * 86400000, ultimaMs: null, aciertos: 1, fallos: 0 },
+            { id: 2, grabacion: "2026-10-03-143000", ramoId: 1, tipo: "pregunta", frente: "¿Cuándo uso la regla de la cadena?", reverso: "Al derivar una función dentro de otra", caja: 1, proximoMs: Date.now(), ultimaMs: null, aciertos: 0, fallos: 0 },
+            { id: 3, grabacion: "2026-10-01-080000", ramoId: null, tipo: "termino", frente: "Inercia", reverso: "Resiste el cambio", caja: 1, proximoMs: Date.now(), ultimaMs: null, aciertos: 0, fallos: 0 },
+          ],
+          resumenes: [{ id: 1, grabacion: "2026-10-03-143000", ramoId: 1, creadoMs: Date.now(), temas: [{ titulo: "Límites y continuidad", puntos: ["Un límite describe a qué valor se acerca"] }] }],
+          propuestas: [], deHoy: [], porRamo: [], total: 3, hoy: 2,
+        },
         transcripciones:
           modo === "sin"
             ? []
@@ -106,6 +117,18 @@
                 case "notas-todas":
                   datos = sim.notas;
                   break;
+                case "repaso-todo":
+                  datos = sim.repaso;
+                  break;
+                case "repaso-borrar": {
+                  const r = sim.repaso;
+                  const antes = r.tarjetas.length + r.resumenes.length;
+                  const fuera = (x) => pedido.que === "todo" || (pedido.que === "tarjeta" && x.id === pedido.tarjeta) || (pedido.que === "grabacion" && x.grabacion === pedido.grabacion) || (pedido.que === "ramo" && x.ramoId === pedido.ramo);
+                  r.tarjetas = r.tarjetas.filter((x) => pedido.que === "tarjeta" ? x.id !== pedido.tarjeta : !fuera(x));
+                  if (pedido.que !== "tarjeta") r.resumenes = r.resumenes.filter((x) => !fuera(x));
+                  datos = { borradas: antes - r.tarjetas.length - r.resumenes.length };
+                  break;
+                }
                 case "evaluacion-borrar":
                   sim.notas.fichas.forEach((f) => (f.evaluaciones = f.evaluaciones.filter((e) => e.id !== pedido.evaluacion)));
                   sim.notas.fichas = sim.notas.fichas.filter((f) => f.evaluaciones.length > 0);

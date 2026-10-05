@@ -23,6 +23,8 @@ import { TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, type Accio
 import type { CabeceraTranscripcion } from "./transcripciones.ts";
 import { Ramos } from "./ramos.ts";
 import { Notas } from "./notas.ts";
+import { Repaso } from "./repaso.ts";
+import { textoEmpezarRepaso, textoHayRepaso } from "./repaso-frases.ts";
 import { interpretarNotas, responderNotas } from "./notas-motor.ts";
 import type { AccionNotas } from "./notas-motor.ts";
 import { describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";
@@ -71,6 +73,8 @@ export type Accion =
   | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" }
   | { intencion: "ramos-agregar" | "ramos-archivar"; nombre: string }
   | { intencion: "ramos-ver" }
+  | { intencion: "repaso-hay" }
+  | { intencion: "repaso-empezar"; ramo: string | null }
   | AccionNotas;
 
 /** Cuántos gastos muestra "mis últimos gastos". */
@@ -141,6 +145,13 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "notas-borrar":
     case "notas-ajuste":
       return interpretarNotas(intencion, ranuras, originales);
+    case "repaso-hay":
+      return { intencion };
+    case "repaso-empezar": {
+      // «repasemos» solo, o con el nombre de un ramo (se empareja después; si no calza, va al agente).
+      const ramo = originales.cosa ? limpiarTexto(sinArticulo(originales.cosa.trim()), MAX_NOMBRE_RAMO) : "";
+      return { intencion, ramo: ramo || null };
+    }
     case "ramos-agregar":
     case "ramos-archivar": {
       const nombre = limpiarTexto(sinArticulo(originales.cosa?.trim() ?? ""), MAX_NOMBRE_RAMO);
@@ -192,6 +203,7 @@ export class Motor {
   private readonly transcripciones: (() => CabeceraTranscripcion[]) | null;
   private readonly ramos: Ramos | null;
   private readonly notas: Notas | null;
+  private readonly repaso: Repaso | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -224,10 +236,13 @@ export class Motor {
       ramos?: Ramos;
       /** Las evaluaciones y notas por ramo. Sin esto (o sin ramos), esas frases van al agente. */
       notas?: Notas;
+      /** Las tarjetas de repaso. Sin esto (o sin ramos), esas frases van al agente. */
+      repaso?: Repaso;
     } = {},
   ) {
     this.ramos = opciones.ramos ?? null;
     this.notas = opciones.notas ?? null;
+    this.repaso = opciones.repaso ?? null;
     this.uso = opciones.uso ?? null;
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
@@ -297,6 +312,25 @@ export class Motor {
     if (accion.intencion === "ramos-agregar" || accion.intencion === "ramos-archivar" || accion.intencion === "ramos-ver") {
       if (!this.ramos) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ramear(accion) };
+    }
+    if (accion.intencion === "repaso-hay" || accion.intencion === "repaso-empezar") {
+      if (!this.ramos || !this.repaso) return null;
+      const ahora = this.reloj().getTime();
+      const lista = this.repaso.tarjetas();
+      if (accion.intencion === "repaso-hay") {
+        return { intencion: accion.intencion, plantilla: plantilla.id, texto: textoHayRepaso(lista, this.ramos.listar(), ahora) };
+      }
+      // Con nombre de ramo, tiene que calzar con uno (nunca se adivina); sin nombre, repasa lo de todos.
+      let ramoId: number | null = null;
+      let nombreRamo: string | null = null;
+      if (accion.ramo !== null) {
+        const r = emparejarRamo(accion.ramo, this.ramos.listar());
+        if (!r) return null;
+        ramoId = r.id;
+        nombreRamo = r.nombre;
+      }
+      const { texto, hay } = textoEmpezarRepaso(lista, nombreRamo, ramoId, ahora);
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto, ...(hay ? { datos: { repaso: { ramoId } } } : {}) };
     }
     if (accion.intencion.startsWith("notas-")) {
       if (!this.ramos || !this.notas) return null;

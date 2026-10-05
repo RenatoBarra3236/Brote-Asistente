@@ -63,7 +63,9 @@ export type Intencion =
   | "notas-necesaria"
   | "notas-como-voy"
   | "notas-borrar"
-  | "notas-ajuste";
+  | "notas-ajuste"
+  | "repaso-hay"
+  | "repaso-empezar";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista";
 
@@ -385,6 +387,15 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "notas-necesaria-en", intencion: "notas-necesaria", patron: "cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) en [el|la] {objetivo} [para (aprobar|pasar)]" },
   { id: "notas-necesaria-ramo", intencion: "notas-necesaria", patron: "cuanto (necesito|me falta|tengo que sacar|debo sacar|necesitaria|necesitare) para (aprobar|pasar) [el|la|mi] [ramo] {ramo}" },
   { id: "notas-como-voy-todos", intencion: "notas-como-voy", patron: "(como voy|como me va|como estoy|como van) (con|en) (mis ramos|mis notas|todos mis ramos)" },
+  // Repaso (A3): tarjetas de repaso de las clases. Siempre con "repasar"/"repaso" o "tarjetas de repaso" para no confundirlas
+  // con las tarjetas de crédito. Pedir el resumen de una clase va al agente (necesita IA).
+  { id: "repaso-hay-tengo", intencion: "repaso-hay", patron: "(tengo|hay) tarjetas (de repaso|para repasar) [hoy]" },
+  { id: "repaso-hay-cuantas", intencion: "repaso-hay", patron: "cuantas tarjetas (de repaso|para repasar) (tengo|hay|me quedan|me tocan) [hoy]" },
+  { id: "repaso-hay-algo", intencion: "repaso-hay", patron: "(tengo|hay) algo para repasar [hoy]" },
+  { id: "repaso-hay-que", intencion: "repaso-hay", patron: "que (tengo|me toca) repasar [hoy]" },
+  { id: "repaso-empezar-solo", intencion: "repaso-empezar", patron: "(repasemos|a repasar|vamos a repasar|quiero repasar|empecemos a repasar|empieza el repaso)" },
+  { id: "repaso-empezar-ramo", intencion: "repaso-empezar", patron: "(repasemos|vamos a repasar|quiero repasar|empecemos a repasar) {cosa}" },
+  { id: "repaso-empezar-un", intencion: "repaso-empezar", patron: "(hagamos|haz|hacer|empieza|empezar|inicia|iniciar|quiero) [un|el|mi] repaso" },
   { id: "notas-promedio-todos", intencion: "notas-como-voy", patron: "(mi promedio|mis notas|mis promedios)" },
   { id: "notas-como-voy", intencion: "notas-como-voy", patron: "(como voy|como me va|como estoy|como ando) (con|en) [el|la|mi] [ramo] {ramo}" },
   { id: "notas-promedio", intencion: "notas-como-voy", patron: "[cual es] [mi] promedio (de|en) [el|la|mi] [ramo] {ramo}" },

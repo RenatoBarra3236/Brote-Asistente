@@ -11,6 +11,7 @@ import type { EstadoUso } from "./uso.ts";
 import type { Trabajando } from "./especialistas.ts";
 import type { EstadoPlata } from "./plata.ts";
 import type { EstadoEstudio, Ramo } from "./estudio.ts";
+import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from "./repaso.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -150,6 +151,7 @@ type Aviso =
   | { tipo: "plata"; plata: EstadoPlata | null }
   | { tipo: "ramos"; ramos: Ramo[] }
   | { tipo: "notas"; fichas: unknown[] }
+  | { tipo: "repaso"; repaso: EstadoRepaso }
   | { tipo: "plata-aviso"; texto: string }
   | {
       tipo: "respuesta";
@@ -183,6 +185,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesRepaso = new Set<(estado: EstadoRepaso) => void>();
   private readonly oyentesPropuestas = new Set<(propuestas: PropuestaAgenda[]) => void>();
   private readonly oyentesTranscripcion = new Set<(aviso: AvisoTranscripcion) => void>();
   private readonly oyentesAula = new Set<(estado: EstadoAula) => void>();
@@ -284,6 +287,12 @@ export class TransportePuente implements Transporte {
   alCambiarPropuestas(oyente: (propuestas: PropuestaAgenda[]) => void): () => void {
     this.oyentesPropuestas.add(oyente);
     return () => this.oyentesPropuestas.delete(oyente);
+  }
+
+  /** Propuestas de repaso, tarjetas que vencen y resúmenes (A3): al partir y cada vez que cambian (también si los deja el agente). */
+  alCambiarRepaso(oyente: (estado: EstadoRepaso) => void): () => void {
+    this.oyentesRepaso.add(oyente);
+    return () => this.oyentesRepaso.delete(oyente);
   }
 
   /** Avisos de "Grabar y transcribir": en cola, transcribiendo, lista, error o cancelada (sin el contenido de la grabación). */
@@ -454,6 +463,19 @@ export class TransportePuente implements Transporte {
     return { mensaje: mensaje ?? "" };
   }
 
+  /** Acepta lo marcado de una propuesta de repaso (con las correcciones del usuario); devuelve cuánto se guardó. */
+  async aceptarRepaso(grabacion: string, decision: DecisionRepaso): Promise<{ tarjetas: number; repetidas: number; temas: number }> {
+    return this.consultar({ tipo: "repaso-propuesta-decidir", grabacion, decision: "aceptar", ...decision });
+  }
+
+  async descartarRepaso(grabacion: string): Promise<void> {
+    await this.pedir({ tipo: "repaso-propuesta-decidir", grabacion, decision: "descartar" });
+  }
+
+  async responderRepaso(tarjeta: number, resultado: ResultadoRepaso): Promise<void> {
+    await this.pedir({ tipo: "repaso-responder", tarjeta, resultado });
+  }
+
   /** Un pedido cualquiera al puente (por ejemplo, los de "Lo que sé de ti"); devuelve sus datos. */
   async consultar<T = unknown>(pedido: Record<string, unknown>): Promise<T> {
     const { datos } = await this.pedir(pedido);
@@ -563,6 +585,9 @@ export class TransportePuente implements Transporte {
       case "notas":
         // Las notas viajan dentro de `ramos-estado`: el aviso solo hace que la pestaña Estudio se vuelva a pedir.
         for (const oyente of this.oyentesRamos) oyente([]);
+        return;
+      case "repaso":
+        for (const oyente of this.oyentesRepaso) oyente(aviso.repaso);
         return;
       case "plata":
         for (const oyente of this.oyentesPlata) oyente(aviso.plata);

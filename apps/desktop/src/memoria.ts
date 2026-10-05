@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estudio";
+import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
 import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
 import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
 import {
@@ -75,6 +76,8 @@ let memoria: Memoria | null = null;
 /** Los ramos guardados, con los archivados (`null`: todavía no se leyeron o no se pudo). */
 let ramosGuardados: Ramo[] | null = null;
 /** Las notas guardadas, por ramo (con los archivados). Se ven y se borran aunque la función Estudio esté apagada. */
+/** Las tarjetas y resúmenes de repaso (A3), con las propuestas pendientes. Se ven y se borran aunque Estudio esté apagado. */
+let repasoGuardado: (EstadoRepaso & { ramos: Ramo[]; tarjetas: import("./agente/repaso").Tarjeta[] }) | null = null;
 let notasGuardadas: { ramos: Ramo[]; fichas: FichaNotas[] } | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
@@ -321,6 +324,61 @@ function seccionNotas(datos: { ramos: Ramo[]; fichas: FichaNotas[] }): HTMLEleme
   return seccion;
 }
 
+// ---- Repaso (A3): ver y borrar tarjetas, lo de una clase, lo de un ramo o todo ----
+
+async function cargarRepaso(): Promise<void> {
+  try {
+    repasoGuardado = await puente.consultar({ tipo: "repaso-todo" });
+  } catch {
+    repasoGuardado = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+async function borrarRepaso(pedido: Record<string, unknown>): Promise<void> {
+  const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "repaso-borrar", ...pedido });
+  mostrarAviso(avisoRepasoBorrado(borradas));
+  await cargarRepaso();
+  pintarTodo();
+}
+
+function tarjetaRepasoClase(grabacion: string, datos: NonNullable<typeof repasoGuardado>): HTMLElement {
+  const tarjetas = datos.tarjetas.filter((t) => t.grabacion === grabacion);
+  const temas = datos.resumenes.filter((r) => r.grabacion === grabacion).flatMap((r) => r.temas);
+  const ramoId = tarjetas[0]?.ramoId ?? datos.resumenes.find((r) => r.grabacion === grabacion)?.ramoId ?? null;
+  const ramo = datos.ramos.find((r) => r.id === ramoId);
+  const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+  if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, `Clase del ${fechaDeClase(grabacion)}`), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
+  tarjeta.append(cabeza, crear("p", "meta", `${tarjetas.length} tarjeta${tarjetas.length === 1 ? "" : "s"} · ${temas.length} tema${temas.length === 1 ? "" : "s"}`));
+  for (const t of tarjetas) {
+    const fila = crear("div", "botones fila-nota");
+    fila.append(crear("span", "meta", `${t.frente} · ${estadoDeTarjeta(t, Date.now())}`));
+    fila.append(botonOlvidar(() => borrarRepaso({ que: "tarjeta", tarjeta: t.id }), "Borrar"));
+    tarjeta.append(fila);
+  }
+  for (const t of temas) tarjeta.append(crear("p", "meta", `Tema: ${t.titulo}`));
+  const botones = crear("div", "botones");
+  botones.append(botonOlvidar(() => borrarRepaso({ que: "grabacion", grabacion }), "Borrar lo de esta clase"));
+  tarjeta.append(botones);
+  return tarjeta;
+}
+
+function seccionRepaso(datos: NonNullable<typeof repasoGuardado>): HTMLElement {
+  const seccion = crear("section", "seccion seccion-ramos");
+  const clases = [...new Set([...datos.tarjetas.map((t) => t.grabacion), ...datos.resumenes.map((r) => r.grabacion)])].sort().reverse();
+  const encabezado = crear("h2", undefined, "Repaso");
+  encabezado.append(crear("span", "cuenta", String(datos.tarjetas.length)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_REPASO_MEMORIA));
+  seccion.append(...clases.map((g) => tarjetaRepasoClase(g, datos)));
+  const botones = crear("div", "botones");
+  const ramosConRepaso = datos.ramos.filter((r) => datos.tarjetas.some((t) => t.ramoId === r.id) || datos.resumenes.some((x) => x.ramoId === r.id));
+  for (const r of ramosConRepaso) botones.append(botonOlvidar(() => borrarRepaso({ que: "ramo", ramo: r.id }), `Borrar el repaso de ${r.nombre}`));
+  botones.append(botonOlvidar(() => borrarRepaso({ que: "todo" }), "Borrar todo el repaso"));
+  seccion.append(botones);
+  return seccion;
+}
+
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
 
 async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
@@ -459,6 +517,7 @@ function pintar(memoria: Memoria): void {
   // Buscar es sobre lo que Brote recuerda; las grabaciones son aparte (y «olvidar todo sobre» no las toca).
   if (ramosGuardados && ramosGuardados.length > 0 && !coincidencias) contenido.push(seccionRamos(ramosGuardados));
   if (notasGuardadas && notasGuardadas.fichas.length > 0 && !coincidencias) contenido.push(seccionNotas(notasGuardadas));
+  if (repasoGuardado && (repasoGuardado.tarjetas.length > 0 || repasoGuardado.resumenes.length > 0) && !coincidencias) contenido.push(seccionRepaso(repasoGuardado));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
@@ -469,6 +528,7 @@ async function cargar(): Promise<void> {
     await cargarGrabaciones();
     await cargarRamos();
     await cargarNotas();
+    await cargarRepaso();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

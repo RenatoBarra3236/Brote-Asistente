@@ -8,6 +8,8 @@ import { Gastos } from "../src/gastos.ts";
 import { MENSAJE_APAGADA_MCP } from "../src/funciones.ts";
 import { atender } from "../src/mcp.ts";
 import { guardarTranscripcion } from "../src/transcripciones-archivo.ts";
+import { Ramos } from "../src/ramos.ts";
+import { Repaso } from "../src/repaso.ts";
 
 let gastos: Gastos;
 let id = 0;
@@ -46,7 +48,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "motor_proponer_plantilla"],
     );
   });
 
@@ -268,6 +270,41 @@ describe("servidor MCP de gastos", () => {
     assert.match(ok.texto, /todavía no está agregado nada/);
     assert.equal(llamar("agenda_proponer", { grabacion: "2026-01-01-000000", propuestas: [] }).error, true);
     assert.equal(llamar("agenda_proponer", { grabacion: "../x", propuestas: [] }).error, true);
+  });
+
+  it("repaso_proponer: deja una propuesta pendiente, dice qué dejó fuera y no guarda tarjetas", () => {
+    const kit = { temas: [{ titulo: "Límites", puntos: ["Se acerca a un valor"] }], glosario: [{ termino: "Límite", definicion: "Valor al que se acerca la función" }], preguntas: [{ pregunta: "¿" + "a".repeat(250) + "?", respuesta: "x" }] };
+    const ok = llamar("repaso_proponer", { grabacion: "2026-10-04-103000", ...kit });
+    assert.match(ok.texto, /Propuesta guardada: 1 temas, 1 términos y 0 preguntas/);
+    assert.match(ok.texto, /Se dejaron fuera/);
+    assert.match(ok.texto, /todavía no está guardado nada/);
+    assert.equal(new Repaso(gastos, new Ramos(gastos)).tarjetas().length, 0);
+    assert.equal(new Repaso(gastos, new Ramos(gastos)).propuestas(Date.now()).length, 1);
+  });
+
+  it("repaso_proponer: rechaza ids raros, transcripciones que no existen, ramos desconocidos y kits vacíos", () => {
+    const kit = { glosario: [{ termino: "Límite", definicion: "Valor al que se acerca la función" }] };
+    assert.equal(llamar("repaso_proponer", { grabacion: "../x", ...kit }).error, true);
+    assert.equal(llamar("repaso_proponer", { grabacion: "2026-01-01-000000", ...kit }).error, true);
+    assert.equal(llamar("repaso_proponer", { grabacion: "2026-10-04-103000", ramo: "Ramo que no existe", ...kit }).error, true);
+    assert.equal(llamar("repaso_proponer", { grabacion: "2026-10-04-103000" }).error, true);
+  });
+
+  it("repaso_proponer: con «grabaciones» o «estudio» apagadas no hace nada", async () => {
+    const ruta = process.env.ASISTENTE_FUNCIONES!;
+    const original = readFileSync(ruta, "utf8");
+    const kit = { glosario: [{ termino: "Límite", definicion: "Valor al que se acerca la función" }] };
+    try {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, JSON.stringify({ activas: { grabaciones: false, estudio: true } }));
+      assert.equal(llamar("repaso_proponer", { grabacion: "2026-10-04-103000", ...kit }).texto, MENSAJE_APAGADA_MCP);
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, JSON.stringify({ activas: { grabaciones: true, estudio: false } }));
+      assert.equal(llamar("repaso_proponer", { grabacion: "2026-10-04-103000", ...kit }).texto, MENSAJE_APAGADA_MCP);
+    } finally {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, original);
+    }
   });
 
   it("ramos: crea con alias, lista y rechaza lo inválido o repetido", () => {

@@ -31,6 +31,7 @@ import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { Ramos } from "./ramos.ts";
 import { Notas } from "./notas.ts";
+import { Repaso } from "./repaso.ts";
 import { calcularRamo, formatearNota, notaNecesaria, notaNecesariaExamen } from "./notas-tipos.ts";
 import { COLORES_RAMO, emparejarRamo, normalizarRamo } from "./ramos-tipos.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
@@ -383,6 +384,57 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Agenda: proponer tareas de una grabación", readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  {
+    name: "repaso_proponer",
+    description:
+      "Deja una PROPUESTA de resumen y tarjetas de repaso sacada de UNA transcripción del usuario, para que él decida en la " +
+      "isla qué se queda. NO guarda nada por sí sola. Úsala solo cuando el usuario te pida un resumen, un repaso o tarjetas de " +
+      "una clase, después de leer la transcripción entera con transcripciones_leer (todas sus partes). Usa solo lo que se dijo " +
+      "en la clase; nada inventado. Escribe con frases propias y cortas: NO copies párrafos de la clase. Temas (hasta 8, con " +
+      "hasta 5 puntos de 160 letras), glosario (hasta 20 términos, definición de 200 letras) y preguntas de práctica (hasta 20, " +
+      "pregunta de 200 y respuesta de 300 letras). Lo que pase del largo se deja fuera y la respuesta te dice cuál. Si sabes a " +
+      "qué ramo pertenece la clase, pásalo en «ramo»; si no, déjalo vacío y el usuario lo elige.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        grabacion: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}-\\d{6}$", description: "El id de la transcripción" },
+        ramo: { type: "string", maxLength: 60, description: "Nombre del ramo (de ramos_listar), opcional" },
+        temas: {
+          type: "array",
+          maxItems: 8,
+          items: {
+            type: "object",
+            properties: { titulo: { type: "string", maxLength: 80 }, puntos: { type: "array", minItems: 1, maxItems: 5, items: { type: "string", maxLength: 160 } } },
+            required: ["titulo", "puntos"],
+            additionalProperties: false,
+          },
+        },
+        glosario: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            type: "object",
+            properties: { termino: { type: "string", maxLength: 60 }, definicion: { type: "string", maxLength: 200 } },
+            required: ["termino", "definicion"],
+            additionalProperties: false,
+          },
+        },
+        preguntas: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            type: "object",
+            properties: { pregunta: { type: "string", maxLength: 200 }, respuesta: { type: "string", maxLength: 300 } },
+            required: ["pregunta", "respuesta"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["grabacion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Repaso: proponer resumen y tarjetas de una grabación", readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
   {
     name: "motor_proponer_plantilla",
@@ -867,6 +919,25 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       if (r.repetidas) partes.push(`Repetidas (ya propuestas antes): ${r.repetidas}.`);
       if (r.rechazadas.length) partes.push(`Rechazadas: ${r.rechazadas.join("; ")}.`);
       if (r.nuevas) partes.push("El usuario decidirá en la isla cuáles agregar; todavía no está agregado nada.");
+      return partes.join(" ");
+    }
+    case "repaso_proponer": {
+      // Lee una transcripción, así que además de «estudio» exige la función «grabaciones».
+      if (!funciones.activa("grabaciones")) return MENSAJE_APAGADA_MCP;
+      if (typeof args.grabacion !== "string") throw new ErrorDeUso("Falta «grabacion»");
+      if (!idDeGrabacionValido(args.grabacion) || !leerTranscripcionGuardada(args.grabacion)) throw new ErrorDeUso("No hay una transcripción con ese id");
+      const ramos = new Ramos(gastos);
+      let ramoId: number | null = null;
+      if (typeof args.ramo === "string" && args.ramo.trim() !== "") {
+        const r = emparejarRamo(args.ramo, ramos.listar());
+        if (!r) throw new ErrorDeUso(`No hay un ramo «${args.ramo}» (usa ramos_listar, o déjalo vacío y el usuario lo elige)`);
+        ramoId = r.id;
+      }
+      const r = new Repaso(gastos, ramos).proponer(args.grabacion, { temas: args.temas, glosario: args.glosario, preguntas: args.preguntas }, ramoId, Date.now());
+      if (!r.ok) throw new ErrorDeUso(`${r.motivo}${r.rechazadas.length ? `: ${r.rechazadas.join("; ")}` : ""}`);
+      const partes = [`Propuesta guardada: ${r.temas} temas, ${r.terminos} términos y ${r.preguntas} preguntas.`];
+      if (r.rechazadas.length) partes.push(`Se dejaron fuera: ${r.rechazadas.join("; ")}.`);
+      partes.push("El usuario decidirá en la isla qué aceptar; todavía no está guardado nada.");
       return partes.join(" ");
     }
     case "motor_proponer_plantilla": {

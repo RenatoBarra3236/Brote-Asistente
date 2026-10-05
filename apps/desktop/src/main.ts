@@ -32,6 +32,7 @@ import {
 } from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
 import type { EstadoEstudio } from "./agente/estudio";
+import { debeAvisarTarjetas, claveDia, propuestasRepasoNuevas, textoAvisoPropuestaRepaso, textoAvisoTarjetas, REPASO_VACIO, type EstadoRepaso } from "./agente/repaso";
 import { propuestasNuevas, textoAvisoPropuestas, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import type { Grabaciones } from "./agente/grabaciones-memoria";
 import type { EstadoPlata } from "./agente/plata";
@@ -78,6 +79,23 @@ const DESCARGA_A_LA_VISTA_MS = 60_000;
 const USO_CADA_MS = 60_000;
 
 /** Muestra una descarga en el Finder o el Explorador, o la abre si es un documento. Rust valida la ruta. */
+const CLAVE_AVISO_REPASO = "brote.repaso-avisado";
+/** El último día (AAAA-MM-DD) en que se avisó «tienes N tarjetas». */
+function leerUltimoAvisoRepaso(): string | null {
+  try {
+    return localStorage.getItem(CLAVE_AVISO_REPASO);
+  } catch {
+    return null;
+  }
+}
+function guardarUltimoAvisoRepaso(dia: string): void {
+  try {
+    localStorage.setItem(CLAVE_AVISO_REPASO, dia);
+  } catch {
+    // sin almacenamiento: avisará de nuevo la próxima vez, no pasa nada
+  }
+}
+
 function mostrarDescarga(ruta: string, abrir = false): void {
   invoke("mostrar_descarga", { ruta, abrir }).catch((error) => console.error(`No pude mostrar la descarga: ${error}`));
 }
@@ -95,6 +113,8 @@ const DURACION_ERROR = 6000;
  */
 /** Lo que hace la isla cuando el motor pide grabar ("graba esta clase"); se asigna en `iniciar`, donde vive la grabación. */
 let alPedirGrabarPorFrase: (datos: unknown) => void = () => {};
+/** Lo mismo para «repasemos»: la isla abre Estudio y arma la sesión. Se asigna en `iniciar`. */
+let alPedirRepasoPorFrase: (datos: unknown) => void = () => {};
 
 async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
   if ((await invoke<string>("agente_modo")) === "simulado") {
@@ -108,6 +128,7 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
       if (intencion === "ver-memoria") void invoke("abrir_memoria");
       // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
       alPedirGrabarPorFrase(datos);
+      alPedirRepasoPorFrase(datos);
       const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
       if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
         mostrarDescarga(descarga.ruta, descarga.abrir === true);
@@ -150,6 +171,9 @@ async function iniciar(): Promise<void> {
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alPedirAgenda: () => pedirAgenda(),
           alPedirEstudio: () => pedirEstudio(),
+          alAceptarRepaso: (grabacion, decision) => puente.aceptarRepaso(grabacion, decision),
+          alDescartarRepaso: (grabacion) => puente.descartarRepaso(grabacion),
+          alResponderRepaso: (tarjeta, resultado) => puente.responderRepaso(tarjeta, resultado),
           alCrearRamo: (nombre, alias) => puente.crearRamo(nombre, alias),
           alEditarRamo: (ramo, cambios) => puente.editarRamo(ramo, cambios),
           alArchivarRamo: (ramo) => puente.archivarRamo(ramo),
@@ -284,6 +308,27 @@ async function iniciar(): Promise<void> {
       if (panel.estudioAbierto) pedirEstudio();
     });
     setInterval(() => (panel.estudioAbierto ? pedirEstudio() : undefined), 5 * 60_000);
+    // Repaso (A3): propuestas del agente y tarjetas que vencen. Avisa sin abrir la isla: una propuesta nueva al llegar
+    // y «tienes N tarjetas» una vez al día, solo con la isla cerrada.
+    let repasoVisto: EstadoRepaso = REPASO_VACIO;
+    const cambiarRepaso = (estado: EstadoRepaso, avisarNuevo: boolean) => {
+      const nuevas = propuestasRepasoNuevas(repasoVisto.propuestas, estado.propuestas);
+      repasoVisto = estado;
+      panel.ponerRepaso(estado);
+      if (avisarNuevo && nuevas > 0) avisar("repaso", textoAvisoPropuestaRepaso(nuevas));
+      else if (debeAvisarTarjetas(estado.hoy, leerUltimoAvisoRepaso(), Date.now(), panel.abierta)) {
+        guardarUltimoAvisoRepaso(claveDia(Date.now()));
+        avisar("repaso", textoAvisoTarjetas(estado.hoy));
+      }
+    };
+    puente.alCambiarRepaso((estado) => cambiarRepaso(estado, true));
+    void puente.consultar<EstadoRepaso>({ tipo: "repaso-estado" }).then((estado) => cambiarRepaso(estado, false), () => {});
+    // Al cambiar el día vencen otras tarjetas: el puente vuelve a avisar solo.
+    alPedirRepasoPorFrase = (datos) => {
+      const repaso = (datos as { repaso?: { ramoId?: unknown } } | undefined)?.repaso;
+      if (!repaso) return;
+      panel.iniciarRepaso(typeof repaso.ramoId === "number" ? repaso.ramoId : null);
+    };
     puente.alCambiarTemporizadores((lista) => {
       mostrarTemporizadores(lista);
       if (panel.agendaAbierta) pedirAgenda();

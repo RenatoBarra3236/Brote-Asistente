@@ -67,6 +67,8 @@ import {
   type FichaRamo,
 } from "./agente/estudio";
 import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearNota, resumenNotas, semaforoDe, textoExamenFicha, textoMeta, textoNecesaria } from "./agente/notas";
+import { VistaRepaso } from "./repaso-vista";
+import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from "./agente/repaso";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
@@ -145,6 +147,10 @@ interface Opciones {
   alGuardarEvaluacion?: (datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null }) => Promise<void>;
   alBorrarEvaluacion?: (evaluacion: number) => Promise<void>;
   alCambiarAjustesNotas?: (ramo: number, ajustes: { aprobacion?: number; examenPeso?: number | null }) => Promise<void>;
+  /** Repaso (A3): aceptar lo marcado de una propuesta, descartarla y contestar una tarjeta. */
+  alAceptarRepaso?: (grabacion: string, decision: DecisionRepaso) => Promise<{ tarjetas: number; repetidas: number; temas: number }>;
+  alDescartarRepaso?: (grabacion: string) => Promise<void>;
+  alResponderRepaso?: (tarjeta: number, resultado: ResultadoRepaso) => Promise<void>;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
@@ -300,6 +306,8 @@ export class Panel {
   // Estudio
   private readonly estudio: HTMLDivElement;
   private estadoEstudio: EstadoEstudio | null = null;
+  /** Propuestas de repaso por revisar, la tarjeta «Repasar» y la sesión (A3). */
+  private readonly repaso: VistaRepaso;
   /** Qué ramo tiene la ficha abierta, cuál se está editando y el mensaje de error del último intento. */
   private ramoAbierto: number | null = null;
   private ramoEditando: number | null = null;
@@ -349,6 +357,14 @@ export class Panel {
   constructor(agente: Agente, contenedor: HTMLElement, opciones: Opciones = {}) {
     this.agente = agente;
     this.opciones = opciones;
+    this.repaso = new VistaRepaso(
+      {
+        aceptar: (g, d) => (opciones.alAceptarRepaso ? opciones.alAceptarRepaso(g, d) : Promise.reject(new Error("Brote no está conectado"))),
+        descartar: (g) => (opciones.alDescartarRepaso ? opciones.alDescartarRepaso(g) : Promise.reject(new Error("Brote no está conectado"))),
+        responder: (t, r) => (opciones.alResponderRepaso ? opciones.alResponderRepaso(t, r) : Promise.reject(new Error("Brote no está conectado"))),
+      },
+      () => this.mostrarEstudio(),
+    );
     this.raiz = crear("div", opciones.flotante ? "panel flotante" : "panel");
 
     // Pestañas: a la izquierda del notch las vistas, a la derecha "Lo que sé de ti" y Configurar.
@@ -650,6 +666,18 @@ export class Panel {
     this.actualizarPuntos();
   }
 
+  /** Lo último del repaso (propuestas, tarjetas de hoy, resúmenes): se repinta Estudio si ya se había cargado. */
+  ponerRepaso(estado: EstadoRepaso): void {
+    this.repaso.poner(estado);
+    if (this.estadoEstudio) this.mostrarEstudio();
+  }
+
+  /** «Repasemos»: abre Estudio y empieza la sesión (de un ramo o de todos). */
+  iniciarRepaso(ramoId: number | null): void {
+    this.elegir("estudio");
+    this.repaso.iniciarSesion(ramoId);
+  }
+
   /** La isla no debe cerrarse: hay texto escrito, un permiso pendiente o una respuesta por leer. */
   retieneIsla(ahora: number): boolean {
     const c = this.agente.conversacion;
@@ -658,6 +686,8 @@ export class Panel {
       c.aprobacion !== null ||
       this.hayPermisoClaude ||
       c.propuesta !== null ||
+      // Repasando o revisando una propuesta: la isla no se cierra a mitad de una tarjeta.
+      this.repaso.ocupada ||
       // La pregunta a los presentes y los errores del micrófono son decisiones: la isla no se cierra sola.
       (["pregunta", "iniciando", "error"] as const).some((f) => f === this.estadoGrabacion.fase) ||
       this.verTodosActivo ||
@@ -1082,6 +1112,14 @@ export class Panel {
       partes.push(error);
     }
 
+    // Repaso (A3): en plena sesión es lo único que se ve; si no, propuestas por revisar y la tarjeta «Repasar».
+    const arriba = this.repaso.arriba(estado.ramos);
+    if (this.repaso.enSesion) {
+      this.estudio.replaceChildren(...arriba);
+      return;
+    }
+    partes.push(...arriba);
+
     if (estado.fichas.length === 0) {
       const vacia = crear("p", "vacia-texto");
       vacia.textContent = TEXTO_SIN_RAMOS;
@@ -1150,9 +1188,11 @@ export class Panel {
     nombre.textContent = ramo.nombre;
     const resumen = crear("span", "estudio-resumen");
     const notasDe = estado.notas?.find((f) => f.ramoId === ramo.id);
-    const partesResumen = [resumenDeFicha(ficha), notasDe ? resumenNotas(notasDe) : ""].filter(Boolean);
-    resumen.textContent = partesResumen.join(" · ");
-    fila.append(punto, nombre, resumen);
+    resumen.textContent = resumenDeFicha(ficha);
+    const chipNotas = crear("span", "estudio-notas-chip");
+    chipNotas.textContent = resumenNotas(notasDe);
+    chipNotas.style.setProperty("--semaforo", HEX_SEMAFORO[notasDe ? semaforoDe(notasDe) : "neutro"]);
+    fila.append(punto, nombre, chipNotas, resumen);
     fila.addEventListener("click", () => {
       this.ramoAbierto = abierto ? null : ramo.id;
       this.ramoEditando = null;
@@ -1162,6 +1202,9 @@ export class Panel {
     if (!abierto) return caja;
 
     const cuerpo = crear("div", "estudio-ramo-cuerpo");
+    cuerpo.append(this.bloqueNotas(ramo.id, estado));
+    const repasoDelRamo = this.repaso.deRamo(ramo.id);
+    if (repasoDelRamo) cuerpo.append(repasoDelRamo);
     const lista = (titulo: string, items: { texto: string; cuando: string }[]) => {
       if (items.length === 0) return;
       const t = crear("div", "estudio-seccion");
@@ -1185,8 +1228,6 @@ export class Panel {
       vacio.textContent = explicarFichaVacia(estado.fuentes, ramo.alias.length > 0);
       cuerpo.append(vacio);
     }
-
-    cuerpo.append(this.bloqueNotas(ramo.id, estado));
 
     if (this.ramoEditando === ramo.id) {
       const formulario = crear("form", "estudio-editar");

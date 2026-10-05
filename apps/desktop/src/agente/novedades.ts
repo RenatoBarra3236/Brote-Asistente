@@ -6,7 +6,7 @@
 
 import type { Pestana } from "./tarjetas.ts";
 
-export type TipoNovedad = "claude" | "descarga" | "temporizador" | "calendario" | "aula" | "plan" | "plata" | "equipo" | "computador" | "transcripcion" | "agenda";
+export type TipoNovedad = "claude" | "descarga" | "temporizador" | "calendario" | "aula" | "plan" | "plata" | "equipo" | "computador" | "transcripcion" | "agenda" | "repaso";
 
 export interface Novedad {
   id: number;
@@ -38,6 +38,7 @@ export const PESTANA_DE: Record<TipoNovedad, Pestana> = {
   computador: "equipo",
   transcripcion: "grabar",
   agenda: "agenda",
+  repaso: "estudio",
 };
 
 /** El color del pulso alrededor del notch (rgb): el mismo que usan las tarjetas de cada tema. */
@@ -53,6 +54,7 @@ export const COLOR_DE: Record<TipoNovedad, string> = {
   computador: "rgb(255, 128, 102)",
   transcripcion: "rgb(150, 195, 255)",
   agenda: "rgb(150, 195, 255)",
+  repaso: "rgb(190, 170, 255)",
 };
 
 /** Un texto corto para el ala: sin saltos de línea y con "…" si se pasa de `maximo`. */

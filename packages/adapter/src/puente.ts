@@ -143,6 +143,12 @@
 //   pedido { "tipo": "evaluacion-borrar", "evaluacion": 7 }   (definitivo: es una base de datos, no hay Papelera)
 //   pedido { "tipo": "notas-ajustes", "ramo": 3, "aprobacion"?, "examenPeso"?, "examenMinimo"?, "presentacionMinima"? }
 //   pedido { "tipo": "notas-borrar", "ramo": 3 | null }   null = todas
+//   aviso { "tipo": "repaso", "repaso": EstadoRepaso }   propuestas pendientes, tarjetas que vencen hoy, conteo por ramo y resúmenes (A3); también si lo propone el MCP
+//   pedido { "tipo": "repaso-estado" }   → "datos": EstadoRepaso (con la función apagada, vacío)
+//   pedido { "tipo": "repaso-todo" }   → "datos": EstadoRepaso + { ramos, tarjetas } (no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "repaso-propuesta-decidir", "grabacion": "AAAA-MM-DD-HHMMSS", "decision": "aceptar"|"descartar", "temas"?: [0], "glosario"?: [0], "preguntas"?: [0], "ramoId"?: 3 | null, "glosarioEditado"?, "preguntasEditado"? }
+//   pedido { "tipo": "repaso-responder", "tarjeta": 7, "resultado": "no-sabia"|"casi"|"sabia" }
+//   pedido { "tipo": "repaso-borrar", "que": "tarjeta"|"grabacion"|"ramo"|"todo", "tarjeta"?: 7, "grabacion"?: "…", "ramo"?: 3 | null }   (definitivo: no hay Papelera)
 //   pedido { "tipo": "ramo-asignar", "que": "tarea"|"propuesta"|"pomodoro"|"grabacion", "ref": 7 | "AAAA-MM-DD-HHMMSS", "ramo": 3 | null }
 //
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
@@ -251,6 +257,9 @@ import {
   type EstadoPlata,
   Ramos,
   Notas,
+  Repaso,
+  RESULTADOS,
+  armarEstadoRepaso,
   armarFichaNotas,
   armarFichas,
   sugerirRamos,
@@ -314,6 +323,8 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   // Notas: lectura y cálculo. `notas_anotar` sí pregunta: escribe una nota del usuario.
   "mcp__gastos__notas_resumen",
   "mcp__gastos__notas_necesaria",
+  // Repaso: solo deja una propuesta pendiente; el usuario decide en la isla.
+  "mcp__gastos__repaso_proponer",
   "mcp__gastos__transcripciones_listar",
   "mcp__gastos__transcripciones_leer",
   // Solo deja propuestas pendientes: nada llega a la Agenda sin que el usuario lo acepte en la isla.
@@ -406,6 +417,8 @@ const tareasAgenda = new TareasAgenda(gastos);
 const ramos = new Ramos(gastos);
 /** Las evaluaciones y notas por ramo (A2). */
 const notas = new Notas(gastos, ramos);
+/** Las propuestas y tarjetas de repaso (A3): las propone el agente por MCP; decide el usuario en la isla. */
+const repaso = new Repaso(gastos, ramos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -429,6 +442,7 @@ const motor = new Motor(gastos, {
   transcripciones: () => listarTranscripciones(),
   ramos,
   notas,
+  repaso,
   activa,
 });
 
@@ -1197,6 +1211,26 @@ function detenerNotas(): void {
   marcaNotas = "";
   avisar({ tipo: "notas", fichas: [] });
 }
+// Repaso (A3): se mira la marca cada 2 s (la propuesta la deja el MCP, otro proceso) y al cambiar el día
+// (las tarjetas que vencen son otras). Nada de esto se registra: son frases de las clases del usuario.
+let marcaRepaso = "";
+function estadoRepaso() {
+  const ahora = Date.now();
+  return armarEstadoRepaso(repaso.tarjetas(), repaso.propuestas(ahora), repaso.resumenes(), ahora);
+}
+function revisarRepaso(forzar = false): void {
+  const marca = `${repaso.marca()}|${ramos.marca()}|${inicioDeHoy(Date.now())}`;
+  if (!forzar && marca === marcaRepaso) return;
+  const habia = marcaRepaso !== "";
+  marcaRepaso = marca;
+  const estado = estadoRepaso();
+  if (habia && estado.propuestas.length > 0) registrar("estudio: hay una propuesta de repaso");
+  avisar({ tipo: "repaso", repaso: estado });
+}
+function detenerRepaso(): void {
+  marcaRepaso = "";
+  avisar({ tipo: "repaso", repaso: armarEstadoRepaso([], [], [], Date.now()) });
+}
 /** La pestaña Estudio: ramos con su ficha y lo que se sugiere agregar. Lee las fuentes solo si su función está prendida. */
 async function estadoEstudio() {
   if (activa("calendario")) await leerCalendarios();
@@ -1303,11 +1337,13 @@ const tareas = new TareasPorFuncion({
     const detener = cada(2000, () => {
       revisarRamos();
       revisarNotas();
+      revisarRepaso();
     });
     return () => {
       detener();
       detenerRamos();
       detenerNotas();
+      detenerRepaso();
     };
   },
   grabaciones: () => {
@@ -1780,6 +1816,45 @@ async function atender(pedido: any): Promise<Extra> {
       revisarNotas();
       return { datos: { borradas: n } };
     }
+    // Repaso (A3). Lo guardado es del usuario: se ve y se borra aunque la función esté apagada; decidir y repasar exigen la función.
+    case "repaso-estado":
+      return { datos: activa("estudio") ? estadoRepaso() : armarEstadoRepaso([], [], [], Date.now()) };
+    case "repaso-todo":
+      return { datos: { ramos: ramos.listar(true), ...estadoRepaso(), tarjetas: repaso.tarjetas() } };
+    case "repaso-propuesta-decidir": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (typeof pedido.grabacion !== "string" || (pedido.decision !== "aceptar" && pedido.decision !== "descartar")) break;
+      if (pedido.decision === "descartar") {
+        if (!repaso.descartar(pedido.grabacion)) throw new Error("Esa propuesta ya no está pendiente");
+        revisarRepaso();
+        return { mensaje: "Descartada." };
+      }
+      const r = repaso.decidir(pedido.grabacion, pedido, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      registrar(`estudio: repaso aceptado (${r.tarjetas} tarjetas)`);
+      revisarRepaso();
+      return { datos: { tarjetas: r.tarjetas, repetidas: r.repetidas, temas: r.temas } };
+    }
+    case "repaso-responder": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.tarjeta) || !RESULTADOS.includes(pedido.resultado)) break;
+      const t = repaso.responder(pedido.tarjeta, pedido.resultado, Date.now());
+      if (!t) throw new Error("Esa tarjeta ya no existe");
+      revisarRepaso();
+      return { datos: { caja: t.caja, proximoMs: t.proximoMs } };
+    }
+    case "repaso-borrar": {
+      // «tarjeta» (id), «grabacion» (id exacto), «ramo» (id, o null = lo que no tiene ramo) o «todo». Definitivo: es una base de datos.
+      let n = 0;
+      if (pedido.que === "tarjeta" && Number.isInteger(pedido.tarjeta)) n = repaso.borrarTarjeta(pedido.tarjeta) ? 1 : 0;
+      else if (pedido.que === "grabacion" && typeof pedido.grabacion === "string") n = repaso.borrarDeGrabacion(pedido.grabacion);
+      else if (pedido.que === "ramo" && (pedido.ramo === null || Number.isInteger(pedido.ramo))) n = repaso.borrarDeRamo(pedido.ramo);
+      else if (pedido.que === "todo") n = repaso.borrarTodo();
+      else break;
+      registrar(`estudio: repaso borrado (${n})`);
+      revisarRepaso();
+      return { datos: { borradas: n } };
+    }
     case "ramo-asignar": {
       if (!["tarea", "propuesta", "pomodoro", "grabacion"].includes(pedido.que)) break;
       if (typeof pedido.ref !== "string" && !Number.isInteger(pedido.ref)) break;
@@ -1840,6 +1915,10 @@ async function atender(pedido: any): Promise<Extra> {
         if (pedido.grabacion === null) tareasAgenda.olvidarPendientes();
         else tareasAgenda.olvidarDeGrabacion(pedido.grabacion);
         revisarPropuestas();
+        // También la propuesta de repaso pendiente; las tarjetas ya aceptadas son del usuario y se quedan.
+        if (pedido.grabacion === null) repaso.borrarPropuestas();
+        else repaso.borrarPropuestaDe(pedido.grabacion);
+        revisarRepaso();
       }
       registrar(`grabaciones: ${borradas} ${pedido.que === "audio" ? "audio(s)" : "transcripción(es)"} borrado(s)`);
       return { datos: { borradas } };

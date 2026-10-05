@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { Agente } from "./agente/agente";
 import { ESCENAS } from "./agente/escenas";
 import {
@@ -17,6 +18,16 @@ import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
+import {
+  GRABACION_INACTIVA,
+  conEvento,
+  nuevoIdDeGrabacion,
+  textoGrabacionLista,
+  tiempoGrabado,
+  type AvisoAPresentes,
+  type EstadoGrabacion,
+  type EventoGrabacion,
+} from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
@@ -103,6 +114,13 @@ async function iniciar(): Promise<void> {
   const mascotas = new Mascotas();
   // La pestaña Agenda pide sus datos al puente (se asigna más abajo, donde el puente existe).
   let pedirAgenda = () => {};
+  // Grabar (sección 8): la captura la hace Rust; aquí se pregunta, se inicia, se detiene y se pide transcribir.
+  let grabacion: EstadoGrabacion = GRABACION_INACTIVA;
+  let avisoAPresentes: AvisoAPresentes = "no";
+  let cambiarGrabacion = (e: EstadoGrabacion) => {
+    grabacion = e;
+  };
+  let detenerGrabacion = () => {};
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
@@ -136,6 +154,17 @@ async function iniciar(): Promise<void> {
               .consultar<HistorialEspecialista>({ tipo: "especialista-historial", sesion })
               .then((historial) => panel.mostrarHistorial(sesion, historial))
               .catch(() => {}),
+          alQuererGrabar: () => cambiarGrabacion({ fase: "pregunta" }),
+          alCancelarGrabacion: () => cambiarGrabacion(GRABACION_INACTIVA),
+          alDetenerGrabacion: () => detenerGrabacion(),
+          alElegirAviso: (aviso: AvisoAPresentes) => {
+            avisoAPresentes = aviso;
+            cambiarGrabacion({ fase: "iniciando" });
+            // Rust pide el permiso del micrófono la primera vez y devuelve cuando ya graba (o por qué no).
+            invoke("grabacion_iniciar", { id: nuevoIdDeGrabacion() }).catch((error) => {
+              if (grabacion.fase === "iniciando") cambiarGrabacion({ fase: "error", mensaje: String(error).replace(/^Error: /, "") });
+            });
+          },
           alDecidirPermisoClaude: (id, decision) =>
             void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
@@ -151,6 +180,36 @@ async function iniciar(): Promise<void> {
         .catch(() => {});
     }
   };
+
+  cambiarGrabacion = (e) => {
+    grabacion = e;
+    panel.mostrarGrabacion(e);
+  };
+  // Al detener: Rust cierra el WAV y la transcripción arranca sola en segundo plano (el puente solo
+  // transcribe con la función prendida y el aviso de privacidad aceptado; si no, el audio queda guardado).
+  detenerGrabacion = () => {
+    const aviso = avisoAPresentes;
+    cambiarGrabacion({ fase: "deteniendo", id: grabacion.fase === "grabando" || grabacion.fase === "deteniendo" ? grabacion.id : "" });
+    invoke<{ id: string; segundos: number }>("grabacion_detener")
+      .then(async ({ id, segundos }) => {
+        cambiarGrabacion(GRABACION_INACTIVA);
+        const motivo = puente
+          ? await puente.consultar({ tipo: "transcribir", grabacion: id, avisoAPresentes: aviso }).then(
+              () => null,
+              (error: unknown) => String(error).replace(/^Error: /, ""),
+            )
+          : "no hay conexión con el puente";
+        avisar("transcripcion", motivo === null ? textoGrabacionLista(segundos, true) : `${textoGrabacionLista(segundos, false)} ${motivo}`);
+      })
+      .catch((error) => cambiarGrabacion({ fase: "error", mensaje: String(error).replace(/^Error: /, "") }));
+  };
+  void listen<EventoGrabacion>("grabacion", ({ payload }) => {
+    const nuevo = conEvento(grabacion, payload);
+    if (nuevo === grabacion) return;
+    cambiarGrabacion(nuevo);
+    // La captura se cortó sola (tope de 3 h o el micrófono se fue): se cierra y se transcribe lo grabado.
+    if (payload.fase === "terminada" && nuevo.fase === "deteniendo") detenerGrabacion();
+  });
 
   // Temporizadores y pomodoro: la lista viene del puente cada vez que cambia (y al iniciar, por
   // si llegó antes de escuchar). Al terminar uno, Brote celebra y lo destaca.
@@ -220,6 +279,12 @@ async function iniciar(): Promise<void> {
       if (panel.agendaAbierta) pedirAgenda();
     });
     void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
+    // Grabar y transcribir: solo el resultado importa (lista o error); "en cola" y "transcribiendo" no avisan.
+    puente.alAvisoTranscripcion((aviso) => {
+      if (aviso.fase !== "lista" && aviso.fase !== "error") return;
+      avisar("transcripcion", aviso.texto);
+      if (aviso.fase === "lista") personaje.tocar();
+    });
     puente.alAvisoCalendario((texto) => {
       avisar("calendario", texto);
       personaje.tocar();
@@ -464,6 +529,7 @@ async function iniciar(): Promise<void> {
       : null;
     // Con la isla cerrada, el ala izquierda muestra lo más urgente: un temporizador, una descarga o la música.
     const reloj: Ala | null =
+      (grabacion.fase === "grabando" ? { texto: `🔴${tiempoGrabado(grabacion.segundos)}`, color: "rgb(255, 99, 88)" } : null) ??
       relojPrincipal(temporizadores) ??
       (descargasEnCurso.length > 0 ? { texto: "📥", color: "#ffffff" } : null) ??
       (panel.equipoTrabajando ? { texto: "👥", color: "#ffffff" } : null) ??

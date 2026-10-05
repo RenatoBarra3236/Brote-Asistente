@@ -9,6 +9,7 @@ import { PERMISOS, type Paso } from "../agente/preparacion";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, mostrarAviso, paso, pintar } from "./comun";
 import { formularioAula, formularioIcal, formularioPresupuesto } from "./formularios";
+import { configuracionGrabaciones } from "./grabaciones";
 
 /** En el asistente se guarda al final ("Empezar"); en el uso diario, al tiro. */
 async function cambiar(enAsistente: boolean): Promise<void> {
@@ -77,6 +78,9 @@ function configuracionDe(funcion: Funcion, activa: boolean): HTMLElement[] {
     case "memoria-local":
       partes.push(subpaso(paso("memoria-local"), "Modelo de búsqueda"));
       break;
+    case "grabaciones":
+      partes.push(...configuracionGrabaciones());
+      break;
     case "especialistas":
       partes.push(crear("p", "nota", "Elige quiénes están en el equipo y con qué IA trabaja cada uno en Configurar Brote → Equipo (y conecta Gemini, ChatGPT o Grok en Cuentas de IA)."));
       break;
@@ -86,7 +90,9 @@ function configuracionDe(funcion: Funcion, activa: boolean): HTMLElement[] {
 
 function tarjetaFuncion(funcion: Funcion, enAsistente: boolean): HTMLElement {
   const activa = estado.funciones.activas[funcion.id];
-  const tarjeta = crear("article", `tarjeta funcion${activa ? " activa" : ""}`);
+  // Las que traen formularios largos ocupan todo el ancho cuando están prendidas.
+  const ancha = activa && funcion.id === "grabaciones";
+  const tarjeta = crear("article", `tarjeta funcion${activa ? " activa" : ""}${ancha ? " ancha" : ""}`);
   const cabeza = crear("div", "funcion-cabeza");
   const texto = crear("div", "funcion-texto");
   texto.append(crear("h3", undefined, funcion.nombre), crear("p", "tarjeta-texto", funcion.descripcion));

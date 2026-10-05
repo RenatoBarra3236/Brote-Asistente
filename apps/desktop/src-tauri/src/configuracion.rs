@@ -103,6 +103,7 @@ fn comando_terminal(cual: &str, brew: Option<&'static str>) -> Option<String> {
         "login-grok" => Some("openclaw models auth login --provider xai --method oauth".into()),
         "clave-gemini" => Some("openclaw models auth paste-api-key --provider google".into()),
         "brew-node" => brew.filter(|ruta| RUTAS_BREW.contains(ruta)).map(|ruta| format!("{ruta} install node")),
+        "brew-whisper" => brew.filter(|ruta| RUTAS_BREW.contains(ruta)).map(|ruta| format!("{ruta} install whisper-cpp")),
         _ => None,
     }
 }
@@ -132,6 +133,8 @@ pub fn abrir_enlace(cual: String) -> Result<(), String> {
         "aistudio-clave" => "https://aistudio.google.com/apikey",
         "privacidad-calendarios" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
         "privacidad-descargas" => "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
+        "privacidad-microfono" if cfg!(windows) => "ms-settings:privacy-microphone",
+        "privacidad-microfono" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
         "privacidad-automatizacion" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
         _ => return Err("enlace no válido".into()),
     };
@@ -269,6 +272,43 @@ pub fn guardar_aula(app: AppHandle, tipo: Option<String>, url: Option<String>, t
     Ok(())
 }
 
+/// Modelos de whisper y versión del texto de consentimiento de las grabaciones: deben coincidir con
+/// `MODELOS_WHISPER` y `VERSION_CONSENTIMIENTO_GRABACIONES` del motor (lo revisa una prueba del motor).
+const MODELOS_GRABACION: &[&str] = &["base", "small", "medium", "large-v3-turbo"];
+const VERSION_CONSENTIMIENTO_GRABACIONES: u64 = 1;
+
+/// Valida los ajustes de "Grabar y transcribir" y arma el JSON a guardar. `consentimiento` es la versión
+/// del texto que el usuario aceptó (o `None` si no lo ha aceptado): solo vale la versión actual.
+pub fn validar_grabaciones(modelo: &str, dias_audio: u64, consentimiento: Option<u64>) -> Result<String, String> {
+    if !MODELOS_GRABACION.contains(&modelo) {
+        return Err("modelo no válido".into());
+    }
+    if !(1..=365).contains(&dias_audio) {
+        return Err("los días de conservación van de 1 a 365".into());
+    }
+    if consentimiento.is_some_and(|v| v != VERSION_CONSENTIMIENTO_GRABACIONES) {
+        return Err("versión de consentimiento no válida".into());
+    }
+    Ok(serde_json::json!({ "modelo": modelo, "diasAudio": dias_audio, "consentimiento": consentimiento }).to_string())
+}
+
+/// Guarda `~/.asistente-prototipo/grabaciones.json` (600): modelo, días del audio y el consentimiento.
+#[tauri::command]
+pub fn guardar_grabaciones(modelo: String, dias_audio: u64, consentimiento: Option<u64>) -> Result<(), String> {
+    let contenido = validar_grabaciones(&modelo, dias_audio, consentimiento)?;
+    escribir_privado(&carpeta_datos()?.join("grabaciones.json"), &contenido)
+}
+
+/// El contenido de grabaciones.json, o `None` si todavía no existe (la ventana usa los valores por defecto).
+#[tauri::command]
+pub fn leer_grabaciones() -> Result<Option<String>, String> {
+    match std::fs::read_to_string(carpeta_datos()?.join("grabaciones.json")) {
+        Ok(texto) => Ok(Some(texto)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// El token va al Llavero y el archivo solo lleva `enLlavero`; si no se puede, queda en el archivo (600).
 pub fn guardar_aula_en(
     almacen: &dyn crate::secretos::Almacen,
@@ -317,6 +357,20 @@ mod pruebas {
         let con = serde_json::from_str::<serde_json::Value>(&sin_node(true)).unwrap();
         assert_eq!(con[0]["accion"]["terminal"], "brew-node");
         assert_eq!(con[0]["alternativa"]["enlace"], "node");
+    }
+
+    #[test]
+    fn ajustes_de_grabaciones_de_listas_cerradas() {
+        assert!(validar_grabaciones("small", 7, Some(1)).unwrap().contains("\"consentimiento\":1"));
+        assert!(validar_grabaciones("small", 7, None).unwrap().contains("\"consentimiento\":null"));
+        assert!(validar_grabaciones("tiny", 7, None).is_err());
+        assert!(validar_grabaciones("../small", 7, None).is_err());
+        assert!(validar_grabaciones("small", 0, None).is_err());
+        assert!(validar_grabaciones("small", 366, None).is_err());
+        assert!(validar_grabaciones("small", 7, Some(2)).is_err());
+        assert_eq!(comando_terminal("brew-whisper", Some("/opt/homebrew/bin/brew")).unwrap(), "/opt/homebrew/bin/brew install whisper-cpp");
+        assert!(comando_terminal("brew-whisper", None).is_none());
+        assert!(comando_terminal("brew-whisper", Some("/tmp/brew")).is_none());
     }
 
     #[test]

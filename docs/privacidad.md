@@ -20,7 +20,8 @@ diciembre de 2026).
 | Qué conectores tienes conectados (sin secretos) | `~/.asistente-prototipo/conectores.json` |
 | Lo que Brote recuerda de ti y las conversaciones guardadas | la carpeta de OpenClaw (`~/.openclaw/workspace`) y la memoria de Claude Code de ese espacio |
 | Registros de OpenClaw | `~/Library/Logs/openclaw/gateway.log` (Mac). Pueden caer respuestas de los agentes; Brote las quita solo (al abrir y cada hora). El registro propio de OpenClaw está en `/tmp/openclaw` y se borra a las 24 h |
-| Grabaciones y sus transcripciones (solo si prendes **Grabar y transcribir**, apagada de fábrica; todavía sin captura de micrófono) | Audio en `~/.asistente-prototipo/grabaciones/`, que se borra solo a los 7 días (a la Papelera en Mac); texto en `~/.asistente-prototipo/transcripciones/`, que se queda hasta que lo borres. Separado de la memoria de OpenClaw |
+| Grabaciones y sus transcripciones (solo si prendes **Grabar y transcribir**, apagada de fábrica) | Audio en `~/.asistente-prototipo/grabaciones/`, que se borra solo a los 7 días (a la Papelera en Mac); texto en `~/.asistente-prototipo/transcripciones/`, que se queda hasta que lo borres. Separado de la memoria de OpenClaw |
+| Modelos de transcripción y ajustes de Grabar y transcribir (modelo, días del audio, si aceptaste el aviso) | Modelos en `~/.asistente-prototipo/modelos/` (`ggml-<modelo>.bin`, entre 148 MB y 1,6 GB), que puedes borrar cuando quieras; ajustes en `~/.asistente-prototipo/grabaciones.json` |
 | Tus sesiones de Claude Code (si prendes el modo programador o el uso del plan) | `~/.claude/projects`: Brote lee solo la cantidad de tokens y el modelo, no el texto |
 
 Los archivos de Brote quedan con permisos de solo tu usuario, pero **no están cifrados**: por eso recomendamos
@@ -32,7 +33,7 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 - **Google (Gemini), OpenAI (ChatGPT), xAI (Grok)**: solo si prendes el equipo de Brote y eliges esa IA para un especialista. Con Gemini en el plan gratis, Google puede usar lo que recibe para mejorar sus productos y revisarlo con personas, por eso Brote le pasa **solo el tema en general**, nunca tu nombre, gastos, memoria, calendario ni aula.
 - **Conectores** (Todoist, Notion, GitHub, Canva o uno propio): solo si los conectas. Cada uno ve lo que le pidas a Brote que haga con él.
 - **Tu campus** (Canvas o Moodle) y **tu calendario de Google** (dirección iCal): Brote los consulta directo, solo para leer, y no pasan por ningún tercero de Brote.
-- **Grabaciones**: el audio se transcribe en tu computador y no llega a ninguna empresa. El **texto** viaja a Anthropic solo cuando le pides algo a Brote (por ejemplo un resumen), y nunca a especialistas de planes gratuitos (la skill `delegar` lo prohíbe).
+- **Grabaciones**: el audio se transcribe en tu computador con `whisper-cli` (whisper.cpp, de código abierto: un programa que Brote lanza y que no usa la red) y no llega a ninguna empresa. Lo único que se baja de internet es el **modelo**, una vez y con tu confirmación, desde `huggingface.co` (sitio oficial de los modelos de whisper.cpp): Brote comprueba su tamaño y su SHA-256 y no usa un archivo distinto del original. No se manda tu audio ni ningún dato tuyo en esa descarga. El **texto** viaja a Anthropic solo cuando le pides algo a Brote (por ejemplo un resumen), y nunca a especialistas de planes gratuitos (la skill `delegar` lo prohíbe).
 - Brote no manda estadísticas ni telemetría propias.
 
 ## Cómo borrar tus datos
@@ -44,7 +45,12 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 ## Voces de otras personas (grabaciones)
 
 Una clase o una reunión grabada tiene la voz, y a veces datos personales, de gente que no usa Brote. Por eso:
-Brote graba solo cuando tú lo inicias, te pregunta **en cada grabación** si avisaste a los presentes (sí, no o
+Brote graba solo cuando tú lo inicias (con el botón 🎙 de la isla) y para cuando tú lo detienes, o a las 3 horas;
+nunca por su cuenta, ni siquiera si el calendario dice que tienes clase. Mientras graba hay un punto rojo en la
+isla y junto al 🌱 de la barra de menú. La captura la hace la propia app (no una página web), así que el permiso
+del micrófono es de Brote: macOS lo pide la primera vez que grabas, y lo puedes quitar en Ajustes del Sistema →
+Privacidad y seguridad → Micrófono. En Windows no hay un aviso por app, solo el interruptor general del micrófono.
+Si no llega sonido, Brote te lo dice. Te pregunta **en cada grabación** si avisaste a los presentes (sí, no o
 «solo mi voz») y lo anota en la transcripción (`avisoAPresentes`). El audio se conserva **7 días** (puedes cambiarlo)
 y después se borra; la transcripción, no, hasta que tú la borres. Todo en claro, con permisos de tu usuario:
 cifra el disco. Brote no da asesoría legal ni firma por ti: avisar o pedir permiso es cosa tuya, y conviene que

@@ -12,6 +12,10 @@
   5 h ya reiniciada). El botón ↻ simula la consulta mínima. ?delegar=1 (Brote le pasa la pregunta a su
   equipo: las mascotas de 🔎 Investigador con Gemini, 📚 Tutor con Claude y ✍️ Redactor con ChatGPT salen de
   detrás de Brote, piensan, buscan, piden permiso, escriben y celebran; después la respuesta de Brote) ·
+  ?grabar=pregunta|grabando|sin-sonido|error|sin-permiso|lista (la grabación de «Grabar y transcribir»: la pregunta
+  «¿avisaste a los presentes?», la cuenta con el punto rojo, el aviso de que no llega sonido, el error del micrófono
+  o el aviso de transcripción lista; sin valor deja solo el 🎙, que funciona: elige una respuesta y graba de mentira;
+  con &cerrada=1 se ve el punto rojo en el ala) ·
   ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo) · &todos=1 (abre
   "Ver a todos") · &conversacion=1 (abre la conversación del Investigador) ·
   ?pestana=plata (la pestaña Plata con tres meses de gastos de ejemplo) y ?plata=sin|pasado|nuevo (sin
@@ -142,7 +146,7 @@
       const lista = (nombre) => (parametros.get(nombre) ?? "").split(",").filter(Boolean);
       const funciones = {
         activas: Object.fromEntries(
-          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local", "especialistas"].map((id) => [id, !lista("apagadas").includes(id)]),
+          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local", "especialistas", "grabaciones"].map((id) => [id, !lista("apagadas").includes(id)]),
         ),
         tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: lista("ocultas") },
       };
@@ -164,6 +168,22 @@
       const callbacks = new Map();
       let siguiente = 1;
       let manejadorPuente = null;
+      let manejadorGrabacion = null;
+      // Grabación simulada (Rust emitiría `grabacion` cada segundo): ?grabar=sin-permiso hace fallar el inicio.
+      let relojGrabacion = null;
+      const emitirGrabacion = (payload) => manejadorGrabacion && callbacks.get(manejadorGrabacion)?.({ event: "grabacion", id: 0, payload });
+      const empezarGrabacion = (id, segundos = 0) => {
+        let n = segundos;
+        emitirGrabacion({ fase: "grabando", id, segundos: n, detalle: null });
+        clearInterval(relojGrabacion);
+        relojGrabacion = setInterval(() => {
+          n += 1;
+          emitirGrabacion({ fase: "grabando", id, segundos: n, detalle: null });
+          if (parametros.get("grabar") === "sin-sonido" && n === 4)
+            emitirGrabacion({ fase: "sin-sonido", id, segundos: n, detalle: "No me llega sonido del micrófono. Revisa que esté conectado y que el permiso de Brote esté activo." });
+        }, 1000);
+      };
+      let idGrabando = null;
       let mouse = { x: 300, y: 60 };
       addEventListener("mousemove", (e) => (mouse = { x: e.clientX, y: e.clientY }));
       const emitir = (aviso) => manejadorPuente && callbacks.get(manejadorPuente)?.({ event: "puente", id: 0, payload: JSON.stringify(aviso) });
@@ -192,7 +212,26 @@
               return JSON.stringify({ tipo: "conexion", conectado: true });
             case "plugin:event|listen":
               if (args.event === "puente") manejadorPuente = args.handler;
+              if (args.event === "grabacion") manejadorGrabacion = args.handler;
               return args.handler;
+            case "grabacion_iniciar":
+              if (["sin-permiso", "error"].includes(parametros.get("grabar"))) {
+                await new Promise((r) => setTimeout(r, 600));
+                throw parametros.get("grabar") === "error" ? "No encuentro un micrófono conectado." : "macOS no le dio permiso a Brote para usar el micrófono: actívalo en Ajustes del Sistema → Privacidad y seguridad → Micrófono.";
+              }
+              await new Promise((r) => setTimeout(r, 600));
+              idGrabando = args.id;
+              empezarGrabacion(args.id);
+              return null;
+            case "grabacion_detener": {
+              clearInterval(relojGrabacion);
+              const id = idGrabando ?? "2026-10-05-103000";
+              idGrabando = null;
+              setTimeout(() => emitirGrabacion({ fase: "lista", id, segundos: 754, detalle: null }), 200);
+              return { id, segundos: 754, corte: null };
+            }
+            case "abrir_enlace":
+              return null;
             case "cursor_relativo": {
               // El cursor "está" sobre la isla (o lejos, con ?cerrada=1); los ojos siguen el mouse real.
               const caja = document.body.getBoundingClientRect();
@@ -245,6 +284,10 @@
                   window.__plata.presupuesto(pedido.monto);
                   emitir({ tipo: "plata", plata: window.__plata.estado() });
                   return responder(id, { datos: window.__plata.estado() });
+                case "transcribir":
+                  // El puente acepta, transcribe en segundo plano y avisa; aquí avisa a los 3 s.
+                  setTimeout(() => emitir({ tipo: "transcripcion", id: pedido.grabacion, fase: "lista", texto: "🎙 Tu transcripción está lista (12:34)" }), 3000);
+                  return responder(id, { datos: { pendientes: [pedido.grabacion] } });
                 case "especialistas-estado":
                   return responder(id, { datos: { lista: [], frenado: parametros.has("freno") } });
                 case "enviar":
@@ -357,6 +400,31 @@
 
       // Cerca del límite: el aviso de 95 % de la sesión, como llegaría del puente.
       if (cerca) setTimeout(() => emitir({ tipo: "plan-aviso", texto: "Llevas 95 % de tu sesión de Claude; se reinicia a las 18:40" }), 2500);
+      // ?grabar=…: deja la isla en ese momento de la grabación (con &cerrada=1, la isla cerrada con el punto rojo).
+      {
+        const g = parametros.get("grabar");
+        const abrir = (texto) => setTimeout(() => document.querySelector(texto)?.click(), 700);
+        if (g === "pregunta") abrir(".boton-microfono");
+        if (g === "grabando" || g === "sin-sonido") {
+          setTimeout(() => {
+            document.querySelector(".boton-microfono")?.click();
+            setTimeout(() => document.querySelector(".franja-botones .franja-boton")?.click(), 200);
+          }, 700);
+        }
+        if (g === "sin-permiso" || g === "error") {
+          setTimeout(() => {
+            document.querySelector(".boton-microfono")?.click();
+            setTimeout(() => document.querySelector(".franja-botones .franja-boton")?.click(), 200);
+          }, 700);
+        }
+        if (g === "lista") {
+          setTimeout(() => {
+            document.querySelector(".boton-microfono")?.click();
+            setTimeout(() => document.querySelector(".franja-botones .franja-boton")?.click(), 200);
+            setTimeout(() => document.querySelector(".franja-boton.detener")?.click(), 2600);
+          }, 700);
+        }
+      }
       // Pasado del presupuesto: el aviso del 100 %, como lo mandaría el puente.
       if (parametros.get("plata") === "pasado") setTimeout(() => emitir({ tipo: "plata-aviso", texto: "🚨 Te pasaste del presupuesto del mes: llevas $412.000 de $250.000. Nada de dramas: desde mañana vamos con calma 🌱" }), 2200);
       // El freno por plan, como lo avisaría el puente.

@@ -16,6 +16,7 @@
 // permiso, a Claude cuando una sesión pide permiso, y vuelve a Brote si la isla pasa un rato cerrada.
 // Qué tarjetas se ven y en qué orden se elige en Configurar Brote → Funciones (funciones.json).
 
+import { GRABACION_INACTIVA, OPCIONES_AVISO, TEXTO_PREGUNTA_AVISO, tiempoGrabado, type AvisoAPresentes, type EstadoGrabacion } from "./agente/grabaciones";
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto, venceEn } from "./agente/formato";
@@ -104,6 +105,13 @@ interface Opciones {
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
   alPedirHistorial?: (sesion: string) => void;
+  /** 🎙: el usuario quiere grabar (la isla pregunta primero si avisó a los presentes). */
+  alQuererGrabar?: () => void;
+  /** Respondió «¿avisaste a los presentes?»: ahora sí se empieza a grabar. */
+  alElegirAviso?: (aviso: AvisoAPresentes) => void;
+  alDetenerGrabacion?: () => void;
+  /** Cerró la pregunta o el error sin grabar. */
+  alCancelarGrabacion?: () => void;
 }
 
 /** Lo que llega del historial de una sesión hija (chat.history). */
@@ -246,6 +254,9 @@ export class Panel {
   private novedadesNuevas = new Set<number>();
   private readonly entrada: HTMLInputElement;
   private readonly enviar: HTMLButtonElement;
+  private readonly microfono: HTMLButtonElement;
+  private readonly franjaGrabacion: HTMLDivElement;
+  private estadoGrabacion: EstadoGrabacion = GRABACION_INACTIVA;
   private visible = false;
   private cerradaDesde = -Infinity;
   private leerHasta = 0;
@@ -466,7 +477,14 @@ export class Panel {
     this.entrada.maxLength = 1000;
     this.enviar = crear("button", "boton-enviar");
     this.enviar.type = "submit";
-    formulario.append(this.entrada, this.enviar);
+    // 🎙 (solo con la función "grabaciones" prendida) y la franja de la grabación sobre el campo.
+    this.microfono = botonIcono("boton-microfono", "microfono", "Grabar");
+    this.microfono.type = "button";
+    this.microfono.hidden = true;
+    this.microfono.addEventListener("click", () => this.opciones.alQuererGrabar?.());
+    this.franjaGrabacion = crear("div", "franja-grabacion");
+    this.franjaGrabacion.hidden = true;
+    formulario.append(this.entrada, this.microfono, this.enviar);
 
     if (opciones.flotante) this.raiz.append(this.barra);
     else contenedor.append(this.barra);
@@ -481,7 +499,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, codigo, equipo, this.vistaTodos, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -539,6 +557,8 @@ export class Panel {
       c.aprobacion !== null ||
       this.hayPermisoClaude ||
       c.propuesta !== null ||
+      // La pregunta a los presentes y los errores del micrófono son decisiones: la isla no se cierra sola.
+      (["pregunta", "iniciando", "error"] as const).some((f) => f === this.estadoGrabacion.fase) ||
       this.verTodosActivo ||
       ahora < this.leerHasta ||
       Date.now() < this.avisoHasta
@@ -1343,6 +1363,7 @@ export class Panel {
    */
   mostrarFunciones(config: ConfigFunciones): void {
     this.funciones = config;
+    this.actualizarMicrofono();
     this.actualizarPestanas();
     this.actualizarInicio();
   }
@@ -1452,6 +1473,66 @@ export class Panel {
         return linea;
       }),
     );
+  }
+
+  /**
+   * La grabación (sección 8): la pregunta a los presentes, la cuenta con el punto rojo y los errores.
+   * Va sobre el campo de texto, en todas las pestañas.
+   */
+  mostrarGrabacion(estado: EstadoGrabacion): void {
+    this.estadoGrabacion = estado;
+    const f = this.franjaGrabacion;
+    f.hidden = estado.fase === "inactiva";
+    f.className = `franja-grabacion ${estado.fase}`;
+    f.replaceChildren();
+    const texto = (t: string, clase = "franja-texto") => {
+      const p = crear("p", clase);
+      p.textContent = t;
+      return p;
+    };
+    const accion = (t: string, alHacer: () => void, clase = "franja-boton") => {
+      const b = boton(clase, t);
+      b.type = "button";
+      b.addEventListener("click", alHacer);
+      return b;
+    };
+    switch (estado.fase) {
+      case "pregunta": {
+        const fila = crear("div", "franja-botones");
+        for (const o of OPCIONES_AVISO) fila.append(accion(o.texto, () => this.opciones.alElegirAviso?.(o.valor)));
+        fila.append(accion("Cancelar", () => this.opciones.alCancelarGrabacion?.(), "franja-boton suave"));
+        f.append(texto(`🎙 ${TEXTO_PREGUNTA_AVISO}`), fila);
+        break;
+      }
+      case "iniciando":
+        f.append(texto("🎙 Abriendo el micrófono… (si macOS pregunta, di que sí)"));
+        break;
+      case "grabando": {
+        const fila = crear("div", "franja-fila");
+        const punto = crear("span", "punto-rojo");
+        punto.setAttribute("aria-hidden", "true");
+        const cuenta = crear("span", "franja-cuenta");
+        cuenta.textContent = `Grabando ${tiempoGrabado(estado.segundos)}`;
+        fila.append(punto, cuenta, accion("■ Detener", () => this.opciones.alDetenerGrabacion?.(), "franja-boton detener"));
+        f.append(fila);
+        if (estado.sinSonido) f.append(texto(`⚠️ ${estado.sinSonido}`, "franja-texto alerta"));
+        break;
+      }
+      case "deteniendo":
+        f.append(texto("🎙 Guardando la grabación…"));
+        break;
+      case "error": {
+        f.append(texto(`⚠️ ${estado.mensaje}`, "franja-texto alerta"), accion("Entendido", () => this.opciones.alCancelarGrabacion?.(), "franja-boton suave"));
+        break;
+      }
+    }
+    this.actualizarMicrofono();
+  }
+
+  /** El 🎙 se ve con la función prendida y se apaga mientras hay una grabación o una pregunta en curso. */
+  private actualizarMicrofono(): void {
+    this.microfono.hidden = !this.funciones.activas.grabaciones;
+    this.microfono.disabled = this.estadoGrabacion.fase !== "inactiva";
   }
 
   /** Alto que necesita el contenido, para que la isla crezca lo justo. */

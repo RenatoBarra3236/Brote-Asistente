@@ -6,6 +6,8 @@ mod descargas;
 mod entorno;
 mod especialistas;
 mod funciones;
+mod grabacion;
+mod modelos;
 mod puente;
 mod secretos;
 
@@ -291,6 +293,8 @@ pub fn run() {
             let puente = (!simulado).then(|| Puente::iniciar(app.handle()));
             app.manage(Agente { puente });
             app.manage(conectores::Conexiones::default());
+            app.manage(modelos::DescargaModelo::default());
+            app.manage(grabacion::Grabadora::default());
             crear_icono_de_barra(app)?;
 
             // Si falta configurar algo (por ejemplo, en un computador nuevo), se abre el asistente.
@@ -329,13 +333,23 @@ pub fn run() {
             especialistas::especialista_guardar,
             especialistas::especialista_quitar,
             especialistas::cuenta_clave,
-            descargas::mostrar_descarga
+            descargas::mostrar_descarga,
+            modelos::modelo_descargar,
+            modelos::modelo_cancelar,
+            modelos::modelos_estado,
+            modelos::modelo_borrar,
+            configuracion::guardar_grabaciones,
+            configuracion::leer_grabaciones,
+            grabacion::grabacion_iniciar,
+            grabacion::grabacion_detener,
+            grabacion::grabacion_estado
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la app del personaje")
         .run(|app, evento| {
             // Al cerrar la app, el puente se desconecta del Gateway antes de terminar.
             if let RunEvent::Exit = evento {
+                grabacion::detener_al_salir(app);
                 if let Some(conexiones) = app.try_state::<conectores::Conexiones>() {
                     let _ = conectores::conector_cancelar(conexiones);
                 }

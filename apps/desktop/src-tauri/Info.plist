@@ -11,5 +11,7 @@
 	<string>Brote lee tus eventos para decirte qué tienes hoy y avisarte 10 minutos antes de cada clase. No los modifica y no salen de tu computador.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Brote lee tus eventos para decirte qué tienes hoy y avisarte 10 minutos antes de cada clase. No los modifica y no salen de tu computador.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Brote usa el micrófono solo cuando tú empiezas a grabar (por ejemplo una clase). El audio se transcribe en tu computador y no sale de él.</string>
 </dict>
 </plist>

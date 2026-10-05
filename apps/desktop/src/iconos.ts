@@ -13,6 +13,7 @@ const ICONOS = {
   siguiente: `<path fill="currentColor" d="M12 3.5h-1.5v9H12zM3 3.6v8.8L9.8 8z"/>`,
   play: `<path fill="currentColor" d="M5 3v10l8.5-5z"/>`,
   pausa: `<path fill="currentColor" d="M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z"/>`,
+  microfono: `<rect ${TRAZO} x="6" y="2" width="4" height="7.5" rx="2"/><path ${TRAZO} d="M3.8 7.8a4.2 4.2 0 0 0 8.4 0M8 12v2.2M5.8 14.2h4.4"/>`,
   detener: `<rect fill="currentColor" x="4" y="4" width="8" height="8" rx="1.5"/>`,
   enviar: `<path ${TRAZO} stroke-width="1.8" d="M8 13V3.5M4 7.5l4-4 4 4"/>`,
   listo: `<circle fill="currentColor" opacity=".18" cx="8" cy="8" r="6.5"/><path ${TRAZO} d="m5.3 8.2 1.8 1.8 3.6-3.8"/>`,

@@ -103,6 +103,16 @@
 // (salen de `allowAgents`; los de otras IA siguen) y vuelven bajo 80 % (equipo.json guarda el estado).
 // Las solicitudes de permiso de un especialista siempre llegan a la isla: nunca se permiten solas.
 //
+// Grabar y transcribir (función "grabaciones", apagada de fábrica; sección 8 de docs/plan-rediseno.md, fase 2):
+// transcribe una grabación (`<id>.wav` de ~/.asistente-prototipo/grabaciones) con `whisper-cli` en este
+// computador, de a una en segundo plano, y guarda el texto en transcripciones/<id>.md. Sin la función
+// prendida no corre nada (ni la limpieza). Al partir y cada hora borra los audios con más de N días
+// (grabaciones.json, 7 por defecto; a la Papelera en Mac). Nada de lo grabado sale del computador.
+//   pedido { "tipo": "transcribir", "grabacion": "2026-10-05-103000", "avisoAPresentes"?: "si"|"no"|"solo-mi-voz" }   → "datos": { pendientes }
+//   pedido { "tipo": "transcripcion-cancelar", "grabacion": "…" }   → "datos": { cancelada }
+//   pedido { "tipo": "grabaciones-estado" }   → "datos": { whisper: boolean, modelos: { base, small, … }, pendientes, ajustes }
+//   aviso { "tipo": "transcripcion", "id": "…", "fase": "en-cola"|"transcribiendo"|"lista"|"error"|"cancelada", "texto": "…" }
+//
 // Plata (función "gastos"; la pestaña Plata de la isla): el resumen de los gastos, el presupuesto del
 // mes y lo que se descubre sin IA (motor/plata.ts). La base se mira cada 2 s (gastos.marca()), así
 // también aparece al tiro lo que anota el agente por MCP.
@@ -146,6 +156,7 @@ import {
   marcaConfigAula,
   pendientes,
   type Entrega,
+  leerAjustesGrabaciones,
   leerFunciones,
   marcaFunciones,
   type ConfigFunciones,
@@ -238,6 +249,8 @@ import { guardarConexion, iniciarServidorHooks } from "./servidor-hooks.ts";
 import { quitarClaveDeApi } from "./sin-clave.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
 import { FiltroDelegacion, leerHistorial } from "./delegacion.ts";
+import { Transcriptor, limpiarAudiosVencidos } from "./grabaciones.ts";
+import { estadoWhisper, transcribirConWhisper } from "./transcribir.ts";
 import { argsDelegacion, correrOpenclaw, delegacionActual, guardarFreno, leerFreno } from "./equipo.ts";
 
 // Eventos que el personaje no usa: se filtran aquí para no llenar el canal.
@@ -1080,6 +1093,9 @@ function detenerPlata(): void {
   avisar({ tipo: "plata", plata: null });
 }
 
+/** La cola de transcripciones (solo existe con la función `grabaciones` prendida). */
+let transcriptor: Transcriptor | null = null;
+
 /** Las tareas de fondo de cada función: solo corren las prendidas. */
 const tareas = new TareasPorFuncion({
   gastos: () => {
@@ -1146,6 +1162,27 @@ const tareas = new TareasPorFuncion({
       if (saliendo) return;
       void sincronizarDelegacion();
       avisar({ tipo: "especialistas", lista: [] });
+    };
+  },
+  grabaciones: () => {
+    // Al prender: limpia los audios vencidos y repite cada hora, con los días vigentes de los ajustes.
+    const limpiar = () => {
+      try {
+        const borrados = limpiarAudiosVencidos();
+        if (borrados.length > 0) registrar(`grabaciones: borré ${borrados.length} audio(s) vencido(s)`);
+      } catch (error) {
+        registrar(`grabaciones: no pude limpiar los audios: ${mensajeDe(error)}`);
+      }
+    };
+    const detenerLimpieza = cada(60 * 60 * 1000, limpiar);
+    transcriptor = new Transcriptor({
+      transcribir: (audio, modelo, senal) => transcribirConWhisper(audio, modelo, { senal }),
+      avisar: (aviso) => avisar({ tipo: "transcripcion", ...aviso }),
+    });
+    return () => {
+      detenerLimpieza();
+      transcriptor?.detener();
+      transcriptor = null;
     };
   },
   programador: () => () => {
@@ -1488,6 +1525,22 @@ async function atender(pedido: any): Promise<Extra> {
       if (!cliente || !conectado) throw new Error("OpenClaw no está conectado");
       const resultado = await cliente.request("chat.history", { sessionKey: pedido.sesion, limit: 60, maxChars: 40_000 });
       return { datos: leerHistorial(resultado) };
+    }
+    case "transcribir": {
+      if (!activa("grabaciones") || !transcriptor) throw new Error("Grabar y transcribir está apagado: actívalo en Configurar Brote ⚙️");
+      // Sin haber aceptado el consentimiento (Configurar Brote → Grabar y transcribir) no se transcribe nada.
+      if (!leerAjustesGrabaciones().consentimiento) throw new Error("Falta aceptar el aviso de privacidad de Grabar y transcribir en Configurar Brote ⚙️");
+      transcriptor.pedir(pedido.grabacion, pedido.avisoAPresentes ?? "no");
+      return { datos: { pendientes: transcriptor.pendientes() } };
+    }
+    case "transcripcion-cancelar": {
+      if (!activa("grabaciones") || !transcriptor || typeof pedido.grabacion !== "string") break;
+      return { datos: { cancelada: transcriptor.cancelar(pedido.grabacion) } };
+    }
+    case "grabaciones-estado": {
+      if (!activa("grabaciones")) return { datos: null };
+      const { whisper, modelos } = estadoWhisper();
+      return { datos: { whisper: whisper !== null, modelos, pendientes: transcriptor?.pendientes() ?? [], ajustes: leerAjustesGrabaciones() } };
     }
     case "permisos-estado":
       return { datos: estadoPermisos() };

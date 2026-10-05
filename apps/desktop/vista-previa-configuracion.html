@@ -12,6 +12,8 @@
                         Mac está negado y las descargas están apagadas (su permiso "ya no hace falta")
     ?seccion=estado|funciones|cuentas|equipo|conectores|aula|permisos|memoria · ?paso=2|3 (asistente) ·
     ?freno=1 (el plan semanal pasó el 85 %: el Equipo lo avisa) ·
+    ?grabaciones=sin|listo (Grabar y transcribir: sin whisper-cli ni modelo, o todo instalado; con
+      ?seccion=funciones y la función prendida; `&falla=1` hace fallar la descarga del modelo) ·
     ?plataforma=windows (sin permisos de macOS)
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
@@ -49,12 +51,15 @@
         calendarioMac: escenario === "permiso" ? 2 : escenario === "listo" ? 3 : 0,
         ical: escenario === "listo",
         aula: escenario !== "nuevo",
+        whisper: parametros.get("grabaciones") === "listo",
+        modelos: { base: false, small: parametros.get("grabaciones") === "listo", medium: false, "large-v3-turbo": false },
+        grabaciones: null,
         funciones:
           escenario === "nuevo"
             ? null
             : JSON.stringify({
                 version: 1,
-                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false, especialistas: escenario === "listo" },
+                activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false, especialistas: escenario === "listo", grabaciones: parametros.has("grabaciones") },
                 tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: [] },
               }),
       };
@@ -99,6 +104,15 @@
             estado: sim["memoria-local"] ? "ok" : "opcional",
             detalle: sim["memoria-local"] ? "La memoria busca por significado, en tu computador y sin costo." : "Sin esto, Brote busca en su memoria por palabras exactas. Descarga un modelo de ~0,3 GB.",
             ...(sim["memoria-local"] ? {} : { accion: { tipo: "terminal", etiqueta: "Configurar en la terminal", terminal: "memoria-local" } }),
+          },
+          {
+            id: "whisper",
+            titulo: "Transcriptor whisper.cpp (opcional)",
+            estado: sim.whisper ? "ok" : "opcional",
+            detalle: sim.whisper
+              ? "Brote transcribe con whisper-cli en este computador."
+              : "Para transcribir, Brote necesita whisper.cpp (programa gratis y de código abierto que corre en tu computador). Se instala con Homebrew.",
+            ...(sim.whisper ? {} : { accion: { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-whisper" } }),
           },
           {
             id: "calendario-mac",
@@ -272,6 +286,7 @@
             case "abrir_terminal":
               // Como si el usuario hubiera terminado en la terminal.
               if (args.cual === "brew-node") sim.node = true;
+              if (args.cual === "brew-whisper") sim.whisper = true;
               if (args.cual === "login-claude") sim.claude = true;
               if (args.cual === "memoria-local") sim["memoria-local"] = true;
               setTimeout(() => window.dispatchEvent(new Event("focus")), 400);
@@ -327,6 +342,39 @@
                     }
                   : null;
               setTimeout(() => emitir("puente", JSON.stringify({ tipo: "respuesta", id: pedido.id, ok: true, datos })), 80);
+              return null;
+            }
+            case "leer_grabaciones":
+              return sim.grabaciones;
+            case "guardar_grabaciones":
+              sim.grabaciones = JSON.stringify({ modelo: args.modelo, diasAudio: args.diasAudio, consentimiento: args.consentimiento });
+              console.log("grabaciones.json", sim.grabaciones);
+              return null;
+            case "modelos_estado":
+              return sim.modelos;
+            case "modelo_cancelar":
+              sim.cancelarModelo = true;
+              return null;
+            case "modelo_descargar": {
+              // Avance simulado: 0 → 100 % en unos 4 s, "verificando" y listo (o error con `&falla=1`).
+              const total = { base: 147951465, small: 487601967, medium: 1533763059, "large-v3-turbo": 1624555275 }[args.modelo];
+              sim.cancelarModelo = false;
+              for (let i = 1; i <= 20; i++) {
+                await esperar(200);
+                if (sim.cancelarModelo) {
+                  emitir("modelo", { modelo: args.modelo, fase: "cancelado", bytes: 0, total, detalle: null });
+                  throw "descarga cancelada";
+                }
+                if (parametros.has("falla") && i === 10) {
+                  emitir("modelo", { modelo: args.modelo, fase: "error", bytes: 0, total, detalle: "la descarga falló: Could not resolve host: huggingface.co" });
+                  throw "la descarga falló";
+                }
+                emitir("modelo", { modelo: args.modelo, fase: "descargando", bytes: Math.round((total * i) / 20), total, detalle: null });
+              }
+              emitir("modelo", { modelo: args.modelo, fase: "verificando", bytes: total, total, detalle: null });
+              await esperar(900);
+              sim.modelos[args.modelo] = true;
+              emitir("modelo", { modelo: args.modelo, fase: "listo", bytes: total, total, detalle: null });
               return null;
             }
             case "reiniciar":

@@ -23,6 +23,7 @@ import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buscarWhisper } from "./transcribir.ts";
 import {
   ESPECIALISTAS,
   IAS,
@@ -518,6 +519,21 @@ export async function revisarOpcionales(): Promise<Paso[]> {
               "solo se envían el % del plan y la hora de reinicio a Brote (nunca mis credenciales ni mis mensajes), y puedo desinstalarla cuando quiera.",
           },
     quitar: conStatusline ? { paso: "statusline-quitar", etiqueta: "Desinstalar" } : undefined,
+  });
+
+  // Grabar y transcribir: ¿está `whisper-cli`? (Los modelos los descarga Rust y los muestra la ventana.)
+  const whisper = buscarWhisper();
+  const conBrewWhisper = process.platform === "darwin" && buscarPrograma("brew") !== null;
+  pasos.push({
+    id: "whisper",
+    titulo: "Transcriptor whisper.cpp (opcional)",
+    estado: whisper ? "ok" : "opcional",
+    detalle: whisper
+      ? "Brote transcribe con whisper-cli en este computador."
+      : conBrewWhisper
+        ? "Para transcribir, Brote necesita whisper.cpp (programa gratis y de código abierto que corre en tu computador). Se instala con Homebrew."
+        : "Para transcribir, Brote necesita whisper.cpp (whisper-cli). En Windows y Linux instálalo desde https://github.com/ggml-org/whisper.cpp y ponlo en el PATH.",
+    accion: whisper || !conBrewWhisper ? undefined : { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-whisper" },
   });
 
   const url = leerUrlIcal();

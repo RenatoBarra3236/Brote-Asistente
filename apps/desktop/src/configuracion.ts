@@ -19,6 +19,7 @@ import { TransportePuente } from "./agente/puente";
 import { revisarConectores, vistaConectores } from "./configurar/conectores";
 import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, leerPresupuesto, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso, usarPuente } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
+import { leerGrabaciones } from "./configurar/grabaciones";
 import { vistaFunciones, vistaNotificaciones, vistaTarjetasInicio } from "./configurar/funciones";
 import { revisarEquipo, vistaCuentas, vistaEquipo } from "./configurar/equipo";
 
@@ -370,6 +371,7 @@ async function iniciar(): Promise<void> {
   void revisarConectores();
   void revisarEquipo();
   void pedirPermisos();
+  void leerGrabaciones();
   await revisar();
   modo = necesitaAsistente(estado.pasos, estado.hayArchivoFunciones) ? "asistente" : "diario";
   // Parámetros solo para la vista previa del diseño: ?seccion=funciones, ?paso=2.

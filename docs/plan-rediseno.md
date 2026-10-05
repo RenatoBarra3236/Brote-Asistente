@@ -183,7 +183,7 @@ con "Acceso completo" (captura del 4-10-2026), porque con `tauri dev` el permiso
 Brote.app empaquetada tiene que pedir y tener el suyo (ver `Info.plist` y el paso "Calendario del Mac" de
 Configurar Brote), y la sección nueva debe explicar qué hacer si falta.
 
-## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; fase 1 hecha el 5-10-2026, sin micrófono; el resto sin código)
+## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; fases 1, 2 y 3 hechas el 5-10-2026; la 3 sin probar con un micrófono real)
 
 Grabar audio (por ejemplo una clase), transcribirlo y que Brote ayude con el texto: resúmenes y, en la fase 2,
 tareas y fechas para Agenda (sección 7). El proyecto vivirá además en el celular (app Tauri móvil) y en una "casa"
@@ -241,10 +241,10 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 
 1. **Cimientos sin micrófono:** contrato y formato (`packages/motor/src/transcripciones.ts`, puro), borrado a los N
    días, MCP y su regla en `delegar`. Pruebas con carpeta temporal y una transcripción armada.
-2. **Transcripción de un WAV:** puente con `whisper-cli`, descarga del modelo en Configurar Brote. Probado con un
+2. **Transcripción de un WAV (hecha el 5-10-2026):** puente con `whisper-cli`, descarga del modelo en Configurar Brote. Probado con un
    audio de ejemplo y un `whisper-cli` falso.
-3. **Captura y permiso:** `grabacion.rs`, `Info.plist`, punto rojo y pregunta de consentimiento. Solo se prueba de
-   verdad con `Brote.app` en un Mac.
+3. **Captura y permiso (hecha el 5-10-2026):** `grabacion.rs` (cpal), `Info.plist`, punto rojo y pregunta de
+   consentimiento. Solo se prueba de verdad con `Brote.app` en un Mac.
 4. **Isla y memoria:** botón 🎙, frases sin IA, sección en "Lo que sé de ti", vista previa, `docs/privacidad.md`.
 5. **Fase 2 (B):** tareas y fechas hacia Agenda, con confirmación en la isla.
 
@@ -257,6 +257,45 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 - [ ] Permisos reales: que `~/.asistente-prototipo/transcripciones/` y `grabaciones/` queden 700 y los archivos 600 al crearlos la app (hoy solo probado en carpeta temporal en Linux/Mac de desarrollo).
 - [ ] Windows: `aLaPapelera` borra de verdad (sin Papelera); comprobar que los textos de la isla lo dicen cuando exista la ventana (fase 4).
 - [ ] Texto de `docs/privacidad.md` sobre voces de terceros: que lo revise alguien antes de repartir Brote.
+
+### Pruebas pendientes de la fase 2 (anotadas el 5-10-2026, para hacer en un Mac)
+
+- [x] (5-10-2026) `whisper-cli` instalado con Homebrew en `/opt/homebrew/bin`: `--help` confirma que acepta `-m -f -l -t -oj -of -np`. **Probado el 5-10-2026 con `whisper-cli` 1.9.4 real y el modelo `base` (descargado a /tmp, SHA-256 y tamaño correctos, borrado después)**: el JSON tiene la forma supuesta; una frase hablada con `say` salió bien ("Buenos días, hoy vemos derivadas y la regla de la cadena.", 0,4 s para 3 s de audio en `base`); sobre silencio devuelve la marca `[Música]`, que el lector descarta (`esMarcaSinHabla`); `-sns` NO sirve (sobre silencio inventa frases). Sigue sin probar: `small`, la descarga por Rust y la velocidad con grabaciones largas.
+- [ ] `brew install whisper-cpp` desde el botón "Instalar con Homebrew" (terminal `brew-whisper`): comprobar que deja `whisper-cli` en el PATH y que Configurar Brote lo reconoce al volver a la ventana. Con `ASISTENTE_WHISPER` si Brote se abre desde el Finder y no lo encuentra.
+- [ ] `whisper-cli` real contra un WAV corto de verdad (mono 16 kHz): que el JSON `-oj -of` tenga la forma que se supuso (`transcription[].offsets.{from,to}` en ms y `text`; verificada solo en el código fuente de whisper.cpp 1.9.4, no corriéndolo) y que `-l es` y `-np` sean aceptados por la versión de Homebrew.
+- [ ] Descarga real del modelo `small` (488 MB) desde Configurar Brote en `Brote.app`: avance, "verificando", SHA-256 correcto, archivo 600 y carpeta 700; cortar la red a la mitad (queda `.parte` y se borra); cancelar; descargar otra vez con el archivo ya completo (no baja de nuevo). Probar `base` con un SHA-256 alterado a propósito en una copia local de la lista para ver el error. El `curl` de macOS es `/usr/bin/curl`; en Windows se usa `curl.exe` (viene con Windows 10 1803+): sin probar.
+- [ ] Velocidad real de `small` y `large-v3-turbo` en el M5 con una grabación de 10 minutos (no hay cifras aún; no anotar "X veces más rápido" hasta medir), y que el vigilante del puente no la tome por colgada (el tope es 4 h).
+- [ ] Transcripción de punta a punta desde `Brote.app`: copiar a mano un WAV a `~/.asistente-prototipo/grabaciones/AAAA-MM-DD-HHMMSS.wav`, prender la función, aceptar el aviso y mandar un pedido `transcribir` (hoy solo se puede por el puente; la isla llega en la fase 4): aviso "🎙 Tu transcripción está lista" en la isla cerrada y el `.md` con permisos 600.
+- [ ] Borrado de audios vencidos con la función prendida (Papelera real en Mac) a la hora de prenderla y a la hora de uso; con la función apagada, nada se borra aunque haya audios viejos.
+- [ ] El aviso de la isla (`Novedades` tipo `transcripcion`): punto en la pestaña Brote y notificación del sistema si está prendida (`IMPORTANTES`).
+- [ ] Windows: `whisper-cli.exe` en el PATH (no hay "Instalar con Homebrew"; el paso solo explica dónde bajarlo), `curl.exe` y la ruta de `modelos/`.
+- [ ] Cambiar el texto de consentimiento y subir `VERSION_CONSENTIMIENTO_GRABACIONES` (motor + `configuracion.rs`: una prueba del motor las compara): comprobar que la casilla vuelve a quedar sin marcar y el puente no transcribe hasta aceptar otra vez.
+
+### Pendientes al cerrar la fase 2 (5-10-2026)
+
+- **Sin commit**: todo lo de la fase 2 está en el árbol de trabajo (el usuario hace el commit con GitHub Desktop).
+- **Decisiones del usuario sin responder**: (1) ¿se queda el consentimiento obligatorio, sin el cual el puente no transcribe? (2) ¿descargar modelos con el `curl` del sistema (en Windows, `curl.exe`) o sumar una librería HTTP a Rust? (3) quién revisa el texto de consentimiento y de `docs/privacidad.md` antes de repartir Brote.
+- **Sin probar**: descarga real del modelo por Rust (`modelo_descargar`) en `Brote.app`; `small` y velocidad en el M5; grabaciones largas (10 min o más); el botón "Instalar con Homebrew" (`brew-whisper`); borrado a la Papelera real; el aviso de la isla y la notificación del sistema; Windows (`whisper-cli.exe`, `curl.exe`); ver "Pruebas pendientes de la fase 2" arriba.
+- **Cabos sueltos conocidos**: no hay frases sin IA, ni botón 🎙, ni sección en "Lo que sé de ti" (fase 4); nada lanza `transcribir` salvo el pedido al puente; `modelo_borrar` existe en Rust pero ninguna ventana lo usa; el MCP `transcripciones_*` sigue sin probarse bajo OpenClaw (lista de la fase 1); Agenda tiene dos pendientes ajenos (diseño estilo Notion y mensaje cuando falla `agenda-estado`).
+- **Siguiente (5-10-2026)**: la fase 3 está hecha (ver «Pruebas pendientes de la fase 3»); sigue la fase 4 (frases sin IA «graba esta clase», sección en «Lo que sé de ti» con un lugar para borrar transcripciones, y el botón «Abrir Privacidad» en el error del micrófono).
+
+### Pruebas pendientes de la fase 3 (anotadas el 5-10-2026, para hacer en un Mac)
+
+Hecho: lógica pura con `cargo test` (conversión a 16 bits, mono, remuestreo 48 k y 44,1 k → 16 k, encabezado WAV, escritor
+con encabezado válido sin cerrar, permisos 600, tope de 3 h, ids), `clippy`, estado y textos de la isla con `node --test`
+y las cinco escenas en la vista previa (Chrome). NUNCA se abrió el micrófono real ni se grabó nada.
+
+- [ ] Micrófono real con `Brote.app` (`tauri build --bundles app`): la primera vez, el aviso de macOS sale con el texto de `NSMicrophoneUsageDescription` y es de Brote, no de la Terminal; `grabacion_iniciar` espera la respuesta (hasta 2 min) y la isla muestra «Abriendo el micrófono…». Con `tauri dev` el permiso es de la Terminal.
+- [ ] Permiso negado: decir que no (o quitarlo en Ajustes) y comprobar que el error de la isla dice cómo activarlo y que no queda un `.wav` vacío en `~/.asistente-prototipo/grabaciones/`. Falta un botón «Abrir Privacidad» en ese error (el enlace `privacidad-microfono` ya existe en Rust).
+- [ ] Formato real: grabar 30 s y 10 min y comprobar con `whisper-cli` y `afinfo`: mono, 16 kHz, 16 bits, duración correcta; ninguna distorsión por el remuestreo (el micrófono del M5 suele dar 48 kHz, pero AirPods y otros dan 16 o 24 kHz estéreo/mono: probar al menos uno de cada).
+- [ ] Cambiar de micrófono a media grabación (desconectar AirPods): cpal debe avisar (`DeviceNotAvailable`/`DeviceChanged`); comprobar que la isla muestra el error, el WAV queda válido y se puede transcribir lo grabado. No se sabe cómo reacciona cpal 0.18 en macOS al cambio de ruta por defecto.
+- [ ] Cierre a la mitad: grabar, cerrar Brote con Cmd + Q y con `kill -9`; el WAV debe abrirse (con `kill -9` pierde como mucho los últimos 5 s: el encabezado se refresca cada 5 s).
+- [ ] Tope de 3 h: no se probó con 3 h reales (solo el contador); dejar grabando en silencio y comprobar que corta, avisa y transcribe (y el tamaño: ~345 MB).
+- [ ] Punto rojo: `🌱🔴` en la barra de menú de macOS (si el emoji se ve raro en el título del ícono, cambiar por un ícono dibujado), el tooltip en Windows y el `🔴 mm:ss` del ala izquierda sobre el notch real y sobre apps en pantalla completa.
+- [ ] «No llega sonido» (8 s sin una muestra distinta de cero): con el micrófono silenciado por hardware en Mac y, sobre todo, con el interruptor general de micrófono de Windows. En una sala muy silenciosa los micrófonos dan ruido de fondo (no cero), pero un micrófono virtual puede dar ceros exactos y avisar de más.
+- [ ] Punta a punta: grabar 1 min diciendo una frase, detener, responder «¿avisaste?», y comprobar que `transcripciones/<id>.md` queda con `avisoAPresentes` igual a lo respondido, permisos 600, y que el aviso de la isla dice «Transcribiendo…» y luego «Tu transcripción está lista». Sin la función o sin el consentimiento: el audio queda guardado y el aviso lo explica.
+- [ ] Windows: compilar con `cpal` (WASAPI), el aviso del micrófono (no hay por app), `ms-settings:privacy-microphone`, grabar con el micrófono por defecto y el texto de «no llega sonido». Linux: necesita `libasound2-dev` para compilar; la CI de Linux (si se agrega) debe instalarlo.
+- [ ] Segunda grabación seguida sin cerrar la app y grabar con la ventana de Configurar abierta (los dos comparten el proceso Rust).
 
 ### Sin probar hasta tener un Mac (y otros aparatos)
 

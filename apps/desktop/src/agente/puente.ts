@@ -39,6 +39,14 @@ export interface DescargaEnCurso {
   tamano: number;
 }
 
+export type FaseTranscripcion = "en-cola" | "transcribiendo" | "lista" | "error" | "cancelada";
+
+export interface AvisoTranscripcion {
+  id: string;
+  fase: FaseTranscripcion;
+  texto: string;
+}
+
 /** Lo que suena en el computador (Spotify, Música o, en Windows, el reproductor del sistema). */
 export interface EstadoMusica {
   app: string;
@@ -124,6 +132,7 @@ type Aviso =
   | { tipo: "musica"; estado: EstadoMusica | null }
   | ({ tipo: "calendario" } & EstadoCalendario)
   | { tipo: "calendario-aviso"; texto: string }
+  | { tipo: "transcripcion"; id: string; fase: FaseTranscripcion; texto: string }
   | ({ tipo: "aula" } & EstadoAula)
   | { tipo: "aula-aviso"; texto: string }
   | ({ tipo: "programador" } & EstadoProgramador)
@@ -167,6 +176,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesTranscripcion = new Set<(aviso: AvisoTranscripcion) => void>();
   private readonly oyentesAula = new Set<(estado: EstadoAula) => void>();
   private readonly oyentesAvisoAula = new Set<(texto: string) => void>();
   private readonly oyentesProgramador = new Set<(estado: EstadoProgramador) => void>();
@@ -261,6 +271,12 @@ export class TransportePuente implements Transporte {
   }
 
   /** El aviso 10 min antes de un evento. */
+  /** Avisos de "Grabar y transcribir": en cola, transcribiendo, lista, error o cancelada (sin el contenido de la grabación). */
+  alAvisoTranscripcion(oyente: (aviso: AvisoTranscripcion) => void): () => void {
+    this.oyentesTranscripcion.add(oyente);
+    return () => this.oyentesTranscripcion.delete(oyente);
+  }
+
   alAvisoCalendario(oyente: (texto: string) => void): () => void {
     this.oyentesAvisoCalendario.add(oyente);
     return () => this.oyentesAvisoCalendario.delete(oyente);
@@ -439,6 +455,9 @@ export class TransportePuente implements Transporte {
         return;
       case "calendario":
         for (const oyente of this.oyentesCalendario) oyente({ proximo: aviso.proximo, etiqueta: aviso.etiqueta });
+        return;
+      case "transcripcion":
+        for (const oyente of this.oyentesTranscripcion) oyente({ id: aviso.id, fase: aviso.fase, texto: aviso.texto });
         return;
       case "calendario-aviso":
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);

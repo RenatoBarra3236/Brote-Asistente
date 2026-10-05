@@ -46,7 +46,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "agenda_proponer", "motor_proponer_plantilla"],
     );
   });
 
@@ -259,6 +259,17 @@ describe("servidor MCP de gastos", () => {
     assert.equal(llamar("transcripciones_leer", {}).error, true);
   });
 
+  it("agenda_proponer: solo deja propuestas pendientes de una transcripción que existe", () => {
+    const sig = new Date(Date.now() + 3 * 86_400_000);
+    const fecha = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, "0")}-${String(sig.getDate()).padStart(2, "0")}`;
+    const ok = llamar("agenda_proponer", { grabacion: "2026-10-04-103000", propuestas: [{ tipo: "tarea", titulo: "Guía 3", fecha }, { tipo: "evento", titulo: "Prueba", fecha }] });
+    assert.match(ok.texto, /guardadas: 1/);
+    assert.match(ok.texto, /Rechazadas/);
+    assert.match(ok.texto, /todavía no está agregado nada/);
+    assert.equal(llamar("agenda_proponer", { grabacion: "2026-01-01-000000", propuestas: [] }).error, true);
+    assert.equal(llamar("agenda_proponer", { grabacion: "../x", propuestas: [] }).error, true);
+  });
+
   it("transcripciones: con la función apagada no lee nada", async () => {
     const ruta = process.env.ASISTENTE_FUNCIONES!;
     const original = readFileSync(ruta, "utf8");
@@ -267,6 +278,7 @@ describe("servidor MCP de gastos", () => {
       writeFileSync(ruta, JSON.stringify({ activas: { grabaciones: false } }));
       assert.equal(llamar("transcripciones_listar", {}).texto, MENSAJE_APAGADA_MCP);
       assert.equal(llamar("transcripciones_leer", { id: "2026-10-04-103000" }).texto, MENSAJE_APAGADA_MCP);
+      assert.equal(llamar("agenda_proponer", { grabacion: "2026-10-04-103000", propuestas: [] }).texto, MENSAJE_APAGADA_MCP);
     } finally {
       await new Promise((listo) => setTimeout(listo, 15));
       writeFileSync(ruta, original);

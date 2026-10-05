@@ -48,3 +48,27 @@ describe("armarAgenda", () => {
     assert.deepEqual(armarAgenda({}, ahora), []);
   });
 });
+
+describe("armarAgenda con tareas de grabaciones", () => {
+  it("las tareas salen en su día, con su id y si están hechas", () => {
+    const dias = armarAgenda({ tareas: [{ id: 7, titulo: "Guía 3", detalle: null, venceMs: en(2, 23, 59), hecha: true }] }, ahora);
+    assert.equal(dias.length, 1);
+    assert.deepEqual(dias[0].items.map((i) => [i.tipo, i.tareaId, i.hecha]), [["tarea", 7, true]]);
+  });
+});
+
+describe("armarAgenda: una tarea también creada en el calendario", () => {
+  it("no se repite: el evento que termina a su hora límite se esconde, uno distinto no", () => {
+    const dias = armarAgenda(
+      {
+        eventos: [
+          { titulo: "Guía 3", lugar: null, inicioMs: en(2, 23, 29), finMs: en(2, 23, 59), todoElDia: false },
+          { titulo: "Guía 3", lugar: null, inicioMs: en(2, 9), finMs: en(2, 10), todoElDia: false },
+        ],
+        tareas: [{ id: 1, titulo: "Guía 3", detalle: null, venceMs: en(2, 23, 59), hecha: false }],
+      },
+      ahora,
+    );
+    assert.deepEqual(dias[0].items.map((i) => [i.tipo, i.inicioMs]), [["evento", en(2, 9)], ["tarea", en(2, 23, 59)]]);
+  });
+});

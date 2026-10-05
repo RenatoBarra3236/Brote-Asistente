@@ -235,7 +235,7 @@ export function funcionDeHerramienta(nombre: string): IdFuncion | null {
   if (nombre === "equipo_estado") return "equipo";
   if (nombre === "programador_sesiones") return "programador";
   if (nombre === "claude_uso") return "uso-del-plan";
-  if (nombre.startsWith("transcripciones_")) return "grabaciones";
+  if (nombre.startsWith("transcripciones_") || nombre === "agenda_proponer") return "grabaciones";
   return null;
 }
 

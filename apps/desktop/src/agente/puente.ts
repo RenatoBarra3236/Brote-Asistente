@@ -2,6 +2,7 @@
 // (packages/adapter/src/puente.ts). Los pedidos van con el comando `agente_escribir` y
 // los avisos llegan como evento `puente`, una línea JSON cada uno.
 
+import type { PropuestaAgenda } from "./propuestas-agenda.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./transporte.ts";
@@ -132,6 +133,7 @@ type Aviso =
   | { tipo: "musica"; estado: EstadoMusica | null }
   | ({ tipo: "calendario" } & EstadoCalendario)
   | { tipo: "calendario-aviso"; texto: string }
+  | { tipo: "propuestas-agenda"; propuestas: PropuestaAgenda[] }
   | { tipo: "transcripcion"; id: string; fase: FaseTranscripcion; texto: string }
   | ({ tipo: "aula" } & EstadoAula)
   | { tipo: "aula-aviso"; texto: string }
@@ -176,6 +178,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesPropuestas = new Set<(propuestas: PropuestaAgenda[]) => void>();
   private readonly oyentesTranscripcion = new Set<(aviso: AvisoTranscripcion) => void>();
   private readonly oyentesAula = new Set<(estado: EstadoAula) => void>();
   private readonly oyentesAvisoAula = new Set<(texto: string) => void>();
@@ -271,6 +274,12 @@ export class TransportePuente implements Transporte {
   }
 
   /** El aviso 10 min antes de un evento. */
+  /** Las propuestas de tareas y fechas sacadas de una grabación que esperan una decisión, cada vez que cambian. */
+  alCambiarPropuestas(oyente: (propuestas: PropuestaAgenda[]) => void): () => void {
+    this.oyentesPropuestas.add(oyente);
+    return () => this.oyentesPropuestas.delete(oyente);
+  }
+
   /** Avisos de "Grabar y transcribir": en cola, transcribiendo, lista, error o cancelada (sin el contenido de la grabación). */
   alAvisoTranscripcion(oyente: (aviso: AvisoTranscripcion) => void): () => void {
     this.oyentesTranscripcion.add(oyente);
@@ -386,6 +395,12 @@ export class TransportePuente implements Transporte {
     return mensaje ?? (aceptar ? "Listo, la aprendí." : "Ok, no la aprendo.");
   }
 
+  /** Agregar o descartar una tarea o fecha que Brote sacó de una grabación (con el título o la fecha corregidos, si los cambió). */
+  async decidirPropuestaAgenda(propuesta: number, decision: "aceptar" | "descartar", cambios?: { titulo: string; fecha: string }): Promise<{ mensaje: string }> {
+    const { mensaje } = await this.pedir({ tipo: "propuesta-decidir", propuesta, decision, ...(cambios ? { titulo: cambios.titulo, fecha: cambios.fecha } : {}) });
+    return { mensaje: mensaje ?? "" };
+  }
+
   /** Un pedido cualquiera al puente (por ejemplo, los de "Lo que sé de ti"); devuelve sus datos. */
   async consultar<T = unknown>(pedido: Record<string, unknown>): Promise<T> {
     const { datos } = await this.pedir(pedido);
@@ -458,6 +473,9 @@ export class TransportePuente implements Transporte {
         return;
       case "transcripcion":
         for (const oyente of this.oyentesTranscripcion) oyente({ id: aviso.id, fase: aviso.fase, texto: aviso.texto });
+        return;
+      case "propuestas-agenda":
+        for (const oyente of this.oyentesPropuestas) oyente(aviso.propuestas);
         return;
       case "calendario-aviso":
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);

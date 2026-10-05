@@ -154,6 +154,7 @@ import {
   AvisadorEntregas,
   DIAS_VENTANA,
   armarAgenda,
+  TareasAgenda,
   describirErrorAula,
   leerAula,
   aplicarPedidoSecretos,
@@ -286,6 +287,8 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__claude_uso",
   "mcp__gastos__transcripciones_listar",
   "mcp__gastos__transcripciones_leer",
+  // Solo deja propuestas pendientes: nada llega a la Agenda sin que el usuario lo acepte en la isla.
+  "mcp__gastos__agenda_proponer",
 ]);
 
 /**
@@ -368,6 +371,8 @@ const activa = (id: IdFuncion): boolean => funciones.activas[id];
 const gastos = new Gastos(RUTA_BASE);
 // Las plantillas aprendidas se leen en cada mensaje: una recién aceptada sirve al tiro.
 const temporizadores = new Temporizadores(gastos);
+/** Tareas y propuestas sacadas de las transcripciones (el agente propone con `agenda_proponer`; decide el usuario). */
+const tareasAgenda = new TareasAgenda(gastos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -539,6 +544,10 @@ function estadoCalendario(): { proximo: EventoCalendario | null; etiqueta: strin
   return { proximo, etiqueta: proximo ? etiquetaProximo(proximo, ahora) : null };
 }
 /** La pestaña Agenda: lo de las funciones prendidas, 14 días, y qué fuentes hay (para explicar lo que falta). */
+function inicioDeHoy(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
 async function estadoAgenda() {
   if (activa("calendario")) await leerCalendarios();
   if (activa("aula")) await leerAulaSiToca();
@@ -548,6 +557,8 @@ async function estadoAgenda() {
       eventos: activa("calendario") ? eventosCalendario() : [],
       entregas: activa("aula") && entregasAula ? pendientes(entregasAula, ahora) : [],
       temporizadores: activa("temporizadores") ? temporizadores.activos() : [],
+      // Lo ya aceptado es del usuario: se ve aunque la función de grabar se apague.
+      tareas: tareasAgenda.tareas(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000),
     },
     ahora,
     DIAS_VENTANA,
@@ -1100,6 +1111,23 @@ function detenerPlata(): void {
   avisar({ tipo: "plata", plata: null });
 }
 
+// Propuestas de tareas y fechas sacadas de una transcripción: las deja el agente por MCP (otro proceso),
+// así que se mira la marca cada 2 s. La isla las muestra con Agregar / Descartar; nada se agrega solo.
+let marcaPropuestas = "";
+function revisarPropuestas(forzar = false): void {
+  const marca = tareasAgenda.marca();
+  if (!forzar && marca === marcaPropuestas) return;
+  const habia = marcaPropuestas !== "";
+  marcaPropuestas = marca;
+  const propuestas = tareasAgenda.pendientes();
+  if (habia && propuestas.length > 0) registrar("agenda: hay propuestas de una grabación");
+  avisar({ tipo: "propuestas-agenda", propuestas });
+}
+function detenerPropuestas(): void {
+  marcaPropuestas = "";
+  avisar({ tipo: "propuestas-agenda", propuestas: [] });
+}
+
 /** La cola de transcripciones (solo existe con la función `grabaciones` prendida). */
 let transcriptor: Transcriptor | null = null;
 
@@ -1182,12 +1210,15 @@ const tareas = new TareasPorFuncion({
       }
     };
     const detenerLimpieza = cada(60 * 60 * 1000, limpiar);
+    const detenerPropuestas2 = cada(2000, () => revisarPropuestas());
     transcriptor = new Transcriptor({
       transcribir: (audio, modelo, senal) => transcribirConWhisper(audio, modelo, { senal }),
       avisar: (aviso) => avisar({ tipo: "transcripcion", ...aviso }),
     });
     return () => {
       detenerLimpieza();
+      detenerPropuestas2();
+      detenerPropuestas();
       transcriptor?.detener();
       transcriptor = null;
     };
@@ -1568,9 +1599,53 @@ async function atender(pedido: any): Promise<Extra> {
       if (!vista) throw new Error("Esa transcripción ya no está");
       return { datos: vista };
     }
+    case "propuestas-listar":
+      return { datos: activa("grabaciones") ? tareasAgenda.pendientes() : [] };
+    case "propuesta-decidir": {
+      if (!Number.isInteger(pedido.propuesta) || (pedido.decision !== "aceptar" && pedido.decision !== "descartar")) break;
+      if (pedido.decision === "descartar") {
+        if (!tareasAgenda.descartar(pedido.propuesta)) throw new Error("Esa propuesta ya no está pendiente");
+        revisarPropuestas();
+        return { mensaje: "Descartada." };
+      }
+      // Lo que el usuario corrigió en la isla (título o fecha) se aplica antes de agregarla.
+      if ((pedido.titulo !== undefined || pedido.fecha !== undefined) && !tareasAgenda.editar(pedido.propuesta, { titulo: pedido.titulo, fecha: pedido.fecha }, Date.now())) {
+        throw new Error("El título o la fecha no sirven");
+      }
+      const propuesta = tareasAgenda.aceptar(pedido.propuesta);
+      if (!propuesta) throw new Error("Esa propuesta ya no está pendiente");
+      // Todo queda en la Agenda de la isla y, con el calendario prendido, también en el calendario (el toque
+      // en la isla es la confirmación). Una tarea dura hasta su hora límite; una prueba, 1 h desde su hora.
+      const esTarea = propuesta.tipo === "tarea";
+      if (esTarea || !activa("calendario")) tareasAgenda.crearTarea(propuesta.titulo, propuesta.detalle, propuesta.inicioMs, propuesta.grabacion, Date.now());
+      let mensaje = esTarea ? "Agregada a tu Agenda." : "Agregada a tu calendario.";
+      if (activa("calendario")) {
+        const inicioMs = esTarea ? propuesta.inicioMs - 30 * 60_000 : propuesta.inicioMs;
+        const finMs = esTarea ? propuesta.inicioMs : propuesta.inicioMs + 3_600_000;
+        const hecho = crearEvento({ titulo: propuesta.titulo, lugar: propuesta.detalle, inicioMs, finMs });
+        if (hecho.ok) mensaje = esTarea ? "Agregada a tu Agenda y a tu calendario." : "Agregada a tu calendario.";
+        else if (esTarea) mensaje = "Agregada a tu Agenda (no pude usar tu calendario).";
+        else {
+          tareasAgenda.crearTarea(propuesta.titulo, propuesta.detalle, propuesta.inicioMs, propuesta.grabacion, Date.now());
+          mensaje = "No pude usar tu calendario: la dejé como tarea en la Agenda.";
+        }
+      } else if (!esTarea) mensaje = "Agregada a tu Agenda como tarea (el calendario está apagado).";
+      revisarPropuestas();
+      return { mensaje };
+    }
+    case "tarea-hecha":
+      if (!Number.isInteger(pedido.tarea) || typeof pedido.hecha !== "boolean") break;
+      if (!tareasAgenda.marcarHecha(pedido.tarea, pedido.hecha)) throw new Error("Esa tarea ya no existe");
+      return {};
     case "grabacion-borrar": {
       if ((pedido.que !== "transcripcion" && pedido.que !== "audio") || (pedido.grabacion !== null && typeof pedido.grabacion !== "string")) break;
       const borradas = borrarDeGrabaciones(pedido.que, pedido.grabacion);
+      // Sin su transcripción, lo que se propuso de ella y nadie decidió se va también.
+      if (pedido.que === "transcripcion" && borradas > 0) {
+        if (pedido.grabacion === null) tareasAgenda.olvidarPendientes();
+        else tareasAgenda.olvidarDeGrabacion(pedido.grabacion);
+        revisarPropuestas();
+      }
       registrar(`grabaciones: ${borradas} ${pedido.que === "audio" ? "audio(s)" : "transcripción(es)"} borrado(s)`);
       return { datos: { borradas } };
     }

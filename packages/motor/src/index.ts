@@ -35,3 +35,4 @@ export { borrarAudiosVencidos, borrarGrabacion, borrarTodasLasGrabaciones, audio
 export { leerAjustesGrabaciones, marcaAjustesGrabaciones, rutaAjustesGrabaciones } from "./grabaciones-ajustes.ts";
 export { MAX_DIAS_AUDIO, MIN_DIAS_AUDIO, TEXTO_CONSENTIMIENTO_GRABACIONES, VERSION_CONSENTIMIENTO_GRABACIONES, normalizarAjustesGrabaciones, type AjustesGrabaciones } from "./grabaciones-textos.ts";
 export { MAX_LISTADAS, TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, duracionCorta, type AccionGrabar } from "./grabaciones-frases.ts";
+export { TareasAgenda, leerFecha, validarPropuesta, type NuevaPropuesta, type Propuesta, type Tarea } from "./tareas-agenda.ts";

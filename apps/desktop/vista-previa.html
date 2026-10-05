@@ -23,7 +23,8 @@
   toque y "mi presupuesto es…" funcionan.
   ?pestana=agenda (la pestaña Agenda con eventos, entregas y un recordatorio de ejemplo) y
   ?agenda=sin|permiso|negado|dev|ical|apagada (sin nada en 14 días, Mac sin decidir el permiso, permiso negado,
-  modo desarrollo, otro sistema sin iCal, o la función apagada). La vista previa siempre cree estar en
+  modo desarrollo, otro sistema sin iCal, o la función apagada). &propuestas=1 deja en Agenda la tarjeta
+  «Encontré 3 cosas en tu grabación» (Agregar / Editar / Descartar funcionan contra datos de ejemplo). La vista previa siempre cree estar en
   desarrollo: agrega &produccion=1 para ver los textos de la app empaquetada (permiso, negado).
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
@@ -256,6 +257,17 @@
                   return responder(id, { datos: datos.aula });
                 case "agenda-estado":
                   return responder(id, { datos: window.__agenda() });
+                case "propuestas-listar":
+                  return responder(id, { datos: window.__propuestas });
+                case "propuesta-decidir": {
+                  const p = window.__propuestas.find((x) => x.id === pedido.propuesta);
+                  if (!p) return emitir({ tipo: "respuesta", id, ok: false, error: "Esa propuesta ya no está pendiente" });
+                  window.__propuestas = window.__propuestas.filter((x) => x !== p);
+                  setTimeout(() => emitir({ tipo: "propuestas-agenda", propuestas: window.__propuestas }), 200);
+                  return responder(id, { mensaje: pedido.decision === "descartar" ? "Descartada." : p.tipo === "evento" ? "Agregada a tu calendario." : "Agregada a tu agenda." });
+                }
+                case "tarea-hecha":
+                  return responder(id, {});
                 case "programador-estado":
                   return responder(id, { datos: datos.programador });
                 case "uso-estado":
@@ -465,6 +477,18 @@
       }
       // Una descarga en curso, como llegaría del puente.
       if (!vacia) setTimeout(() => emitir({ tipo: "descargas", enCurso: [{ id: "d1", nombre: "session10_intro_ml.pdf", tamano: 3.4 * 1024 ** 2 }] }), 600);
+      // Propuestas de una grabación: &propuestas=1.
+      {
+        const hoy = new Date();
+        const en = (dias, h = 0, min = 0) => new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias, h, min).getTime();
+        window.__propuestas = parametros.get("propuestas")
+          ? [
+              { id: 1, grabacion: "2026-10-05-090000", tipo: "tarea", titulo: "Guía 3 de álgebra", detalle: "Álgebra lineal", inicioMs: en(3, 23, 59), conHora: false },
+              { id: 2, grabacion: "2026-10-05-090000", tipo: "evento", titulo: "Prueba 1: matrices", detalle: "Sala A-3", inicioMs: en(6, 8, 30), conHora: true },
+              { id: 3, grabacion: "2026-10-05-090000", tipo: "tarea", titulo: "Leer capítulo 4", detalle: null, inicioMs: en(2, 23, 59), conHora: false },
+            ]
+          : [];
+      }
       // Agenda de ejemplo: ?agenda=sin|permiso|negado|dev|ical|apagada (sin parámetro: con datos).
       window.__agenda = () => {
         const modo = parametros.get("agenda");

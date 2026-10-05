@@ -31,6 +31,7 @@ import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
 import { MAX_CARACTERES_TROZO, partirEnTrozos } from "./transcripciones.ts";
+import { TareasAgenda, idDeGrabacionValido } from "./tareas-agenda.ts";
 import { leerTranscripcionGuardada, listarTranscripciones } from "./transcripciones-archivo.ts";
 import { vigente, type LecturaPlan, type VentanaPlan } from "./plan.ts";
 import { tokensDe, type ResumenPeriodo, type ResumenUso, type TotalUso } from "./uso.ts";
@@ -272,6 +273,41 @@ const HERRAMIENTAS = [
       "plan), separados entre Brote y las sesiones de Claude Code del usuario. Solo lectura.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Uso del plan de Claude", readOnlyHint: true },
+  },
+  {
+    name: "agenda_proponer",
+    description:
+      "Propone tareas, entregas y pruebas que salieron de UNA transcripción del usuario, para que él decida en la isla " +
+      "si las agrega a su Agenda. NO agrega nada por sí sola. Úsala solo cuando el usuario te pida sacar las tareas o " +
+      "fechas de una grabación, después de leerla entera con transcripciones_leer. Incluye solo lo que se dijo con claridad " +
+      "(una entrega, una prueba, una fecha); nada inventado ni deducido. «tarea» es algo por entregar o hacer (fecha límite); " +
+      "«evento» es algo a una hora (una prueba, una reunión) y exige hora. Fecha y hora locales del usuario; si dijeron " +
+      "«el viernes», calcula la fecha con la de la transcripción. Títulos cortos, sin copiar frases de la clase.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        grabacion: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}-\\d{6}$", description: "El id de la transcripción" },
+        propuestas: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          items: {
+            type: "object",
+            properties: {
+              tipo: { type: "string", enum: ["tarea", "evento"] },
+              titulo: { type: "string", minLength: 3, maxLength: 120 },
+              fecha: { type: "string", description: "AAAA-MM-DD (tarea) o AAAA-MM-DD HH:MM (evento)" },
+              detalle: { type: "string", maxLength: 120, description: "Curso o lugar, opcional" },
+            },
+            required: ["tipo", "titulo", "fecha"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["grabacion", "propuestas"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Agenda: proponer tareas de una grabación", readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
   {
     name: "motor_proponer_plantilla",
@@ -656,6 +692,16 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         hastaSeg: trozo.hastaSeg,
         texto: trozo.texto,
       });
+    }
+    case "agenda_proponer": {
+      if (!Array.isArray(args.propuestas) || typeof args.grabacion !== "string") throw new ErrorDeUso("Faltan «grabacion» o «propuestas»");
+      if (!idDeGrabacionValido(args.grabacion) || !leerTranscripcionGuardada(args.grabacion)) throw new ErrorDeUso("No hay una transcripción con ese id");
+      const r = new TareasAgenda(gastos).proponer(args.grabacion, args.propuestas, Date.now());
+      const partes = [`Propuestas guardadas: ${r.nuevas}.`];
+      if (r.repetidas) partes.push(`Repetidas (ya propuestas antes): ${r.repetidas}.`);
+      if (r.rechazadas.length) partes.push(`Rechazadas: ${r.rechazadas.join("; ")}.`);
+      if (r.nuevas) partes.push("El usuario decidirá en la isla cuáles agregar; todavía no está agregado nada.");
+      return partes.join(" ");
     }
     case "motor_proponer_plantilla": {
       if (typeof args.patron !== "string" || typeof args.ejemplo !== "string" || typeof args.intencion !== "string") {

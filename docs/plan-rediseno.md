@@ -246,7 +246,7 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 3. **Captura y permiso (hecha el 5-10-2026):** `grabacion.rs` (cpal), `Info.plist`, punto rojo y pregunta de
    consentimiento. Solo se prueba de verdad con `Brote.app` en un Mac.
 4. **Isla y memoria (hecha el 5-10-2026):** frases sin IA, sección «Grabaciones» en "Lo que sé de ti" (ver y borrar), botón «Abrir Privacidad» en el error del micrófono, el micrófono en Configurar → Permisos, vistas previas y `docs/privacidad.md`. El botón 🎙 ya venía de la fase 3.
-5. **Fase 2 (B):** tareas y fechas hacia Agenda, con confirmación en la isla.
+5. **Tareas y fechas hacia Agenda (hecha el 5-10-2026, sin probar en un Mac):** el agente de Brote las propone y la isla pide confirmación. Ver «Fase 5: diseño y pruebas pendientes».
 
 ### Pruebas pendientes de la fase 1 (anotadas el 5-10-2026, para hacer en un Mac)
 
@@ -277,7 +277,26 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 - **Decisiones del usuario sin responder**: (1) ¿se queda el consentimiento obligatorio, sin el cual el puente no transcribe? (2) ¿descargar modelos con el `curl` del sistema (en Windows, `curl.exe`) o sumar una librería HTTP a Rust? (3) quién revisa el texto de consentimiento y de `docs/privacidad.md` antes de repartir Brote.
 - **Sin probar**: descarga real del modelo por Rust (`modelo_descargar`) en `Brote.app`; `small` y velocidad en el M5; grabaciones largas (10 min o más); el botón "Instalar con Homebrew" (`brew-whisper`); borrado a la Papelera real; el aviso de la isla y la notificación del sistema; Windows (`whisper-cli.exe`, `curl.exe`); ver "Pruebas pendientes de la fase 2" arriba.
 - **Cabos sueltos conocidos**: no hay frases sin IA, ni botón 🎙, ni sección en "Lo que sé de ti" (fase 4); nada lanza `transcribir` salvo el pedido al puente; `modelo_borrar` existe en Rust pero ninguna ventana lo usa; el MCP `transcripciones_*` sigue sin probarse bajo OpenClaw (lista de la fase 1); Agenda tiene dos pendientes ajenos (diseño estilo Notion y mensaje cuando falla `agenda-estado`).
-- **Siguiente (5-10-2026, actualizado al cerrar la fase 4)**: la fase 4 está hecha (ver «Pruebas pendientes de la fase 4»); sigue la fase 5 (tareas y fechas hacia Agenda, con confirmación). Antes: la fase 3 está hecha (ver «Pruebas pendientes de la fase 3»); sigue la fase 4 (frases sin IA «graba esta clase», sección en «Lo que sé de ti» con un lugar para borrar transcripciones, y el botón «Abrir Privacidad» en el error del micrófono).
+- **Siguiente (5-10-2026, actualizado al cerrar la fase 5)**: la fase 5 está hecha (ver «Fase 5: diseño y pruebas pendientes»); queda probar todo en un Mac. (Antes: la fase 4 está hecha (ver «Pruebas pendientes de la fase 4»); sigue la fase 5 (tareas y fechas hacia Agenda, con confirmación). Antes: la fase 3 está hecha (ver «Pruebas pendientes de la fase 3»); sigue la fase 4 (frases sin IA «graba esta clase», sección en «Lo que sé de ti» con un lugar para borrar transcripciones, y el botón «Abrir Privacidad» en el error del micrófono).
+
+### Fase 5: diseño y pruebas pendientes (5-10-2026)
+
+**Cómo funciona.** Solo cuando el usuario le pide a Brote «saca las tareas de la clase de hoy»: Brote lee la transcripción con `transcripciones_leer` y llama a la herramienta MCP `agenda_proponer` con una lista corta (`tipo` tarea o evento, `titulo`, `fecha`, `detalle`). Nada se extrae solo al detener o transcribir. La herramienta valida (`validarPropuesta`: título de 3 a 120 letras, fecha local real entre ayer y un año, un evento exige hora, id de grabación con la forma exacta y que exista) y deja **propuestas pendientes** en la tabla `propuestas_agenda` de `asistente.db` (solo título corto, fecha y el id de la grabación: nunca el texto de la clase). El puente mira la base cada 2 s y manda el aviso `propuestas-agenda`; la isla muestra en la pestaña Agenda la tarjeta «Encontré N cosas en tu grabación» con Agregar / Editar / Descartar y «Agregar todo», y avisa por Novedades (tipo `agenda`, sin abrir la isla). Decisión del usuario (5-10-2026): lo aceptado convive en la isla y en el calendario. Una **tarea** se guarda en la tabla `tareas` (Agenda, con check) y, con el calendario prendido, también se crea en el Calendario del Mac como un evento de 30 min que termina a su hora límite (Agenda esconde ese evento para no repetirla: `armarAgenda`); una **prueba con hora** crea el evento (1 h) y Agenda lo muestra desde el calendario. El toque en la isla es la confirmación, no se pide otra. Sin calendario prendido o sin permiso, la tarea queda solo en Agenda y la prueba queda como tarea. Marcar hecha una tarea no cambia su evento del calendario. Lo descartado no vuelve a proponerse. Al borrar una transcripción se van sus propuestas pendientes (no lo ya aceptado). Pedidos del puente: `propuestas-listar`, `propuesta-decidir { propuesta, decision: "aceptar"|"descartar", titulo?, fecha? }`, `tarea-hecha { tarea, hecha }`. Sin función nueva: cuelga de `grabaciones` (la herramienta) y la pestaña Agenda se ve también con solo Grabar prendida; las tareas ya aceptadas se ven aunque la función se apague.
+
+**Reglas que se cumplen.** Quien extrae es el agente de Brote (Anthropic), nunca un especialista; la skill `delegar` ya lo prohíbe. `agenda_proponer` no escribe en el calendario ni en la Agenda. Ningún texto de transcripción sale de `~/.asistente-prototipo/transcripciones`.
+
+Hecho con pruebas: validación y tablas (`pruebas/tareas-agenda.test.ts`), tipo `tarea` en `armarAgenda`, la herramienta MCP (`mcp.test.ts`), el puente real de punta a punta con otro proceso que propone (`propuestas-agenda-puente.test.ts`), textos de la isla (`propuestas-agenda.test.ts`) y la vista previa `vista-previa.html?pestana=agenda&propuestas=1`.
+
+Pruebas pendientes (para un Mac):
+
+- [ ] Reiniciar los procesos MCP (`node …/packages/motor/src/mcp.ts` y el `claude … --resume`), sesión nueva, y con una transcripción real pedirle a Brote «saca las tareas de mi última clase»: que lea la transcripción, llame a `agenda_proponer` sin pedir permiso y la tarjeta aparezca en Agenda. Comprobar que `openclaw mcp probe gastos` lista la herramienta.
+- [ ] Qué tan bien saca las fechas el modelo («el viernes», «la próxima semana»): revisar que calcule bien la fecha con la de la grabación y no invente tareas. Si falla, ajustar la descripción de la herramienta.
+- [ ] Aceptar una tarea con el calendario prendido: que aparezca una sola vez en Agenda (con check) y en el Calendario del Mac como evento de 30 min hasta su hora límite.
+- [ ] Aceptar una prueba con hora en `Brote.app` con el permiso de Calendarios: que aparezca en el Calendario del Mac (1 h) y en Agenda. Sin el permiso: que quede como tarea y el mensaje lo diga.
+- [ ] El check de una tarea en la tarjeta y que recargar la isla lo conserve.
+- [ ] Borrar una transcripción desde «Lo que sé de ti» con propuestas pendientes: que desaparezcan de Agenda.
+- [ ] El aviso de Novedades tipo `agenda` (punto en la pestaña Agenda, texto en el ala, y notificación del sistema si está prendida) y el aspecto de la tarjeta en el notch real.
+- [ ] Con solo Grabar prendida (sin calendario, aula ni temporizadores): que la pestaña Agenda aparezca y explique bien lo que falta.
 
 ### Pruebas pendientes de la fase 3 (anotadas el 5-10-2026, para hacer en un Mac)
 
@@ -357,9 +376,32 @@ general de micrófono); celular y casa (solo quedan el contrato y la interfaz, s
    desarrollador, precio no público y orientado a empresas), solo lectura y con consentimiento propio, si lo piden los
    usuarios; (c) las **Finanzas Abiertas** de la Ley Fintech 21.521 (NCG 514 y 569 de la CMF), cuyo plazo se
    postergó a julio de 2027 según las fuentes (confirmar en cmfchile.cl) y que exigen registrarse como proveedor;
+   Cómo funcionan los agregadores (info aportada por el usuario el 5-10-2026, sin verificar contra su documentación):
+   el usuario toca «Conectar mi banco», se abre un widget del agregador, pone sus credenciales ahí (la app nunca ve la
+   clave), el agregador valida y entrega un token de solo lectura, y con él la app descarga transacciones y saldos cada
+   día. Proveedores a investigar: Fintoc, Belvo y **Prometeo** (nuevo en la lista). **Problema a resolver antes de
+   elegir uno:** estos servicios suelen exigir una clave secreta de la empresa que no puede viajar dentro de una app que
+   se instala en cada computador; probablemente haría falta un servidor propio que la guarde, y Brote hoy no tiene
+   ninguno (todo es local). Eso cambiaría la privacidad (los movimientos pasarían por ese servidor) y los costos:
+   confirmar con cada proveedor si hay un modo para apps locales y cuánto cuesta.
    (d) **no** guardar claves del banco ni hacer scraping. Antes de cualquier agregador: sumarlo a la lista de empresas de
    `docs/privacidad.md`, no pasar nunca esos datos a especialistas de planes gratuitos y nada de pagos ni
    transferencias (solo lectura).
+
+5. **Registrar los pagos solos desde Google Wallet o Apple Pay (pedido del usuario, 5-10-2026, sin decidir ni empezar).**
+   La idea: que la pestaña Plata anote automáticamente lo que se paga con el teléfono, sin escribirlo. Ojo, **por
+   confirmar antes de prometer nada** (nada de esto está verificado): hasta donde se sabe, ni Google Wallet ni Apple Pay
+   ofrecen una API pública para que una app de terceros lea el historial de pagos; lo que existe son atajos indirectos:
+   (a) **iPhone: automatización de Atajos** con el disparador de transacción de Wallet (al pagar entrega comercio, monto
+   y tarjeta; hay que confirmar si funciona con tarjetas chilenas y desde qué versión de iOS) que manda el pago al
+   computador o al celular de Brote; (b) **FinanceKit** de Apple (lectura de transacciones con permiso del usuario; hoy
+   solo en algunos países, confirmar si llega a Chile); (c) **Android: leer la notificación** del pago (o del banco) con un
+   servicio de acceso a notificaciones en la app propia del celular; (d) las vías del punto 4 (cartola, agregador,
+   Finanzas Abiertas), que sirven igual para pagos hechos con tarjeta física. Depende de la app propia en el celular
+   (Tauri móvil), que aún no existe. Reglas si se hace: solo lectura (nunca iniciar pagos), nada de claves ni
+   scraping, cada pago nuevo se **propone y el usuario lo confirma** antes de entrar a los gastos (o se agrega solo
+   con un interruptor que el usuario prenda), el comercio y el monto no pasan a especialistas de planes gratuitos, y
+   se suma al texto de `docs/privacidad.md`.
 
 ## Orden sugerido
 

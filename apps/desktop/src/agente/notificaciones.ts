@@ -5,7 +5,7 @@
 import type { TipoNovedad } from "./novedades.ts";
 
 /** De qué avisos vale la pena molestar fuera de la isla (el resto queda en el ala y en la lista). */
-export const IMPORTANTES: readonly TipoNovedad[] = ["calendario", "aula", "temporizador", "plan", "claude", "transcripcion"];
+export const IMPORTANTES: readonly TipoNovedad[] = ["calendario", "aula", "temporizador", "plan", "claude", "transcripcion", "agenda"];
 
 /** Dónde se recuerda la elección (la comparten las ventanas, que son del mismo origen). */
 export const CLAVE_NOTIFICACIONES = "brote.notificaciones-sistema";

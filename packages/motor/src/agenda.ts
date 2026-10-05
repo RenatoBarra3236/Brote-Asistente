@@ -1,7 +1,7 @@
 // La pestaña Agenda: junta en una lista por día lo que el usuario tiene que hacer o a lo que tiene que
 // ir: eventos del calendario, entregas del aula y temporizadores/recordatorios. Puro (sin Node ni DOM)
-// para probarlo y para usarlo desde la ventana. Las tareas (Todoist) están previstas como tipo `tarea`,
-// pero todavía ninguna fuente las manda.
+// para probarlo y para usarlo desde la ventana. Las tareas vienen de lo que el usuario aceptó de una
+// grabación (`tareas-agenda.ts`); Todoist sigue sin ser fuente.
 
 export type TipoItemAgenda = "evento" | "entrega" | "recordatorio" | "tarea";
 
@@ -16,6 +16,9 @@ export interface ItemAgenda {
   todoElDia: boolean;
   /** Para abrirla (solo https: entregas del aula). */
   url: string | null;
+  /** Solo las tareas (las de las grabaciones): su id y si ya está hecha, para el check de la isla. */
+  tareaId?: number;
+  hecha?: boolean;
 }
 
 export interface DiaAgenda {
@@ -38,6 +41,13 @@ interface EntregaEntrada {
   url: string | null;
   entregada: boolean;
 }
+interface TareaEntrada {
+  id: number;
+  titulo: string;
+  detalle: string | null;
+  venceMs: number;
+  hecha: boolean;
+}
 interface TemporizadorEntrada {
   tipo: "temporizador" | "pomodoro";
   etiqueta: string | null;
@@ -55,13 +65,16 @@ function inicioDelDia(ms: number, dias = 0): number {
  * de varios días aparece en cada día que toca.
  */
 export function armarAgenda(
-  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[] },
+  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[]; tareas?: TareaEntrada[] },
   ahoraMs: number,
   dias = 14,
 ): DiaAgenda[] {
   const desde = inicioDelDia(ahoraMs);
   const items: ItemAgenda[] = [];
+  // Una tarea aceptada también se crea en el calendario (termina justo a su hora límite): ahí no se repite.
+  const espejoDeTarea = (e: EventoEntrada) => (fuentes.tareas ?? []).some((t) => t.titulo === e.titulo && t.venceMs === e.finMs && !e.todoElDia);
   for (const e of fuentes.eventos ?? []) {
+    if (espejoDeTarea(e)) continue;
     items.push({ tipo: "evento", titulo: e.titulo, detalle: e.lugar, inicioMs: e.inicioMs, finMs: e.finMs, todoElDia: e.todoElDia, url: null });
   }
   for (const e of fuentes.entregas ?? []) {
@@ -72,6 +85,10 @@ export function armarAgenda(
     // El pomodoro ya tiene su tarjeta con cuenta regresiva: aquí solo lo que es "a una hora".
     if (t.tipo !== "temporizador") continue;
     items.push({ tipo: "recordatorio", titulo: t.etiqueta ?? "Temporizador", detalle: null, inicioMs: t.finMs, finMs: t.finMs, todoElDia: false, url: null });
+  }
+
+  for (const t of fuentes.tareas ?? []) {
+    items.push({ tipo: "tarea", titulo: t.titulo, detalle: t.detalle, inicioMs: t.venceMs, finMs: t.venceMs, todoElDia: false, url: null, tareaId: t.id, hecha: t.hecha });
   }
 
   const resultado: DiaAgenda[] = [];

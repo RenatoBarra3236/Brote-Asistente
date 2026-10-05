@@ -31,6 +31,7 @@ import {
   type EventoGrabacion,
 } from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
+import { propuestasNuevas, textoAvisoPropuestas, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import type { Grabaciones } from "./agente/grabaciones-memoria";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
@@ -193,6 +194,13 @@ async function iniciar(): Promise<void> {
               if (grabacion.fase === "iniciando") cambiarGrabacion({ fase: "error", mensaje: String(error).replace(/^Error: /, "") });
             });
           },
+          alDecidirPropuestaAgenda: async (id, decision, cambios) => {
+            const { mensaje } = await puente.decidirPropuestaAgenda(id, decision, cambios);
+            // Lo agregado aparece en la Agenda al tiro.
+            pedirAgenda();
+            return mensaje;
+          },
+          alMarcarTarea: (id, hecha) => void puente.consultar({ tipo: "tarea-hecha", tarea: id, hecha }).catch(() => {}),
           alDecidirPermisoClaude: (id, decision) =>
             void puente.decidirPermisoClaude(id, decision).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
         }
@@ -320,6 +328,19 @@ async function iniciar(): Promise<void> {
       avisar("transcripcion", aviso.texto);
       if (aviso.fase === "lista") personaje.tocar();
     });
+    // Tareas y fechas que Brote sacó de una grabación: la isla no se abre sola, solo avisa y las deja en Agenda.
+    let propuestasVistas: PropuestaAgenda[] = [];
+    const cambiarPropuestas = (lista: PropuestaAgenda[]) => {
+      const nuevas = propuestasNuevas(propuestasVistas, lista);
+      propuestasVistas = lista;
+      panel.ponerPropuestasAgenda(lista);
+      if (nuevas > 0) avisar("agenda", textoAvisoPropuestas(nuevas));
+    };
+    puente.alCambiarPropuestas(cambiarPropuestas);
+    void puente.consultar<PropuestaAgenda[]>({ tipo: "propuestas-listar" }).then((lista) => {
+      propuestasVistas = lista;
+      panel.ponerPropuestasAgenda(lista);
+    }, () => {});
     puente.alAvisoCalendario((texto) => {
       avisar("calendario", texto);
       personaje.tocar();

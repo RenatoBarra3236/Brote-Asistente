@@ -52,6 +52,7 @@ import {
   type Visual,
 } from "./agente/especialistas";
 import type { Lugar } from "./mascotas";
+import { destinoDePropuesta, etiquetaDeTipo, fechaDePropuesta, fechaParaEditar, tituloDeTarjeta, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
@@ -114,6 +115,10 @@ interface Opciones {
   alPedirAgenda?: () => void;
   /** Los botones de la explicación de Agenda: Configurar Brote o los ajustes de Privacidad de macOS. */
   alAccionAgenda?: (accion: "configurar" | "privacidad-calendarios") => void;
+  /** Decidir una tarea o fecha que Brote sacó de una grabación; con `cambios` si el usuario corrigió el título o la fecha. Devuelve lo que responde el puente. */
+  alDecidirPropuestaAgenda?: (id: number, decision: "aceptar" | "descartar", cambios?: { titulo: string; fecha: string }) => Promise<string>;
+  /** El check de una tarea de la Agenda. */
+  alMarcarTarea?: (id: number, hecha: boolean) => void;
   /** Estamos en `tauri dev`: el permiso de Calendarios es de la Terminal, no de Brote. */
   desarrollo?: boolean;
   /** Un botón de un toque de la pestaña Plata. */
@@ -271,6 +276,10 @@ export class Panel {
   // Agenda
   private readonly agenda: HTMLDivElement;
   private estadoAgenda: EstadoAgenda | null = null;
+  private propuestasAgenda: PropuestaAgenda[] = [];
+  /** La que se está editando (su título y fecha en campos), para que un repintado no la pierda. */
+  private propuestaEditando: number | null = null;
+  private mensajePropuestas: string | null = null;
 
   // Equipo
   private readonly metricas: HTMLDivElement;
@@ -941,6 +950,8 @@ export class Panel {
       cabecera.append(nuevo);
     }
     partes.push(cabecera);
+    const tarjetaPropuestas = this.tarjetaPropuestasAgenda();
+    if (tarjetaPropuestas) partes.push(tarjetaPropuestas);
 
     for (const dia of estado.dias) {
       const bloque = crear("div", "agenda-dia");
@@ -962,13 +973,26 @@ export class Panel {
           texto.append(detalle);
         }
         fila.title = [horaDelItem(item), item.titulo, item.detalle].filter(Boolean).join(" · ");
+        if (item.tipo === "tarea" && item.tareaId !== undefined) {
+          const id = item.tareaId;
+          const casilla = crear("input", "agenda-check") as HTMLInputElement;
+          casilla.type = "checkbox";
+          casilla.checked = item.hecha === true;
+          casilla.title = "Marcar como hecha";
+          if (casilla.checked) fila.classList.add("hecha");
+          casilla.addEventListener("change", () => {
+            fila.classList.toggle("hecha", casilla.checked);
+            this.opciones.alMarcarTarea?.(id, casilla.checked);
+          });
+          texto.prepend(casilla);
+        }
         fila.append(horaEl, barra, texto);
         bloque.append(fila);
       }
       partes.push(bloque);
     }
 
-    if (estado.dias.length === 0) {
+    if (estado.dias.length === 0 && !tarjetaPropuestas) {
       const e = explicarAgenda(estado, { desarrollo: this.opciones.desarrollo === true });
       const caja = crear("div", "tarjeta agenda-explicacion");
       const t = crear("div", "tarjeta-titulo");
@@ -985,6 +1009,100 @@ export class Panel {
       partes.push(caja);
     }
     this.agenda.replaceChildren(...partes);
+  }
+
+  /** Las propuestas de tareas y fechas de una grabación (las deja Brote por MCP); la lista cambia por aviso del puente. */
+  ponerPropuestasAgenda(lista: PropuestaAgenda[]): void {
+    this.propuestasAgenda = lista;
+    if (!lista.some((p) => p.id === this.propuestaEditando)) this.propuestaEditando = null;
+    if (this.estadoAgenda) this.mostrarAgenda();
+  }
+
+  /** La tarjeta «Encontré N cosas en tu grabación», con Agregar / Descartar por fila y editar antes de agregar. */
+  private tarjetaPropuestasAgenda(): HTMLElement | null {
+    const lista = this.propuestasAgenda;
+    if (lista.length === 0) {
+      if (!this.mensajePropuestas) return null;
+      const aviso = crear("p", "vacia-texto");
+      aviso.textContent = this.mensajePropuestas;
+      return aviso;
+    }
+    const calendario = this.estadoAgenda?.fuentes.calendario === true;
+    const caja = crear("div", "tarjeta propuestas-agenda");
+    const titulo = crear("div", "tarjeta-titulo");
+    titulo.textContent = tituloDeTarjeta(lista.length);
+    caja.append(titulo);
+    const decidir = (id: number, decision: "aceptar" | "descartar", cambios?: { titulo: string; fecha: string }) => {
+      void (this.opciones.alDecidirPropuestaAgenda?.(id, decision, cambios) ?? Promise.resolve("")).then(
+        (mensaje) => {
+          this.mensajePropuestas = mensaje || null;
+          this.propuestaEditando = null;
+          this.mostrarAgenda();
+        },
+        (error) => {
+          this.mensajePropuestas = String(error).replace(/^Error: /, "");
+          this.mostrarAgenda();
+        },
+      );
+    };
+    for (const p of lista) {
+      const fila = crear("div", "propuesta-agenda");
+      const editando = this.propuestaEditando === p.id;
+      const cabecera = crear("div", "propuesta-agenda-cabecera");
+      const tipo = crear("span", `propuesta-agenda-tipo ${p.tipo}`);
+      tipo.textContent = etiquetaDeTipo(p.tipo);
+      cabecera.append(tipo);
+      fila.append(cabecera);
+      if (editando) {
+        const titulo = crear("input", "propuesta-agenda-campo") as HTMLInputElement;
+        titulo.value = p.titulo;
+        titulo.maxLength = 120;
+        titulo.setAttribute("aria-label", "Título");
+        const fecha = crear("input", "propuesta-agenda-campo") as HTMLInputElement;
+        fecha.value = fechaParaEditar(p);
+        fecha.placeholder = p.conHora ? "AAAA-MM-DD HH:MM" : "AAAA-MM-DD";
+        fecha.setAttribute("aria-label", "Fecha");
+        const botones = crear("div", "aprobacion-botones");
+        const guardar = boton("boton", "Agregar");
+        guardar.addEventListener("click", () => decidir(p.id, "aceptar", { titulo: titulo.value, fecha: fecha.value }));
+        const cancelar = boton("boton boton-fila", "Cancelar");
+        cancelar.addEventListener("click", () => {
+          this.propuestaEditando = null;
+          this.mostrarAgenda();
+        });
+        botones.append(cancelar, guardar);
+        fila.append(titulo, fecha, botones);
+      } else {
+        const t = crear("div", "propuesta-agenda-titulo");
+        t.textContent = p.titulo;
+        const f = crear("div", "propuesta-agenda-fecha");
+        f.textContent = [fechaDePropuesta(p), p.detalle].filter(Boolean).join(" · ");
+        const d = crear("div", "propuesta-agenda-destino");
+        d.textContent = destinoDePropuesta(p.tipo, calendario);
+        const botones = crear("div", "aprobacion-botones");
+        const descartar = boton("boton boton-fila", "Descartar");
+        descartar.addEventListener("click", () => decidir(p.id, "descartar"));
+        const editar = boton("boton boton-fila", "Editar");
+        editar.addEventListener("click", () => {
+          this.propuestaEditando = p.id;
+          this.mostrarAgenda();
+        });
+        const agregar = boton("boton", "Agregar");
+        agregar.addEventListener("click", () => decidir(p.id, "aceptar"));
+        botones.append(descartar, editar, agregar);
+        fila.append(t, f, d, botones);
+      }
+      caja.append(fila);
+    }
+    if (lista.length > 1) {
+      const todo = boton("boton boton-fila", "Agregar todo");
+      todo.title = "Agrega cada una como está (tareas a la Agenda, pruebas con hora al calendario)";
+      todo.addEventListener("click", () => {
+        for (const p of lista) decidir(p.id, "aceptar");
+      });
+      caja.append(todo);
+    }
+    return caja;
   }
 
   /** La próxima entrega del aula (Canvas o Moodle) y cuánto falta; o por qué no se pudo leer. */
@@ -1926,8 +2044,9 @@ export class Panel {
     this.codigoVacio.hidden = sinSesiones || this.hayActividadClaude;
     this.botonesPestana.get("equipo")!.hidden = !this.funciones.activas.equipo;
     this.botonesPestana.get("plata")!.hidden = !this.funciones.activas.gastos;
-    const { calendario, aula, temporizadores } = this.funciones.activas;
-    this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores;
+    const { calendario, aula, temporizadores, grabaciones } = this.funciones.activas;
+    // Con Grabar prendida también hay Agenda: ahí esperan las tareas y fechas que Brote saca de una grabación.
+    this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores && !grabaciones;
     this.botonesPestana.get("grabar")!.hidden = !this.funciones.activas.grabaciones;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }

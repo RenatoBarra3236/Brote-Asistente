@@ -183,13 +183,86 @@ con "Acceso completo" (captura del 4-10-2026), porque con `tauri dev` el permiso
 Brote.app empaquetada tiene que pedir y tener el suyo (ver `Info.plist` y el paso "Calendario del Mac" de
 Configurar Brote), y la sección nueva debe explicar qué hacer si falta.
 
-## 8. Grabar y transcribir (anotado el 4-10-2026; pendiente, por pensar)
+## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; sin código todavía)
 
-Opción de grabar audio (por ejemplo una clase) y transcribirlo. A partir de las transcripciones, Brote ayuda al
-usuario: resúmenes, apuntes, tareas y fechas que salen a la vista (alimentando el calendario de la sección 7).
-Por decidir antes de programar: transcripción local o en la nube, permiso de micrófono de macOS/Windows,
-dónde se guardan los audios y textos (privacidad, sección 6: datos personales en claro en el disco) y consentimiento
-de grabar a otras personas.
+Grabar audio (por ejemplo una clase), transcribirlo y que Brote ayude con el texto: resúmenes y, en la fase 2,
+tareas y fechas para Agenda (sección 7). El proyecto vivirá además en el celular (app Tauri móvil) y en una "casa"
+física cuyo hardware **no está decidido** (depende de lo que pidan los usuarios): por eso el diseño separa captura,
+transcripción y un contrato común, y cualquier aparato solo tiene que cumplir una de dos cosas (capturar y entregar
+audio a otro aparato tuyo, o capturar y transcribir por su cuenta).
+
+### Decisiones tomadas
+
+1. **Transcripción local** con whisper.cpp: el audio no sale del aparato. Sin API, costo en plata cero. La casa o el
+   celular que no puedan correr el modelo mandan el audio por la red propia al PC o al celular, nunca a la nube.
+   Cada aparato declara qué puede hacer (`captura`, `transcribe` y con qué modelo).
+2. **Privacidad (`docs/privacidad.md`, Ley 21.719):** el audio no llega a ninguna empresa y no se suma ningún proveedor
+   a la lista. El texto transcrito solo viaja a Anthropic cuando el usuario pide algo a Brote (un resumen). Nunca a
+   especialistas de planes gratuitos (Gemini): se extiende la sección de privacidad de la skill `delegar`, con prueba.
+   Las voces de terceros son datos personales de otros: de ahí el consentimiento (punto 5). Todo en claro con
+   permisos 600 y la recomendación de FileVault/BitLocker.
+3. **Micrófono:** la captura se hace en Rust (no en el WebView), para que el permiso sea de `Brote.app`.
+   `NSMicrophoneUsageDescription` en `Info.plist`; el permiso se pide la primera vez que el usuario graba, no al
+   abrir la app. Con `tauri dev` el permiso es de la Terminal (como Calendarios). En Windows no hay aviso por app, solo
+   el interruptor general: la función debe detectar "no llega sonido" y explicarlo. **Solo manual**: el usuario inicia
+   y detiene (botón 🎙 o "graba esta clase"); Brote nunca graba por su cuenta (ni con el calendario). Mientras graba,
+   punto rojo en la isla y en el ícono 🌱 de la barra de menú.
+4. **Almacenamiento:** audio en `~/.asistente-prototipo/grabaciones/` y texto en
+   `~/.asistente-prototipo/transcripciones/` (uno por grabación), ambos 600, separados de la memoria de OpenClaw.
+   **El audio se conserva N días y se borra solo** (propuesto 7, por confirmar). El borrado toca solo esa carpeta, con
+   nombres exactos, va a la Papelera en Mac y se prueba solo en carpeta temporal. Ver y borrar desde "Lo que sé de ti".
+5. **Consentimiento:** aviso con casilla propia la primera vez (y cada vez que cambie el texto) y, **en cada
+   grabación, Brote pregunta "¿avisaste a los presentes?"** (sí / no / solo mi voz); la respuesta queda en el campo
+   `avisoAPresentes` de la transcripción. Brote no da asesoría legal ni firma por el usuario. El texto se suma a
+   `docs/privacidad.md` y debe revisarlo alguien antes de repartir Brote.
+6. **Modelos (cifras de memoria, verificar antes de anotarlas en la guía):** base ~150 MB, small ~500 MB, medium
+   ~1,5 GB, large-v3-turbo ~1,6 GB. **El usuario elige en Configurar Brote, con `small` de partida**; la descarga
+   pide confirmación. En el celular, `small` es lo realista. Medir la velocidad real en el M5 antes de dar cifras.
+7. **Alcance:** fase 1 = guardar, mostrar y resumir bajo pedido. Fase 2 (B) = extraer tareas y fechas y proponerlas en
+   la isla, con confirmación antes de llamar a `calendario_crear`.
+
+### Diseño
+
+Flujo: 🎙 en la isla (o la frase) → pregunta de consentimiento → graba con punto rojo → al detener, transcribe en
+segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
+
+- **Captura:** Rust, `grabacion.rs`, WAV mono 16 kHz.
+- **Transcripción:** el puente lanza `whisper-cli` como proceso hijo (como hace con Node), detrás de la interfaz
+  `transcribir(audio, modelo) → segmentos con tiempo`, para que el celular y la casa la implementen distinto.
+- **Contrato común:** un Markdown por grabación con cabecera (fecha, duración, origen `pc|celular|casa`, modelo,
+  `avisoAPresentes`) y el texto con marcas de tiempo. Resúmenes, tareas y fechas leen solo esto.
+- **Agente:** MCP de solo lectura `transcripciones_listar` / `transcripciones_leer` (solo esa carpeta; las largas por
+  partes). Función nueva `grabaciones` en `funciones.json`, apagada de fábrica y fuera del preset Estudiante hasta que
+  se pruebe.
+- **Configurar Brote:** tarjeta con la casilla de consentimiento, el modelo, los días de conservación y el estado del
+  permiso del micrófono.
+
+### Fases
+
+1. **Cimientos sin micrófono:** contrato y formato (`packages/motor/src/transcripciones.ts`, puro), borrado a los N
+   días, MCP y su regla en `delegar`. Pruebas con carpeta temporal y una transcripción armada.
+2. **Transcripción de un WAV:** puente con `whisper-cli`, descarga del modelo en Configurar Brote. Probado con un
+   audio de ejemplo y un `whisper-cli` falso.
+3. **Captura y permiso:** `grabacion.rs`, `Info.plist`, punto rojo y pregunta de consentimiento. Solo se prueba de
+   verdad con `Brote.app` en un Mac.
+4. **Isla y memoria:** botón 🎙, frases sin IA, sección en "Lo que sé de ti", vista previa, `docs/privacidad.md`.
+5. **Fase 2 (B):** tareas y fechas hacia Agenda, con confirmación en la isla.
+
+### Sin probar hasta tener un Mac (y otros aparatos)
+
+Permiso del micrófono con `Brote.app`; punto rojo sobre el notch real; velocidad en el M5; Windows (interruptor
+general de micrófono); celular y casa (solo quedan el contrato y la interfaz, sin código).
+
+### Decisiones aún abiertas (mi recomendación entre paréntesis; el usuario aprobó el plan sin cambiarlas)
+
+1. Cómo llega `whisper-cli`: Homebrew (`brew install whisper-cpp`, como Node) o empaquetado en `Brote.app` (Homebrew
+   en la primera versión: no hay que firmar un binario extra).
+2. Días de conservación del audio (7).
+3. Formato del archivo (Markdown con cabecera simple).
+4. Idioma (español por defecto, con selector).
+5. Tope de duración de una grabación (3 horas, para no llenar el disco por un olvido).
+6. Texto legal del aviso de consentimiento (revisión de alguien antes de repartir).
+7. Hardware de la casa (no decidido; se anotan requisitos mínimos a medida que haya decisiones).
 
 ## 9. Ideas para después (anotadas el 4-10-2026; paréntesis, nada empezado)
 

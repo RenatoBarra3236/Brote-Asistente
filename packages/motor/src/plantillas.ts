@@ -53,7 +53,10 @@ export type Intencion =
   | "grabar-detener"
   | "grabar-estado"
   | "transcripciones-ver"
-  | "transcripciones-hoy";
+  | "transcripciones-hoy"
+  | "ramos-agregar"
+  | "ramos-ver"
+  | "ramos-archivar";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
@@ -350,4 +353,10 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "grabar-estado", intencion: "grabar-estado", patron: "(estoy|estas|esta|sigo|seguimos|estamos) grabando" },
   { id: "transcripciones-ver", intencion: "transcripciones-ver", patron: "[(muestrame|ver|dame|lista|listame|revisa)] [mis|las] [ultimas] (transcripciones|grabaciones)" },
   { id: "transcripciones-hoy", intencion: "transcripciones-hoy", patron: "(que|cuales) (grabe|he grabado|transcripciones tengo|grabaciones tengo|transcribi|he transcrito) hoy" },
+  // Ramos (pestaña Estudio). «Ramo» es la palabra fija: sin ella no calza, así «agrega un gasto» no se confunde.
+  { id: "ramos-agregar", intencion: "ramos-agregar", patron: "(agrega|agregar|agregame|anade|anadir|crea|crear|suma|sumar|anota|anotar) [el|un|mi|otro] ramo [de|llamado] {cosa}" },
+  { id: "ramos-agregar-tengo", intencion: "ramos-agregar", patron: "(tengo|estoy viendo|estoy cursando|curso|cursando) [el|un] ramo [de] {cosa}" },
+  { id: "ramos-ver", intencion: "ramos-ver", patron: "[(muestrame|ver|dame|lista|listame|revisa)] [mis|los|todos mis] ramos" },
+  { id: "ramos-ver-cuales", intencion: "ramos-ver", patron: "(que|cuales) ramos (tengo|estoy viendo|estoy cursando|curso)" },
+  { id: "ramos-archivar", intencion: "ramos-archivar", patron: "(quita|quitar|archiva|archivar|elimina|eliminar|saca|sacar|borra|borrar) [el|mi] ramo [de] {cosa}" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

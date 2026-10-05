@@ -250,7 +250,7 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 
 ### Pruebas pendientes de la fase 1 (anotadas el 5-10-2026, para hacer en un Mac)
 
-- [ ] Borrado de audios vencidos a la Papelera real: en un Mac, con `ASISTENTE_GRABACIONES` apuntando a una carpeta de prueba, crear `2026-01-01-080000.wav` y llamar `borrarAudiosVencidos(7)`; revisar que va a la Papelera de Finder (la prueba automática se salta en Mac a propósito).
+- [x] (5-10-2026, probado en el Mac con `borrarAudiosVencidos(7)` y una carpeta temporal; el usuario confirmó el WAV viejo en la Papelera de Finder y el reciente se quedó) Borrado de audios vencidos a la Papelera real: en un Mac, con `ASISTENTE_GRABACIONES` apuntando a una carpeta de prueba, crear `2026-01-01-080000.wav` y llamar `borrarAudiosVencidos(7)`; revisar que va a la Papelera de Finder (la prueba automática se salta en Mac a propósito).
 - [ ] MCP bajo OpenClaw: detener los procesos `node …/packages/motor/src/mcp.ts` y el `claude … --resume`, abrir sesión nueva y pedir "lista mis transcripciones" y "léeme la transcripción X" con una transcripción armada a mano en `~/.asistente-prototipo/transcripciones/` (el MCP corre bajo launchd: comprobar que lee esa carpeta y que `openclaw mcp probe gastos` muestra las dos herramientas).
 - [ ] Función apagada: con `grabaciones` apagada, el agente recibe el mensaje de apagada y no lee nada; prenderla desde Configurar Brote → Funciones (aparece en el listado genérico; comprobar que el interruptor guarda).
 - [ ] Skill `delegar`: reinstalarla (`openclaw skills install ./packages/motor/skill/delegar --as delegar --agent <id> --force`, sesión nueva) y comprobar que, con un especialista de Gemini, Brote se niega a pasarle una transcripción.
@@ -402,6 +402,10 @@ general de micrófono); celular y casa (solo quedan el contrato y la interfaz, s
    scraping, cada pago nuevo se **propone y el usuario lo confirma** antes de entrar a los gastos (o se agrega solo
    con un interruptor que el usuario prenda), el comercio y el monto no pasan a especialistas de planes gratuitos, y
    se suma al texto de `docs/privacidad.md`.
+
+## 10. Estudio y mejoras (anotado el 5-10-2026; nada empezado)
+
+Revisión desde la mirada de un estudiante: pestaña Estudio (ramos, calculadora de notas, resumen y tarjetas, plan de estudio), gráficos, organizar por tema, más conectores y cosas chicas. Detalle y orden en [`plan-estudio-y-mejoras.md`](plan-estudio-y-mejoras.md); se hace por sesiones.
 
 ## Orden sugerido
 

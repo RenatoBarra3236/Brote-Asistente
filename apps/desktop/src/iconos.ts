@@ -23,6 +23,7 @@ const ICONOS = {
   calendario: `<rect ${TRAZO} x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path ${TRAZO} d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/>`,
   entrega: `<path ${TRAZO} d="M4 2.5h5.5L12 5v8.5H4zM9.5 2.5V5H12M6 8.5l1.5 1.5L10.5 7"/>`,
   refrescar: `<path ${TRAZO} d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3"/>`,
+  estudio: `<path ${TRAZO} d="M3 3.5h6.5a2 2 0 0 1 2 2V13H5a2 2 0 0 1-2-2zM3 11a2 2 0 0 1 2-2h6.5M6 6h3"/>`,
   plata: `<rect ${TRAZO} x="1.8" y="4" width="12.4" height="8" rx="1.5"/><circle ${TRAZO} cx="8" cy="8" r="1.8"/><path ${TRAZO} d="M4.3 6.3v.1M11.7 9.6v.1"/>`,
   ampliar: `<path ${TRAZO} d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/>`,
   reducir: `<path ${TRAZO} d="M13 7H9V3M9 7l4.5-4.5M3 9h4v4M7 9l-4.5 4.5"/>`,

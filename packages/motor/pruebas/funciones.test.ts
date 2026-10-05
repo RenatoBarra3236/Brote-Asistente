@@ -39,6 +39,14 @@ describe("funciones.json", () => {
     assert.deepEqual(leerFunciones(roto), porDefecto);
   });
 
+  it("estudio está en Estudiante y Todo, y de ella dependen las frases y herramientas de ramos", () => {
+    assert.ok(IDS_FUNCIONES.includes("estudio"));
+    for (const preset of ["estudiante", "todo"] as const) assert.equal(activasDePreset(preset).estudio, true, preset);
+    for (const preset of ["programador", "minimo"] as const) assert.equal(activasDePreset(preset).estudio, false, preset);
+    assert.equal(funcionDeHerramienta("ramos_listar"), "estudio");
+    assert.equal(funcionDeIntencion("ramos-agregar"), "estudio");
+  });
+
   it("grabaciones está apagada de fábrica y fuera de los presets que no son «Todo»", () => {
     assert.ok(IDS_FUNCIONES.includes("grabaciones"));
     assert.equal(leerFunciones(join(CARPETA, "no-existe.json")).activas.grabaciones, false);

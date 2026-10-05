@@ -21,6 +21,9 @@ import { describirPlan, describirReinicio, type LecturaPlan } from "./plan.ts";
 import { describirUso, type ResumenUso } from "./uso.ts";
 import { TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, type AccionGrabar } from "./grabaciones-frases.ts";
 import type { CabeceraTranscripcion } from "./transcripciones.ts";
+import { Ramos } from "./ramos.ts";
+import { describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";
+import { emparejarRamo, normalizarRamo, limpiarTexto, MAX_NOMBRE_RAMO } from "./ramos-tipos.ts";
 import { describirHoy, describirPresupuestoPuesto, describirQueda, presupuestoDelMes, type PresupuestoMes } from "./plata.ts";
 
 export interface Resultado {
@@ -62,7 +65,9 @@ export type Accion =
   | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" }
   | { intencion: "presupuesto-poner"; monto: number }
   | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" }
-  | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" };
+  | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" }
+  | { intencion: "ramos-agregar" | "ramos-archivar"; nombre: string }
+  | { intencion: "ramos-ver" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -122,7 +127,13 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "grabar-estado":
     case "transcripciones-ver":
     case "transcripciones-hoy":
+    case "ramos-ver":
       return { intencion };
+    case "ramos-agregar":
+    case "ramos-archivar": {
+      const nombre = limpiarTexto(sinArticulo(originales.cosa?.trim() ?? ""), MAX_NOMBRE_RAMO);
+      return normalizarRamo(nombre).length >= 2 ? { intencion, nombre } : null;
+    }
     case "presupuesto-poner": {
       const monto = ranuras.monto === undefined ? null : leerMonto(ranuras.monto);
       // Un presupuesto mensual de menos de mil pesos es casi seguro un error de lectura.
@@ -167,6 +178,7 @@ export class Motor {
   private readonly activa: (funcion: IdFuncion) => boolean;
   private readonly uso: (() => UsoClaude) | null;
   private readonly transcripciones: (() => CabeceraTranscripcion[]) | null;
+  private readonly ramos: Ramos | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -195,8 +207,11 @@ export class Motor {
       uso?: () => UsoClaude;
       /** Las transcripciones guardadas, de la más nueva a la más vieja (solo la cabecera). */
       transcripciones?: () => CabeceraTranscripcion[];
+      /** Los ramos del usuario (la pestaña Estudio). Sin esto, esas frases van al agente. */
+      ramos?: Ramos;
     } = {},
   ) {
+    this.ramos = opciones.ramos ?? null;
     this.uso = opciones.uso ?? null;
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
@@ -262,6 +277,10 @@ export class Motor {
       const ahora = this.reloj();
       const texto = accion.intencion === "transcripciones-ver" ? describirTranscripciones(lista, ahora) : describirGrabadoHoy(lista, ahora);
       return { intencion: accion.intencion, plantilla: plantilla.id, texto };
+    }
+    if (accion.intencion === "ramos-agregar" || accion.intencion === "ramos-archivar" || accion.intencion === "ramos-ver") {
+      if (!this.ramos) return null;
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ramear(accion) };
     }
     if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {
       if (!this.aula) return null;
@@ -334,6 +353,20 @@ export class Motor {
     return respuestaControl(accion, estado);
   }
 
+  /** "Agrega el ramo Cálculo", "mis ramos", "quita el ramo Física". Archivar no borra nada. */
+  private ramear(accion: Extract<Accion, { intencion: "ramos-agregar" | "ramos-archivar" | "ramos-ver" }>): string {
+    const ramos = this.ramos!;
+    if (accion.intencion === "ramos-ver") return describirRamos(ramos.listar());
+    if (accion.intencion === "ramos-agregar") {
+      const resultado = ramos.crear({ nombre: capitalizar(accion.nombre) }, this.reloj().getTime());
+      return resultado.ok ? textoRamoCreado(resultado.ramo) : `${resultado.motivo}.`;
+    }
+    const ramo = emparejarRamo(accion.nombre, ramos.listar()) ?? ramos.listar().find((r) => normalizarRamo(r.nombre) === normalizarRamo(accion.nombre)) ?? null;
+    if (!ramo) return `No encontré un ramo llamado ${accion.nombre}. Dime «mis ramos» para ver los que tienes.`;
+    ramos.archivar(ramo.id);
+    return textoRamoArchivado(ramo.nombre);
+  }
+
   /** "Mis descargas" y "abre la última descarga". Abrir o mostrar lo hace la isla (Rust valida la ruta). */
   private descargar(intencion: Intencion, lista: Descarga[]): { texto: string; datos?: unknown } {
     if (intencion === "ver-descargas") return { texto: describirDescargas(lista.slice(0, 5), this.reloj().getTime()) };
@@ -390,7 +423,10 @@ export class Motor {
     const ahora = this.reloj();
     switch (accion.intencion) {
       case "pomodoro": {
-        temporizadores.iniciarPomodoro(accion.estudioMs, accion.etiqueta, ahora);
+        const pomodoro = temporizadores.iniciarPomodoro(accion.estudioMs, accion.etiqueta, ahora);
+        // «pomodoro de 30 para cálculo»: si el tema calza con un ramo, el bloque queda de ese ramo.
+        const ramo = accion.etiqueta && this.ramos && this.activa("estudio") ? emparejarRamo(accion.etiqueta, this.ramos.listar()) : null;
+        if (ramo) this.ramos!.asignar("pomodoro", pomodoro.id, ramo.id);
         const tema = accion.etiqueta ? ` de ${accion.etiqueta}` : "";
         return `🍅 Pomodoro${tema}: ${describirDuracion(accion.estudioMs)} de estudio. ¡Vamos! Te aviso cuando toque descansar 🌱`;
       }

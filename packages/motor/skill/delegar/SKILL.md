@@ -39,6 +39,7 @@ especialista **nunca** le pases datos personales del estudiante:
 - sus gastos, presupuesto o cualquier cifra de su plata;
 - lo que sabes de él (memoria, recuerdos, conversaciones anteriores);
 - su calendario, sus entregas del aula, sus tareas o cuentas de los conectores;
+- sus ramos (qué cursa, con qué nombres y palabras clave, cuáles archivó);
 - archivos, rutas o descargas suyas;
 - transcripciones de sus grabaciones (clases, reuniones, conversaciones), ni un resumen ni un
   trozo: tienen voces de otras personas, que no sabrán que su voz llegó a un servicio gratuito.

@@ -46,7 +46,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "agenda_proponer", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "agenda_proponer", "motor_proponer_plantilla"],
     );
   });
 
@@ -268,6 +268,30 @@ describe("servidor MCP de gastos", () => {
     assert.match(ok.texto, /todavía no está agregado nada/);
     assert.equal(llamar("agenda_proponer", { grabacion: "2026-01-01-000000", propuestas: [] }).error, true);
     assert.equal(llamar("agenda_proponer", { grabacion: "../x", propuestas: [] }).error, true);
+  });
+
+  it("ramos: crea con alias, lista y rechaza lo inválido o repetido", () => {
+    const ok = llamar("ramos_crear", { nombre: "Cálculo II", alias: ["calc"], color: "rojo" });
+    assert.match(ok.texto, /agregué el ramo Cálculo II/);
+    const lista = JSON.parse(llamar("ramos_listar", {}).texto);
+    assert.deepEqual(lista.ramos.map((r: any) => [r.nombre, r.color, r.palabrasClave]), [["Cálculo II", "rojo", ["calc"]]]);
+    assert.equal(llamar("ramos_crear", { nombre: "calculo ii" }).error, true);
+    assert.equal(llamar("ramos_crear", { nombre: "x" }).error, true);
+    assert.equal(llamar("ramos_crear", { nombre: "Física", color: "fucsia" }).error, true);
+  });
+
+  it("ramos: con la función apagada no hace nada", async () => {
+    const ruta = process.env.ASISTENTE_FUNCIONES!;
+    const original = readFileSync(ruta, "utf8");
+    try {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, JSON.stringify({ activas: { estudio: false } }));
+      assert.equal(llamar("ramos_listar", {}).texto, MENSAJE_APAGADA_MCP);
+      assert.equal(llamar("ramos_crear", { nombre: "Historia" }).texto, MENSAJE_APAGADA_MCP);
+    } finally {
+      await new Promise((listo) => setTimeout(listo, 15));
+      writeFileSync(ruta, original);
+    }
   });
 
   it("transcripciones: con la función apagada no lee nada", async () => {

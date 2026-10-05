@@ -53,6 +53,19 @@ import {
 } from "./agente/especialistas";
 import type { Lugar } from "./mascotas";
 import { destinoDePropuesta, etiquetaDeTipo, fechaDePropuesta, fechaParaEditar, tituloDeTarjeta, type PropuestaAgenda } from "./agente/propuestas-agenda";
+import {
+  HEX_RAMO,
+  TEXTO_SIN_RAMOS,
+  aliasParaEditar,
+  cuandoClase,
+  cuandoVence,
+  explicarFichaVacia,
+  leerAlias,
+  resumenDeFicha,
+  textoSugerencia,
+  type EstadoEstudio,
+  type FichaRamo,
+} from "./agente/estudio";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
@@ -121,6 +134,12 @@ interface Opciones {
   alMarcarTarea?: (id: number, hecha: boolean) => void;
   /** Estamos en `tauri dev`: el permiso de Calendarios es de la Terminal, no de Brote. */
   desarrollo?: boolean;
+  /** La pestaña Estudio pide sus datos al abrirse y cuando cambian los ramos o sus fuentes. */
+  alPedirEstudio?: () => void;
+  /** Acciones de la pestaña Estudio; devuelven lo que dice Brote (o lanzan si el puente lo rechaza). */
+  alCrearRamo?: (nombre: string, alias: string[]) => Promise<string>;
+  alEditarRamo?: (ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }) => Promise<void>;
+  alArchivarRamo?: (ramo: number) => Promise<void>;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
@@ -273,6 +292,13 @@ export class Panel {
   private subGrabar: "audios" | "textos" = "audios";
   private grabacionAbierta: string | null = null;
   private readonly fasesTranscripcion = new Map<string, FaseTranscripcion>();
+  // Estudio
+  private readonly estudio: HTMLDivElement;
+  private estadoEstudio: EstadoEstudio | null = null;
+  /** Qué ramo tiene la ficha abierta, cuál se está editando y el mensaje de error del último intento. */
+  private ramoAbierto: number | null = null;
+  private ramoEditando: number | null = null;
+  private errorEstudio = "";
   // Agenda
   private readonly agenda: HTMLDivElement;
   private estadoAgenda: EstadoAgenda | null = null;
@@ -323,6 +349,7 @@ export class Panel {
       ["brote", "brote", "Brote"],
       ["plata", "plata", "Plata"],
       ["agenda", "calendario", "Agenda"],
+      ["estudio", "estudio", "Estudio"],
       ["grabar", "microfono", "Grabar"],
       ["claude", "codigo", "Claude"],
     ];
@@ -505,6 +532,11 @@ export class Panel {
     sinPlata.textContent = "Sumando tus gastos…";
     this.plata.append(sinPlata);
 
+    // --- Estudio ---
+    this.estudio = crear("div", "vista vista-estudio");
+    const sinEstudio = crear("p", "vacia-texto");
+    sinEstudio.textContent = "Buscando tus ramos…";
+    this.estudio.append(sinEstudio);
     // --- Agenda ---
     this.agenda = crear("div", "vista vista-agenda");
     const sinAgenda = crear("p", "vacia-texto");
@@ -517,7 +549,7 @@ export class Panel {
     sinGrabar.textContent = "Buscando tus grabaciones…";
     this.grabar.append(sinGrabar);
 
-    this.vistas.set("brote", inicio).set("plata", this.plata).set("agenda", this.agenda).set("grabar", this.grabar).set("claude", codigo).set("equipo", equipo);
+    this.vistas.set("brote", inicio).set("plata", this.plata).set("agenda", this.agenda).set("estudio", this.estudio).set("grabar", this.grabar).set("claude", codigo).set("equipo", equipo);
 
     // --- Campo de texto (en todas las pestañas) ---
     const formulario = crear("form", "formulario");
@@ -551,7 +583,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, this.estudio, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -597,6 +629,7 @@ export class Panel {
     }
     if (pestana === "brote") this.respuestaSinVer = false;
     if (pestana === "agenda") this.opciones.alPedirAgenda?.();
+    if (pestana === "estudio") this.opciones.alPedirEstudio?.();
     if (pestana === "grabar") {
       this.mostrarGrabaciones();
       this.opciones.alPedirGrabaciones?.();
@@ -1009,6 +1042,204 @@ export class Panel {
       partes.push(caja);
     }
     this.agenda.replaceChildren(...partes);
+  }
+
+  /** ¿Se está viendo Estudio? (main la refresca cuando cambian los ramos, el calendario o el aula). */
+  get estudioAbierto(): boolean {
+    return this.visible && this.pestana === "estudio";
+  }
+
+  /**
+   * La pestaña Estudio: tus ramos con su color. Tocar uno abre su ficha (próximas clases, entregas, tareas
+   * y transcripciones); lo que se sugiere agregar sale del aula y del calendario y nada se crea solo.
+   */
+  mostrarEstudio(estado: EstadoEstudio | null = this.estadoEstudio): void {
+    this.estadoEstudio = estado;
+    if (!estado) return;
+    const ahora = Date.now();
+    const partes: HTMLElement[] = [];
+    const cabecera = crear("div", "agenda-cabecera");
+    const titulo = crear("span", "agenda-titulo");
+    titulo.textContent = "Tus ramos";
+    cabecera.append(titulo);
+    partes.push(cabecera);
+
+    if (this.errorEstudio) {
+      const error = crear("p", "estudio-error");
+      error.textContent = this.errorEstudio;
+      partes.push(error);
+    }
+
+    if (estado.fichas.length === 0) {
+      const vacia = crear("p", "vacia-texto");
+      vacia.textContent = TEXTO_SIN_RAMOS;
+      partes.push(vacia);
+    }
+    for (const ficha of estado.fichas) partes.push(this.tarjetaRamo(ficha, estado, ahora));
+
+    if (estado.sugerencias.length > 0) {
+      const caja = crear("div", "tarjeta estudio-sugerencias");
+      const t = crear("div", "tarjeta-titulo");
+      t.textContent = "¿Son tus ramos?";
+      caja.append(t);
+      for (const s of estado.sugerencias) {
+        const fila = crear("div", "estudio-sugerencia");
+        const texto = crear("span", "estudio-sugerencia-texto");
+        texto.textContent = textoSugerencia(s);
+        const agregar = boton("pildora", "Agregar");
+        agregar.addEventListener("click", () => void this.crearRamoDesde(s.nombre, []));
+        fila.append(texto, agregar);
+        caja.append(fila);
+      }
+      partes.push(caja);
+    }
+
+    const formulario = crear("form", "estudio-nuevo");
+    const campo = crear("input", "estudio-campo") as HTMLInputElement;
+    campo.placeholder = "Agregar un ramo (por ejemplo, Cálculo II)";
+    campo.maxLength = 60;
+    campo.setAttribute("aria-label", "Nombre del ramo");
+    const aliasCampo = crear("input", "estudio-campo") as HTMLInputElement;
+    aliasCampo.placeholder = "Palabras clave, separadas por coma (opcional)";
+    aliasCampo.title = "Con estas palabras Brote reconoce el ramo en tu calendario y en tu aula";
+    aliasCampo.setAttribute("aria-label", "Palabras clave del ramo");
+    const enviar = boton("pildora", "Agregar");
+    enviar.type = "submit";
+    formulario.append(campo, aliasCampo, enviar);
+    formulario.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (campo.value.trim()) void this.crearRamoDesde(campo.value, leerAlias(aliasCampo.value));
+    });
+    partes.push(formulario);
+    this.estudio.replaceChildren(...partes);
+  }
+
+  private async crearRamoDesde(nombre: string, alias: string[]): Promise<void> {
+    try {
+      await this.opciones.alCrearRamo?.(nombre, alias);
+      this.errorEstudio = "";
+    } catch (error) {
+      this.errorEstudio = error instanceof Error ? error.message : "No pude agregar el ramo.";
+    }
+    this.mostrarEstudio();
+    this.opciones.alPedirEstudio?.();
+  }
+
+  private tarjetaRamo(ficha: FichaRamo, estado: EstadoEstudio, ahora: number): HTMLElement {
+    const { ramo } = ficha;
+    const abierto = this.ramoAbierto === ramo.id;
+    const caja = crear("div", `tarjeta estudio-ramo${abierto ? " abierto" : ""}`);
+    caja.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+    const fila = crear("button", "estudio-ramo-cabecera");
+    fila.type = "button";
+    fila.setAttribute("aria-expanded", String(abierto));
+    const punto = crear("span", "estudio-punto");
+    const nombre = crear("span", "estudio-nombre");
+    nombre.textContent = ramo.nombre;
+    const resumen = crear("span", "estudio-resumen");
+    resumen.textContent = resumenDeFicha(ficha);
+    fila.append(punto, nombre, resumen);
+    fila.addEventListener("click", () => {
+      this.ramoAbierto = abierto ? null : ramo.id;
+      this.ramoEditando = null;
+      this.mostrarEstudio();
+    });
+    caja.append(fila);
+    if (!abierto) return caja;
+
+    const cuerpo = crear("div", "estudio-ramo-cuerpo");
+    const lista = (titulo: string, items: { texto: string; cuando: string }[]) => {
+      if (items.length === 0) return;
+      const t = crear("div", "estudio-seccion");
+      t.textContent = titulo;
+      cuerpo.append(t);
+      for (const item of items) {
+        const f = crear("div", "estudio-item");
+        const a = crear("span", "estudio-item-texto");
+        a.textContent = item.texto;
+        const b = crear("span", "estudio-item-cuando");
+        b.textContent = item.cuando;
+        f.append(a, b);
+        cuerpo.append(f);
+      }
+    };
+    lista("Próximas clases", ficha.clases.map((c) => ({ texto: c.titulo, cuando: cuandoClase(c.inicioMs, ahora) })));
+    lista("Entregas", ficha.entregas.map((e) => ({ texto: e.titulo, cuando: cuandoVence(e.entregaMs, ahora) })));
+    lista("Tareas", ficha.tareas.map((t) => ({ texto: t.titulo, cuando: cuandoVence(t.venceMs, ahora) })));
+    if (resumenDeFicha(ficha) === "") {
+      const vacio = crear("p", "vacia-texto");
+      vacio.textContent = explicarFichaVacia(estado.fuentes, ramo.alias.length > 0);
+      cuerpo.append(vacio);
+    }
+
+    if (this.ramoEditando === ramo.id) {
+      const formulario = crear("form", "estudio-editar");
+      const nombreCampo = crear("input", "estudio-campo") as HTMLInputElement;
+      nombreCampo.value = ramo.nombre;
+      nombreCampo.maxLength = 60;
+      nombreCampo.setAttribute("aria-label", "Nombre del ramo");
+      const aliasCampo = crear("input", "estudio-campo") as HTMLInputElement;
+      aliasCampo.value = aliasParaEditar(ramo.alias);
+      aliasCampo.placeholder = "Palabras clave, separadas por coma";
+      aliasCampo.setAttribute("aria-label", "Palabras clave del ramo");
+      const colores = crear("div", "estudio-colores");
+      let elegido = ramo.color;
+      for (const [color, hex] of Object.entries(HEX_RAMO)) {
+        const c = crear("button", `estudio-color${color === elegido ? " activa" : ""}`);
+        c.type = "button";
+        c.title = color;
+        c.setAttribute("aria-label", `Color ${color}`);
+        c.style.background = hex;
+        c.addEventListener("click", () => {
+          elegido = color as typeof elegido;
+          for (const otro of colores.children) otro.classList.remove("activa");
+          c.classList.add("activa");
+        });
+        colores.append(c);
+      }
+      const guardar = boton("pildora", "Guardar");
+      guardar.type = "submit";
+      const cancelar = boton("pildora", "Cancelar");
+      cancelar.addEventListener("click", () => {
+        this.ramoEditando = null;
+        this.mostrarEstudio();
+      });
+      formulario.append(nombreCampo, aliasCampo, colores, guardar, cancelar);
+      formulario.addEventListener("submit", (e) => {
+        e.preventDefault();
+        void (this.opciones.alEditarRamo?.(ramo.id, { nombre: nombreCampo.value, alias: leerAlias(aliasCampo.value), color: elegido }) ?? Promise.resolve()).then(
+          () => {
+            this.errorEstudio = "";
+            this.ramoEditando = null;
+            this.opciones.alPedirEstudio?.();
+          },
+          (error) => {
+            this.errorEstudio = error instanceof Error ? error.message : "No pude guardar los cambios.";
+            this.mostrarEstudio();
+          },
+        );
+      });
+      cuerpo.append(formulario);
+    } else {
+      const acciones = crear("div", "estudio-acciones");
+      const editar = boton("pildora", "Editar");
+      editar.addEventListener("click", () => {
+        this.ramoEditando = ramo.id;
+        this.mostrarEstudio();
+      });
+      const archivar = boton("pildora", "Archivar");
+      archivar.title = "Sale de la lista; sus tareas y grabaciones no se borran";
+      archivar.addEventListener("click", () => {
+        void (this.opciones.alArchivarRamo?.(ramo.id) ?? Promise.resolve()).then(() => {
+          this.ramoAbierto = null;
+          this.opciones.alPedirEstudio?.();
+        });
+      });
+      acciones.append(editar, archivar);
+      cuerpo.append(acciones);
+    }
+    caja.append(cuerpo);
+    return caja;
   }
 
   /** Las propuestas de tareas y fechas de una grabación (las deja Brote por MCP); la lista cambia por aviso del puente. */
@@ -2047,6 +2278,7 @@ export class Panel {
     const { calendario, aula, temporizadores, grabaciones } = this.funciones.activas;
     // Con Grabar prendida también hay Agenda: ahí esperan las tareas y fechas que Brote saca de una grabación.
     this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores && !grabaciones;
+    this.botonesPestana.get("estudio")!.hidden = !this.funciones.activas.estudio;
     this.botonesPestana.get("grabar")!.hidden = !this.funciones.activas.grabaciones;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }
@@ -2139,6 +2371,7 @@ export class Panel {
       brote: brotePendiente || nuevos.has("brote"),
       plata: nuevos.has("plata"),
       agenda: nuevos.has("agenda"),
+      estudio: false,
       grabar: nuevos.has("grabar"),
       claude: this.hayPermisoClaude || nuevos.has("claude"),
       equipo: nuevos.has("equipo"),

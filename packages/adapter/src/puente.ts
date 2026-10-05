@@ -126,6 +126,18 @@
 //   pedido { "tipo": "plata-anotar", "monto": 1500, "descripcion": "café" }   → "mensaje"; solo uno de los botones de un toque
 //   pedido { "tipo": "presupuesto-poner", "monto": 200000 | null }   → "datos": EstadoPlata (null quita el presupuesto)
 //
+// Estudio (función "estudio"; pestaña Estudio, A1 de docs/plan-estudio-y-mejoras.md): los ramos del usuario
+// (nombre, color, palabras clave) y lo que viene de cada uno: clases del calendario y entregas del aula (se
+// emparejan por palabra clave), tareas y transcripciones que el usuario les asignó. Nada se crea solo.
+//   aviso { "tipo": "ramos", "ramos": Ramo[] }   al partir y al cambiar la lista (también si lo cambia el MCP)
+//   pedido { "tipo": "ramos-estado" }   → "datos": { ramos, fichas, sugerencias, fuentes: { calendario, aula } }
+//   pedido { "tipo": "ramos-todos" }   → "datos": Ramo[] (con los archivados; no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "ramo-crear", "nombre": "…", "alias"?: [...], "color"?: "…" }   → "mensaje", "datos": Ramo
+//   pedido { "tipo": "ramo-editar", "ramo": 3, "nombre"?, "alias"?, "color"? }   → "datos": Ramo
+//   pedido { "tipo": "ramo-archivar", "ramo": 3, "archivado"?: true }   no borra nada
+//   pedido { "tipo": "ramo-borrar", "ramo": 3 }   definitivo; lo suyo queda «sin ramo» («Lo que sé de ti»)
+//   pedido { "tipo": "ramo-asignar", "que": "tarea"|"propuesta"|"pomodoro"|"grabacion", "ref": 7 | "AAAA-MM-DD-HHMMSS", "ramo": 3 | null }
+//
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
 // está conectado (conectores.ts); las solicitudes de permiso y las herramientas en curso llevan
 // `conector: { servicio, accion, propio }` para que la isla diga "Todoist · Buscar tareas".
@@ -230,6 +242,9 @@ import {
   leerAvisados,
   resumenPlata,
   type EstadoPlata,
+  Ramos,
+  armarFichas,
+  sugerirRamos,
 } from "@asistente/motor";
 import {
   type Decision,
@@ -285,6 +300,8 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__calendario_proximos",
   "mcp__gastos__aula_entregas",
   "mcp__gastos__claude_uso",
+  // Solo lectura. `ramos_crear` sí pregunta: escribe en la pestaña Estudio del usuario.
+  "mcp__gastos__ramos_listar",
   "mcp__gastos__transcripciones_listar",
   "mcp__gastos__transcripciones_leer",
   // Solo deja propuestas pendientes: nada llega a la Agenda sin que el usuario lo acepte en la isla.
@@ -373,6 +390,8 @@ const gastos = new Gastos(RUTA_BASE);
 const temporizadores = new Temporizadores(gastos);
 /** Tareas y propuestas sacadas de las transcripciones (el agente propone con `agenda_proponer`; decide el usuario). */
 const tareasAgenda = new TareasAgenda(gastos);
+/** Los ramos del usuario (pestaña Estudio). */
+const ramos = new Ramos(gastos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -394,6 +413,7 @@ const motor = new Motor(gastos, {
     return { plan: vigente(lecturaPlan, Date.now()), statusline: statuslinePuesta(), resumen: resumenUso };
   },
   transcripciones: () => listarTranscripciones(),
+  ramos,
   activa,
 });
 
@@ -1068,7 +1088,9 @@ function revisarTemporizadores(): void {
     registrar(`temporizador: ${aviso.texto}`);
     avisar({ tipo: "temporizador-aviso", texto: aviso.texto });
   }
-  const lista = JSON.stringify(temporizadores.activos());
+  // Cada pomodoro lleva el ramo al que se asignó (si alguno): la isla le pone su punto de color.
+  const deRamo = ramos.enlaces("pomodoro");
+  const lista = JSON.stringify(temporizadores.activos().map((t) => ({ ...t, ramoId: deRamo.get(String(t.id)) ?? null })));
   if (lista !== ultimaLista) {
     ultimaLista = lista;
     avisar({ tipo: "temporizadores", lista: JSON.parse(lista) });
@@ -1126,6 +1148,47 @@ function revisarPropuestas(forzar = false): void {
 function detenerPropuestas(): void {
   marcaPropuestas = "";
   avisar({ tipo: "propuestas-agenda", propuestas: [] });
+}
+
+// Ramos: se mira la marca cada 2 s (así aparece lo que crea el agente por MCP, otro proceso).
+let marcaRamos = "";
+function revisarRamos(forzar = false): void {
+  const marca = ramos.marca();
+  if (!forzar && marca === marcaRamos) return;
+  marcaRamos = marca;
+  avisar({ tipo: "ramos", ramos: ramos.listar() });
+}
+function detenerRamos(): void {
+  marcaRamos = "";
+  avisar({ tipo: "ramos", ramos: [] });
+}
+/** La pestaña Estudio: ramos con su ficha y lo que se sugiere agregar. Lee las fuentes solo si su función está prendida. */
+async function estadoEstudio() {
+  if (activa("calendario")) await leerCalendarios();
+  if (activa("aula")) await leerAulaSiToca();
+  const ahora = Date.now();
+  const lista = ramos.listar();
+  const eventos = activa("calendario") ? eventosCalendario() : [];
+  const entregas = activa("aula") && entregasAula ? pendientes(entregasAula, ahora) : [];
+  const tareasLista = tareasAgenda.tareas(inicioDeHoy(ahora), inicioDeHoy(ahora) + 60 * 86_400_000);
+  const fichas = armarFichas(
+    lista,
+    { eventos, entregas, tareas: tareasLista, ramoDeTarea: ramos.enlaces("tarea"), ramoDeGrabacion: ramos.enlaces("grabacion") },
+    ahora,
+  );
+  const sugerencias = sugerirRamos(
+    entregas.map((e) => e.curso).filter(Boolean),
+    eventos.filter((e) => !e.todoElDia).map((e) => e.titulo),
+    lista,
+  );
+  return {
+    ramos: lista,
+    fichas,
+    sugerencias,
+    fuentes: { calendario: activa("calendario"), aula: activa("aula") },
+    // Cuál ramo tiene cada tarea de la Agenda y cada pomodoro, para pintar su punto de color.
+    ramoDeTarea: Object.fromEntries(ramos.enlaces("tarea")),
+  };
 }
 
 /** La cola de transcripciones (solo existe con la función `grabaciones` prendida). */
@@ -1197,6 +1260,13 @@ const tareas = new TareasPorFuncion({
       if (saliendo) return;
       void sincronizarDelegacion();
       avisar({ tipo: "especialistas", lista: [] });
+    };
+  },
+  estudio: () => {
+    const detener = cada(2000, () => revisarRamos());
+    return () => {
+      detener();
+      detenerRamos();
     };
   },
   grabaciones: () => {
@@ -1599,6 +1669,44 @@ async function atender(pedido: any): Promise<Extra> {
       if (!vista) throw new Error("Esa transcripción ya no está");
       return { datos: vista };
     }
+    case "ramos-estado":
+      return { datos: activa("estudio") ? await estadoEstudio() : { ramos: [], fichas: [], sugerencias: [], fuentes: { calendario: false, aula: false }, ramoDeTarea: {} } };
+    // «Lo que sé de ti»: lo guardado es del usuario y debe poder verlo y borrarlo aunque apague la función.
+    case "ramos-todos":
+      return { datos: ramos.listar(true) };
+    case "ramo-crear": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      const r = ramos.crear({ nombre: pedido.nombre, alias: pedido.alias, color: pedido.color }, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      revisarRamos();
+      return { mensaje: `Listo, agregué ${r.ramo.nombre}.`, datos: r.ramo };
+    }
+    case "ramo-editar": {
+      if (!Number.isInteger(pedido.ramo)) break;
+      const r = ramos.editar(pedido.ramo, { nombre: pedido.nombre, alias: pedido.alias, color: pedido.color });
+      if (!r.ok) throw new Error(r.motivo);
+      revisarRamos();
+      return { datos: r.ramo };
+    }
+    case "ramo-archivar":
+      if (!Number.isInteger(pedido.ramo)) break;
+      if (!ramos.archivar(pedido.ramo, pedido.archivado !== false)) throw new Error("Ese ramo ya no existe");
+      revisarRamos();
+      return {};
+    case "ramo-borrar":
+      if (!Number.isInteger(pedido.ramo)) break;
+      if (!ramos.borrar(pedido.ramo)) throw new Error("Ese ramo ya no existe");
+      registrar("estudio: ramo borrado");
+      revisarRamos();
+      return {};
+    case "ramo-asignar": {
+      if (!["tarea", "propuesta", "pomodoro", "grabacion"].includes(pedido.que)) break;
+      if (typeof pedido.ref !== "string" && !Number.isInteger(pedido.ref)) break;
+      if (pedido.ramo !== null && !Number.isInteger(pedido.ramo)) break;
+      if (!ramos.asignar(pedido.que, pedido.ref, pedido.ramo)) throw new Error("Ese ramo ya no existe");
+      revisarRamos();
+      return {};
+    }
     case "propuestas-listar":
       return { datos: activa("grabaciones") ? tareasAgenda.pendientes() : [] };
     case "propuesta-decidir": {
@@ -1640,6 +1748,12 @@ async function atender(pedido: any): Promise<Extra> {
     case "grabacion-borrar": {
       if ((pedido.que !== "transcripcion" && pedido.que !== "audio") || (pedido.grabacion !== null && typeof pedido.grabacion !== "string")) break;
       const borradas = borrarDeGrabaciones(pedido.que, pedido.grabacion);
+      // Una transcripción borrada no deja su enlace a un ramo.
+      if (pedido.que === "transcripcion" && borradas > 0) {
+        if (pedido.grabacion === null) for (const ref of ramos.enlaces("grabacion").keys()) ramos.olvidarEnlace("grabacion", ref);
+        else ramos.olvidarEnlace("grabacion", pedido.grabacion);
+        revisarRamos();
+      }
       // Sin su transcripción, lo que se propuso de ella y nadie decidió se va también.
       if (pedido.que === "transcripcion" && borradas > 0) {
         if (pedido.grabacion === null) tareasAgenda.olvidarPendientes();

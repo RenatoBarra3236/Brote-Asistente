@@ -10,6 +10,7 @@ import type { ConfigFunciones } from "./funciones.ts";
 import type { EstadoUso } from "./uso.ts";
 import type { Trabajando } from "./especialistas.ts";
 import type { EstadoPlata } from "./plata.ts";
+import type { EstadoEstudio, Ramo } from "./estudio.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
@@ -23,6 +24,8 @@ export interface TemporizadorActivo {
   ciclos: number;
   finMs: number;
   duracionMs: number;
+  /** El ramo de este pomodoro, si alguno (pestaña Estudio). */
+  ramoId?: number | null;
 }
 
 /** Una descarga terminada en la carpeta de descargas. */
@@ -145,6 +148,7 @@ type Aviso =
   | { tipo: "especialistas"; lista: Trabajando[] }
   | { tipo: "especialistas-aviso"; texto: string }
   | { tipo: "plata"; plata: EstadoPlata | null }
+  | { tipo: "ramos"; ramos: Ramo[] }
   | { tipo: "plata-aviso"; texto: string }
   | {
       tipo: "respuesta";
@@ -191,6 +195,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesAvisoEspecialistas = new Set<(texto: string) => void>();
   private readonly oyentesPlata = new Set<(estado: EstadoPlata | null) => void>();
   private readonly oyentesAvisoPlata = new Set<(texto: string) => void>();
+  private readonly oyentesRamos = new Set<(ramos: Ramo[]) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
   private conexion: EstadoConexion = { conectado: false, detalle: "Conectando con OpenClaw…" };
   private siguienteId = 1;
@@ -351,6 +356,40 @@ export class TransportePuente implements Transporte {
     return () => this.oyentesPlata.delete(oyente);
   }
 
+  /** La pestaña Estudio: la lista de ramos, cada vez que cambia (también si la cambia el agente). */
+  alCambiarRamos(oyente: (ramos: Ramo[]) => void): () => void {
+    this.oyentesRamos.add(oyente);
+    return () => this.oyentesRamos.delete(oyente);
+  }
+
+  /** Los ramos con su ficha (clases, entregas, tareas) y lo que se sugiere agregar. */
+  async estadoEstudio(): Promise<EstadoEstudio> {
+    const { datos } = await this.pedir({ tipo: "ramos-estado" });
+    return datos as EstadoEstudio;
+  }
+
+  async crearRamo(nombre: string, alias: string[] = []): Promise<string> {
+    const { mensaje } = await this.pedir({ tipo: "ramo-crear", nombre, alias });
+    return mensaje ?? "Listo.";
+  }
+
+  async editarRamo(ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }): Promise<void> {
+    await this.pedir({ tipo: "ramo-editar", ramo, ...cambios });
+  }
+
+  async archivarRamo(ramo: number, archivado = true): Promise<void> {
+    await this.pedir({ tipo: "ramo-archivar", ramo, archivado });
+  }
+
+  async borrarRamo(ramo: number): Promise<void> {
+    await this.pedir({ tipo: "ramo-borrar", ramo });
+  }
+
+  /** Pone (o quita, con `null`) el ramo de una tarea, pomodoro o transcripción. */
+  async asignarRamo(que: "tarea" | "propuesta" | "pomodoro" | "grabacion", ref: number | string, ramo: number | null): Promise<void> {
+    await this.pedir({ tipo: "ramo-asignar", que, ref, ramo });
+  }
+
   /** Los avisos del presupuesto (80 % y 100 %, una vez cada uno por mes). */
   alAvisoPlata(oyente: (texto: string) => void): () => void {
     this.oyentesAvisoPlata.add(oyente);
@@ -503,6 +542,9 @@ export class TransportePuente implements Transporte {
         return;
       case "especialistas-aviso":
         for (const oyente of this.oyentesAvisoEspecialistas) oyente(aviso.texto);
+        return;
+      case "ramos":
+        for (const oyente of this.oyentesRamos) oyente(aviso.ramos);
         return;
       case "plata":
         for (const oyente of this.oyentesPlata) oyente(aviso.plata);

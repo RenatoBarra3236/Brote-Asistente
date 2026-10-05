@@ -29,6 +29,8 @@ import { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, type Acc
 import { carpetaDescargas, formatearTamano, listarCarpeta, recientes } from "./descargas.ts";
 import { formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
+import { Ramos } from "./ramos.ts";
+import { COLORES_RAMO } from "./ramos-tipos.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
 import { MAX_CARACTERES_TROZO, partirEnTrozos } from "./transcripciones.ts";
 import { TareasAgenda, idDeGrabacionValido } from "./tareas-agenda.ts";
@@ -273,6 +275,32 @@ const HERRAMIENTAS = [
       "plan), separados entre Brote y las sesiones de Claude Code del usuario. Solo lectura.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Uso del plan de Claude", readOnlyHint: true },
+  },
+  {
+    name: "ramos_listar",
+    description:
+      "Los ramos (cursos) del usuario en Brote: nombre, color y palabras clave con las que Brote los reconoce en su " +
+      "calendario y aula. Úsala para saber de qué ramo habla antes de ayudarlo a estudiar o a planificar. Solo lectura.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Listar ramos", readOnlyHint: true },
+  },
+  {
+    name: "ramos_crear",
+    description:
+      "Agrega un ramo (curso) a la pestaña Estudio del usuario. Úsala solo si te lo pide («agrega el ramo Cálculo»). " +
+      "Las palabras clave sirven para reconocer el ramo en los títulos del calendario y del aula (por ejemplo «calc»). " +
+      "No borra nada y se puede archivar después.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        nombre: { type: "string", minLength: 2, maxLength: 60 },
+        alias: { type: "array", maxItems: 5, items: { type: "string", minLength: 2, maxLength: 30 } },
+        color: { type: "string", enum: [...COLORES_RAMO], description: "Opcional: si falta, Brote elige uno" },
+      },
+      required: ["nombre"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Agregar ramo", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   {
     name: "agenda_proponer",
@@ -692,6 +720,13 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         hastaSeg: trozo.hastaSeg,
         texto: trozo.texto,
       });
+    }
+    case "ramos_listar":
+      return JSON.stringify({ ramos: new Ramos(gastos).listar().map((r) => ({ id: r.id, nombre: r.nombre, color: r.color, palabrasClave: r.alias })) });
+    case "ramos_crear": {
+      const r = new Ramos(gastos).crear({ nombre: args.nombre, alias: args.alias, color: args.color }, Date.now());
+      if (!r.ok) throw new ErrorDeUso(r.motivo);
+      return `Listo: agregué el ramo ${r.ramo.nombre} (${r.ramo.color}). Brote lo muestra en la pestaña Estudio.`;
     }
     case "agenda_proponer": {
       if (!Array.isArray(args.propuestas) || typeof args.grabacion !== "string") throw new ErrorDeUso("Faltan «grabacion» o «propuestas»");

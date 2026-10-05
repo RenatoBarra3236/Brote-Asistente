@@ -81,6 +81,16 @@
                 case "memoria-buscar":
                   datos = [];
                   break;
+                case "ramos-todos":
+                  datos = [
+                    { id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false },
+                    { id: 2, nombre: "Química", color: "rojo", alias: [], archivado: true },
+                  ];
+                  break;
+                case "ramo-borrar":
+                case "ramo-archivar":
+                  datos = {};
+                  break;
                 case "grabaciones-listar":
                   datos = { transcripciones: sim.transcripciones, audios: sim.audios, diasAudio: sim.diasAudio };
                   break;

@@ -3,6 +3,7 @@
 // memoria, así que siempre se pone como texto, nunca como HTML.
 
 import { invoke } from "@tauri-apps/api/core";
+import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estudio";
 import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
 import {
   textoAviso,
@@ -70,6 +71,8 @@ const temaTexto = document.querySelector<HTMLSpanElement>("#tema-texto")!;
 const temaOlvidar = document.querySelector<HTMLButtonElement>("#tema-olvidar")!;
 
 let memoria: Memoria | null = null;
+/** Los ramos guardados, con los archivados (`null`: todavía no se leyeron o no se pudo). */
+let ramosGuardados: Ramo[] | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
 /** Lo que se está buscando y los ids que lo mencionan (según el contenido completo, que ve el puente). */
@@ -196,6 +199,60 @@ function tarjetaFrase(frase: Frase): HTMLElement {
   );
   tarjeta.append(texto, botones);
   return tarjeta;
+}
+
+// ---- Ramos (A1 de docs/plan-estudio-y-mejoras.md): ver, desarchivar y borrar ----
+
+async function cargarRamos(): Promise<void> {
+  try {
+    ramosGuardados = await puente.consultar<Ramo[]>({ tipo: "ramos-todos" });
+  } catch {
+    ramosGuardados = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+function tarjetaRamo(r: Ramo): HTMLElement {
+  const tarjeta = crear("article", `tarjeta ramo${r.archivado ? " archivado" : ""}`);
+  tarjeta.style.setProperty("--ramo", HEX_RAMO[r.color]);
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, r.nombre), crear("span", "fecha", r.archivado ? "Archivado" : ""));
+  const meta = crear("p", "meta", r.alias.length > 0 ? `Palabras clave: ${r.alias.join(", ")}` : "Sin palabras clave");
+  const botones = crear("div", "botones");
+  if (r.archivado) {
+    const volver = crear("button", "boton", "Desarchivar");
+    volver.type = "button";
+    volver.addEventListener("click", async () => {
+      volver.disabled = true;
+      try {
+        await puente.consultar({ tipo: "ramo-archivar", ramo: r.id, archivado: false });
+        await cargarRamos();
+        pintarTodo();
+      } catch (error) {
+        volver.disabled = false;
+        mostrarAviso(`No pude desarchivar: ${mensajeDe(error)}`, true);
+      }
+    });
+    botones.append(volver);
+  }
+  botones.append(
+    botonOlvidar(async () => {
+      await puente.consultar({ tipo: "ramo-borrar", ramo: r.id });
+      mostrarAviso(avisoRamoBorrado(r.nombre));
+      await cargarRamos();
+      pintarTodo();
+    }, "Borrar"),
+  );
+  tarjeta.append(cabeza, meta, botones);
+  return tarjeta;
+}
+
+function seccionRamos(lista: Ramo[]): HTMLElement {
+  const seccion = crear("section", "seccion seccion-ramos");
+  const encabezado = crear("h2", undefined, "Ramos");
+  encabezado.append(crear("span", "cuenta", String(lista.length)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_RAMOS));
+  seccion.append(...(lista.length > 0 ? lista.map(tarjetaRamo) : [crear("p", "vacio", "No tienes ramos guardados.")]));
+  return seccion;
 }
 
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
@@ -334,6 +391,7 @@ function pintar(memoria: Memoria): void {
     return seccion;
   });
   // Buscar es sobre lo que Brote recuerda; las grabaciones son aparte (y «olvidar todo sobre» no las toca).
+  if (ramosGuardados && ramosGuardados.length > 0 && !coincidencias) contenido.push(seccionRamos(ramosGuardados));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
@@ -342,6 +400,7 @@ async function cargar(): Promise<void> {
   try {
     memoria = await puente.consultar<Memoria>({ tipo: "memoria-listar" });
     await cargarGrabaciones();
+    await cargarRamos();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

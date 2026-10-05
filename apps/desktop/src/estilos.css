@@ -1855,3 +1855,138 @@ button.tarjeta:hover {
   text-decoration: line-through;
   opacity: 0.5;
 }
+
+/* Pestaña Estudio: tus ramos con su color (A1 de docs/plan-estudio-y-mejoras.md). */
+.vista-estudio > * {
+  /* Que las tarjetas no se encojan: si no caben, la vista se desplaza. */
+  flex: 0 0 auto;
+}
+.estudio-ramo {
+  padding: 0;
+  overflow: hidden;
+}
+.estudio-ramo-cabecera {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 10px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.estudio-ramo-cabecera:focus-visible {
+  outline: 2px solid var(--ramo);
+  outline-offset: -2px;
+}
+.estudio-punto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ramo);
+}
+.estudio-nombre {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.estudio-resumen {
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.estudio-ramo-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 10px 10px 28px;
+  border-left: 3px solid var(--ramo);
+  margin-left: 0;
+}
+.estudio-seccion {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  margin-top: 4px;
+}
+.estudio-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.estudio-item-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.estudio-item-cuando {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+.estudio-acciones,
+.estudio-editar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.estudio-nuevo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.estudio-campo {
+  flex: 1 1 160px;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.estudio-colores {
+  display: flex;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.estudio-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.estudio-color.activa {
+  border-color: currentColor;
+}
+.estudio-sugerencia {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.estudio-sugerencia-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.estudio-error {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--rojo);
+}

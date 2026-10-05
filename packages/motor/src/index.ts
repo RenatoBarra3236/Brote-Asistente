@@ -36,3 +36,7 @@ export { leerAjustesGrabaciones, marcaAjustesGrabaciones, rutaAjustesGrabaciones
 export { MAX_DIAS_AUDIO, MIN_DIAS_AUDIO, TEXTO_CONSENTIMIENTO_GRABACIONES, VERSION_CONSENTIMIENTO_GRABACIONES, normalizarAjustesGrabaciones, type AjustesGrabaciones } from "./grabaciones-textos.ts";
 export { MAX_LISTADAS, TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, duracionCorta, type AccionGrabar } from "./grabaciones-frases.ts";
 export { TareasAgenda, leerFecha, validarPropuesta, type NuevaPropuesta, type Propuesta, type Tarea } from "./tareas-agenda.ts";
+export { Ramos, type ResultadoCrear } from "./ramos.ts";
+export { COLORES_RAMO, MAX_ALIAS, MAX_NOMBRE_RAMO, MAX_RAMOS, colorSiguiente, contienePalabras, emparejarRamo, limpiarTexto, normalizarRamo, validarRamo, type ColorRamo, type Ramo, type ResultadoRamo } from "./ramos-tipos.ts";
+export { MAX_SUGERENCIAS, REPETICIONES_PARA_SUGERIR, armarFichas, sugerirRamos, type FichaRamo, type FuentesFicha, type SugerenciaRamo } from "./ramos-ficha.ts";
+export { EMOJI_COLOR, describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";

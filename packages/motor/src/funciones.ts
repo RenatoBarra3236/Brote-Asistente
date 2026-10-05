@@ -20,6 +20,7 @@ export const IDS_FUNCIONES = [
   "memoria-local",
   "especialistas",
   "grabaciones",
+  "estudio",
 ] as const;
 export type IdFuncion = (typeof IDS_FUNCIONES)[number];
 
@@ -124,6 +125,13 @@ export const FUNCIONES: readonly Funcion[] = [
     permiso: "microfono",
     tarjeta: null,
   },
+  {
+    id: "estudio",
+    nombre: "Estudio",
+    descripcion: "Tus ramos en un solo lugar: cada uno con su color, y lo que viene de él (clases, entregas, tareas) agrupado.",
+    permiso: null,
+    tarjeta: null,
+  },
 ];
 
 export const NOMBRES_TARJETAS: Record<IdTarjeta, string> = {
@@ -141,8 +149,8 @@ export type IdPreset = "estudiante" | "programador" | "todo" | "minimo";
 export const PRESETS: Record<IdPreset, { nombre: string; descripcion: string; activas: readonly IdFuncion[] }> = {
   estudiante: {
     nombre: "Estudiante",
-    descripcion: "Gastos, pomodoro, calendario, aula, música, descargas y reacciones.",
-    activas: ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo"],
+    descripcion: "Gastos, pomodoro, calendario, aula, ramos, música, descargas y reacciones.",
+    activas: ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "estudio"],
   },
   programador: {
     nombre: "Programador",
@@ -221,6 +229,7 @@ export function funcionDeIntencion(intencion: string): IdFuncion | null {
   if (intencion === "programador-sesiones") return "programador";
   if (intencion.startsWith("plan-")) return "uso-del-plan";
   if (intencion.startsWith("grabar-") || intencion.startsWith("transcripciones-")) return "grabaciones";
+  if (intencion.startsWith("ramos-")) return "estudio";
   return null;
 }
 
@@ -236,6 +245,7 @@ export function funcionDeHerramienta(nombre: string): IdFuncion | null {
   if (nombre === "programador_sesiones") return "programador";
   if (nombre === "claude_uso") return "uso-del-plan";
   if (nombre.startsWith("transcripciones_") || nombre === "agenda_proponer") return "grabaciones";
+  if (nombre.startsWith("ramos_")) return "estudio";
   return null;
 }
 

@@ -197,6 +197,12 @@ describe("privacidad con planes gratuitos", () => {
     for (const palabra of ["gastos", "memoria", "calendario", "aula"]) assert.match(skill, new RegExp(palabra));
   });
 
+  it("la skill delegar prohíbe pasar los ramos a planes gratuitos", () => {
+    const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
+    const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));
+    assert.match(seccion, /sus ramos/);
+  });
+
   it("la skill delegar prohíbe pasar transcripciones a planes gratuitos", () => {
     const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
     const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));

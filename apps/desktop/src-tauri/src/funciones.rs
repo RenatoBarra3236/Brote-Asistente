@@ -8,7 +8,7 @@ use crate::configuracion::{carpeta_datos, escribir_privado};
 /// Ids de las funciones: deben coincidir con `IDS_FUNCIONES` de funciones.ts (lo revisa una prueba del motor).
 const FUNCIONES: &[&str] = &[
     "gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan",
-    "memoria-local", "especialistas", "grabaciones",
+    "memoria-local", "especialistas", "grabaciones", "estudio",
 ];
 
 /// Ids de las tarjetas de Inicio: deben coincidir con `IDS_TARJETAS` de funciones.ts.

@@ -316,3 +316,11 @@ h3 {
   color: var(--peligro);
   font-weight: 500;
 }
+
+/* Ramos (pestaña Estudio): el color del ramo en el borde y los archivados atenuados. */
+.ramo {
+  border-left: 3px solid var(--ramo);
+}
+.ramo.archivado h3 {
+  opacity: 0.6;
+}

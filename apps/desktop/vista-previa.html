@@ -21,6 +21,9 @@
   ?pestana=plata (la pestaña Plata con tres meses de gastos de ejemplo) y ?plata=sin|pasado|nuevo (sin
   presupuesto, pasado del presupuesto con el aviso del 100 %, o sin ningún gasto todavía). Los botones de un
   toque y "mi presupuesto es…" funcionan.
+  ?pestana=estudio (la pestaña Estudio con tres ramos de ejemplo: tocar uno abre su ficha; Agregar, Editar y
+  Archivar funcionan contra datos de ejemplo) y &abrir=1 (deja abierta la ficha del primer ramo) y ?estudio=sin|sugerencias (sin ningún ramo, o con las sugerencias
+  del aula y del calendario).
   ?pestana=agenda (la pestaña Agenda con eventos, entregas y un recordatorio de ejemplo) y
   ?agenda=sin|permiso|negado|dev|ical|apagada (sin nada en 14 días, Mac sin decidir el permiso, permiso negado,
   modo desarrollo, otro sistema sin iCal, o la función apagada). &propuestas=1 deja en Agenda la tarjeta
@@ -147,7 +150,7 @@
       const lista = (nombre) => (parametros.get(nombre) ?? "").split(",").filter(Boolean);
       const funciones = {
         activas: Object.fromEntries(
-          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local", "especialistas", "grabaciones"].map((id) => [id, !lista("apagadas").includes(id)]),
+          ["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "memoria-local", "especialistas", "grabaciones", "estudio"].map((id) => [id, !lista("apagadas").includes(id)]),
         ),
         tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: lista("ocultas") },
       };
@@ -257,6 +260,29 @@
                   return responder(id, { datos: datos.aula });
                 case "agenda-estado":
                   return responder(id, { datos: window.__agenda() });
+                case "ramos-estado":
+                  return responder(id, { datos: window.__estudio.estado() });
+                case "ramo-crear": {
+                  const r = window.__estudio.crear(pedido.nombre, pedido.alias ?? []);
+                  if (typeof r === "string") return emitir({ tipo: "respuesta", id, ok: false, error: r });
+                  setTimeout(() => emitir({ tipo: "ramos", ramos: window.__estudio.ramos }), 150);
+                  return responder(id, { mensaje: `Listo, agregué ${r.nombre}.`, datos: r });
+                }
+                case "ramo-editar": {
+                  const r = window.__estudio.ramos.find((x) => x.id === pedido.ramo);
+                  if (!r) return emitir({ tipo: "respuesta", id, ok: false, error: "Ese ramo no existe" });
+                  if (pedido.nombre !== undefined) r.nombre = pedido.nombre;
+                  if (pedido.alias !== undefined) r.alias = pedido.alias;
+                  if (pedido.color !== undefined) r.color = pedido.color;
+                  setTimeout(() => emitir({ tipo: "ramos", ramos: window.__estudio.ramos }), 150);
+                  return responder(id, { datos: r });
+                }
+                case "ramo-archivar": {
+                  const r = window.__estudio.ramos.find((x) => x.id === pedido.ramo);
+                  if (r) r.archivado = pedido.archivado !== false;
+                  setTimeout(() => emitir({ tipo: "ramos", ramos: window.__estudio.ramos.filter((x) => !x.archivado) }), 150);
+                  return responder(id, {});
+                }
                 case "propuestas-listar":
                   return responder(id, { datos: window.__propuestas });
                 case "propuesta-decidir": {
@@ -548,13 +574,15 @@
       const pestana = parametros.get("pestana");
       if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
-          const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", grabar: "Grabar", claude: "Claude", equipo: "Equipo" };
+          const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", estudio: "Estudio", grabar: "Grabar", claude: "Claude", equipo: "Equipo" };
           if (pestana === "chat" || parametros.has("permiso") || parametros.has("delegar")) {
             const entrada = document.querySelector(".entrada");
             entrada.value = parametros.has("delegar") ? "Pídele al equipo que me ayude a estudiar la fotosíntesis" : "¿cuánto llevo esta semana?";
             entrada.dispatchEvent(new Event("input"));
             document.querySelector(".formulario").requestSubmit();
           } else document.querySelector(`.pestana[title="${titulos[pestana]}"]`)?.click();
+          // ?pestana=estudio&abrir=1 deja la ficha del primer ramo abierta
+          if (pestana === "estudio" && parametros.has("abrir")) setTimeout(() => document.querySelector(".estudio-ramo-cabecera")?.click(), 500);
           // ?pestana=grabar&abrir=audio|texto[&transcribir=1]
           const abrir = parametros.get("abrir");
           if (pestana === "grabar" && abrir) {
@@ -566,6 +594,58 @@
           }
         }, 1500);
       }
+    </script>
+    <script type="module">
+      // La pestaña Estudio: ramos de ejemplo con su ficha armada por el mismo código del motor.
+      import { armarFichas, sugerirRamos } from "/../../packages/motor/src/ramos-ficha.ts";
+      const modo = new URLSearchParams(location.search).get("estudio");
+      const hoy = new Date();
+      const en = (dias, hora, min = 0) => new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias, hora, min).getTime();
+      const ramos =
+        modo === "sin"
+          ? []
+          : [
+              { id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false },
+              { id: 2, nombre: "Física General", color: "verde", alias: [], archivado: false },
+              { id: 3, nombre: "Historia del Arte", color: "violeta", alias: ["arte"], archivado: false },
+            ];
+      let siguiente = 10;
+      const colores = ["azul", "verde", "ambar", "rojo", "violeta", "turquesa", "rosa", "gris"];
+      window.__estudio = {
+        ramos,
+        estado() {
+          const ahora = Date.now();
+          const fichas = armarFichas(
+            ramos,
+            {
+              eventos: [
+                { titulo: "Cálculo II · clase", inicioMs: en(0, 15), finMs: en(0, 16, 30) },
+                { titulo: "calc ayudantía", inicioMs: en(2, 10), finMs: en(2, 11) },
+                { titulo: "Física General", inicioMs: en(1, 8, 30), finMs: en(1, 10) },
+              ],
+              entregas: [{ curso: "Física General", titulo: "Informe 2: péndulo", entregaMs: en(3, 23, 59), entregada: false }],
+              tareas: [{ id: 1, titulo: "Guía 3 de integrales", venceMs: en(1, 23, 59), hecha: false }],
+              ramoDeTarea: new Map([["1", 1]]),
+              ramoDeGrabacion: new Map([["2026-10-03-143000", 1], ["2026-10-02-080000", 2]]),
+            },
+            ahora,
+          );
+          return {
+            ramos: ramos.filter((r) => !r.archivado),
+            fichas,
+            sugerencias: modo === "sugerencias" ? sugerirRamos(["Química Orgánica", "Física General"], ["Álgebra lineal", "Álgebra lineal", "Álgebra lineal", "Almuerzo"], ramos) : [],
+            fuentes: { calendario: true, aula: true },
+            ramoDeTarea: { 1: 1 },
+          };
+        },
+        crear(nombre, alias) {
+          const limpio = nombre.trim();
+          if (ramos.some((r) => r.nombre.toLowerCase() === limpio.toLowerCase() && !r.archivado)) return `Ya tienes un ramo «${limpio}»`;
+          const r = { id: siguiente++, nombre: limpio, color: colores[ramos.length % colores.length], alias, archivado: false };
+          ramos.push(r);
+          return r;
+        },
+      };
     </script>
     <script type="module">
       // La pestaña Plata con el cálculo de verdad (motor/plata.ts) sobre gastos de ejemplo.

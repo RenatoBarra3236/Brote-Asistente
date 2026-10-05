@@ -31,6 +31,7 @@ import {
   type EventoGrabacion,
 } from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
+import type { EstadoEstudio } from "./agente/estudio";
 import { propuestasNuevas, textoAvisoPropuestas, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import type { Grabaciones } from "./agente/grabaciones-memoria";
 import type { EstadoPlata } from "./agente/plata";
@@ -124,6 +125,7 @@ async function iniciar(): Promise<void> {
   const mascotas = new Mascotas();
   // La pestaña Agenda pide sus datos al puente (se asigna más abajo, donde el puente existe).
   let pedirAgenda = () => {};
+  let pedirEstudio = () => {};
   // Grabar (sección 8): la captura la hace Rust; aquí se pregunta, se inicia, se detiene y se pide transcribir.
   let grabacion: EstadoGrabacion = GRABACION_INACTIVA;
   let avisoAPresentes: AvisoAPresentes = "no";
@@ -147,6 +149,10 @@ async function iniciar(): Promise<void> {
               .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alPedirAgenda: () => pedirAgenda(),
+          alPedirEstudio: () => pedirEstudio(),
+          alCrearRamo: (nombre, alias) => puente.crearRamo(nombre, alias),
+          alEditarRamo: (ramo, cambios) => puente.editarRamo(ramo, cambios),
+          alArchivarRamo: (ramo) => puente.archivarRamo(ramo),
           alAccionAgenda: (accion: "configurar" | "privacidad-calendarios") =>
             void (accion === "configurar" ? invoke("abrir_configuracion") : invoke("abrir_enlace", { cual: accion })).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           // En la vista previa del navegador (siempre "dev"), `?produccion=1` muestra los textos de la app empaquetada.
@@ -269,6 +275,12 @@ async function iniciar(): Promise<void> {
     puente.alCambiarFunciones((config) => panel.mostrarFunciones(config));
     void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then((config) => panel.mostrarFunciones(config), () => {});
     pedirAgenda = () => void puente.consultar<EstadoAgenda>({ tipo: "agenda-estado" }).then((estado) => panel.mostrarAgenda(estado), () => {});
+    // Estudio: los ramos llegan por aviso cuando cambian (también si el agente agrega uno); sus fichas se piden al ver la pestaña.
+    pedirEstudio = () => void puente.estadoEstudio().then((estado: EstadoEstudio) => panel.mostrarEstudio(estado), () => {});
+    puente.alCambiarRamos(() => {
+      if (panel.estudioAbierto) pedirEstudio();
+    });
+    setInterval(() => (panel.estudioAbierto ? pedirEstudio() : undefined), 5 * 60_000);
     puente.alCambiarTemporizadores((lista) => {
       mostrarTemporizadores(lista);
       if (panel.agendaAbierta) pedirAgenda();

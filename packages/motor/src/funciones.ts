@@ -28,7 +28,7 @@ export const IDS_TARJETAS = ["temporizadores", "calendario", "aula", "musica", "
 export type IdTarjeta = (typeof IDS_TARJETAS)[number];
 
 /** Los permisos de macOS que piden algunas funciones (Privacidad y seguridad). */
-export type PermisoMac = "descargas" | "automatizacion" | "calendarios";
+export type PermisoMac = "descargas" | "automatizacion" | "calendarios" | "microfono";
 
 export interface Funcion {
   id: IdFuncion;
@@ -121,7 +121,7 @@ export const FUNCIONES: readonly Funcion[] = [
     nombre: "Grabar y transcribir",
     descripcion:
       "Brote transcribe en tu computador lo que tú decidas grabar (por ejemplo una clase) y te ayuda con el texto. El audio no sale de tu equipo y se borra solo a los 7 días. Apagado de fábrica.",
-    permiso: null,
+    permiso: "microfono",
     tarjeta: null,
   },
 ];
@@ -220,6 +220,7 @@ export function funcionDeIntencion(intencion: string): IdFuncion | null {
   if (intencion === "estado-equipo") return "equipo";
   if (intencion === "programador-sesiones") return "programador";
   if (intencion.startsWith("plan-")) return "uso-del-plan";
+  if (intencion.startsWith("grabar-") || intencion.startsWith("transcripciones-")) return "grabaciones";
   return null;
 }
 

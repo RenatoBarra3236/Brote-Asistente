@@ -145,3 +145,37 @@ export function borrarAudiosVencidos(
   }
   return borrados;
 }
+
+// ---- Ver y borrar desde "Lo que sé de ti" (sección 8, fase 4) ----
+
+/**
+ * Borra UNA transcripción (`<id>.md`) o UN audio (`<id>.wav`) por su id exacto: la carpeta es la de su tipo,
+ * el nombre se arma aquí (nunca viene de afuera) y tiene que ser un archivo regular, no un enlace. Va a la
+ * Papelera en Mac. Devuelve si lo borró (`false`: no existía o no era un archivo regular).
+ */
+export function borrarGrabacion(
+  tipo: "transcripcion" | "audio",
+  id: string,
+  carpeta: string = tipo === "audio" ? carpetaGrabaciones() : carpetaTranscripciones(),
+  eliminar: (ruta: string) => void = aLaPapelera,
+): boolean {
+  if (!PATRON_ID.test(id)) return false;
+  const ruta = join(carpeta, `${id}${tipo === "audio" ? ".wav" : ".md"}`);
+  try {
+    if (!lstatSync(ruta).isFile()) return false;
+    eliminar(ruta);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** «Borrar todo»: cada archivo exacto de ese tipo, uno por uno (nada de borrar la carpeta). Devuelve los ids borrados. */
+export function borrarTodasLasGrabaciones(
+  tipo: "transcripcion" | "audio",
+  carpeta: string = tipo === "audio" ? carpetaGrabaciones() : carpetaTranscripciones(),
+  eliminar: (ruta: string) => void = aLaPapelera,
+): string[] {
+  const ids = archivosExactos(carpeta, tipo === "audio" ? PATRON_ARCHIVO_AUDIO : PATRON_ARCHIVO_TRANSCRIPCION).map((a) => a.id);
+  return ids.filter((id) => borrarGrabacion(tipo, id, carpeta, eliminar));
+}

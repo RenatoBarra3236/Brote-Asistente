@@ -111,6 +111,10 @@
 //   pedido { "tipo": "transcribir", "grabacion": "2026-10-05-103000", "avisoAPresentes"?: "si"|"no"|"solo-mi-voz" }   → "datos": { pendientes }
 //   pedido { "tipo": "transcripcion-cancelar", "grabacion": "…" }   → "datos": { cancelada }
 //   pedido { "tipo": "grabaciones-estado" }   → "datos": { whisper: boolean, modelos: { base, small, … }, pendientes, ajustes }
+//   pedido { "tipo": "grabaciones-listar" }   → "datos": { transcripciones, audios, diasAudio } (sin el texto; "Lo que sé de ti")
+//   pedido { "tipo": "grabacion-aviso", "grabacion": "…", "aviso": "si"|"no"|"solo-mi-voz" }   guarda la respuesta al grabar; "transcribir" sin avisoAPresentes usa esa
+//   pedido { "tipo": "grabacion-ver", "grabacion": "…" }   → "datos": { texto, recortado }
+//   pedido { "tipo": "grabacion-borrar", "que": "transcripcion"|"audio", "grabacion": "…" | null }   → "datos": { borradas } (null = todas; Papelera en Mac)
 //   aviso { "tipo": "transcripcion", "id": "…", "fase": "en-cola"|"transcribiendo"|"lista"|"error"|"cancelada", "texto": "…" }
 //
 // Plata (función "gastos"; la pestaña Plata de la isla): el resumen de los gastos, el presupuesto del
@@ -138,6 +142,7 @@ import { createInterface } from "node:readline";
 import {
   Gastos,
   Motor,
+  listarTranscripciones,
   PLANTILLAS_BASE,
   MedidorCpu,
   ACCIONES_MUSICA,
@@ -250,6 +255,7 @@ import { quitarClaveDeApi } from "./sin-clave.ts";
 import { TareasPorFuncion, cada } from "./tareas.ts";
 import { FiltroDelegacion, leerHistorial } from "./delegacion.ts";
 import { Transcriptor, limpiarAudiosVencidos } from "./grabaciones.ts";
+import { avisoDe, borrarDeGrabaciones, guardarAviso, listarGrabaciones, podarAvisos, verTranscripcion } from "./memoria-grabaciones.ts";
 import { estadoWhisper, transcribirConWhisper } from "./transcribir.ts";
 import { argsDelegacion, correrOpenclaw, delegacionActual, guardarFreno, leerFreno } from "./equipo.ts";
 
@@ -382,6 +388,7 @@ const motor = new Motor(gastos, {
     void actualizarUso();
     return { plan: vigente(lecturaPlan, Date.now()), statusline: statuslinePuesta(), resumen: resumenUso };
   },
+  transcripciones: () => listarTranscripciones(),
   activa,
 });
 
@@ -1530,7 +1537,8 @@ async function atender(pedido: any): Promise<Extra> {
       if (!activa("grabaciones") || !transcriptor) throw new Error("Grabar y transcribir está apagado: actívalo en Configurar Brote ⚙️");
       // Sin haber aceptado el consentimiento (Configurar Brote → Grabar y transcribir) no se transcribe nada.
       if (!leerAjustesGrabaciones().consentimiento) throw new Error("Falta aceptar el aviso de privacidad de Grabar y transcribir en Configurar Brote ⚙️");
-      transcriptor.pedir(pedido.grabacion, pedido.avisoAPresentes ?? "no");
+      // Sin respuesta en el pedido, vale la que se dio al grabar (la pestaña Grabar transcribe después).
+      transcriptor.pedir(pedido.grabacion, pedido.avisoAPresentes ?? avisoDe(pedido.grabacion));
       return { datos: { pendientes: transcriptor.pendientes() } };
     }
     case "transcripcion-cancelar": {
@@ -1541,6 +1549,30 @@ async function atender(pedido: any): Promise<Extra> {
       if (!activa("grabaciones")) return { datos: null };
       const { whisper, modelos } = estadoWhisper();
       return { datos: { whisper: whisper !== null, modelos, pendientes: transcriptor?.pendientes() ?? [], ajustes: leerAjustesGrabaciones() } };
+    }
+    case "grabaciones-listar": {
+      // Sin depender de la función: lo ya guardado es del usuario y debe poder verlo y borrarlo aunque la apague.
+      const lista = listarGrabaciones(leerAjustesGrabaciones().diasAudio);
+      podarAvisos(lista.audios.map((a) => a.id));
+      return { datos: lista };
+    }
+    case "grabacion-aviso": {
+      // La respuesta a «¿avisaste a los presentes?», para cuando se transcriba. Solo guarda; no transcribe.
+      if (typeof pedido.grabacion !== "string") break;
+      guardarAviso(pedido.grabacion, pedido.aviso);
+      return {};
+    }
+    case "grabacion-ver": {
+      if (typeof pedido.grabacion !== "string") break;
+      const vista = verTranscripcion(pedido.grabacion);
+      if (!vista) throw new Error("Esa transcripción ya no está");
+      return { datos: vista };
+    }
+    case "grabacion-borrar": {
+      if ((pedido.que !== "transcripcion" && pedido.que !== "audio") || (pedido.grabacion !== null && typeof pedido.grabacion !== "string")) break;
+      const borradas = borrarDeGrabaciones(pedido.que, pedido.grabacion);
+      registrar(`grabaciones: ${borradas} ${pedido.que === "audio" ? "audio(s)" : "transcripción(es)"} borrado(s)`);
+      return { datos: { borradas } };
     }
     case "permisos-estado":
       return { datos: estadoPermisos() };

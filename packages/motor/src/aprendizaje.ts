@@ -138,6 +138,16 @@ export function describirIntencion(intencion: Intencion): string {
       return "mostrar tus entregas pendientes";
     case "aula-semana":
       return "mostrar lo que tienes que entregar esta semana";
+    case "grabar-iniciar":
+      return "empezar a grabar";
+    case "grabar-detener":
+      return "detener la grabación";
+    case "grabar-estado":
+      return "decirte si estoy grabando";
+    case "transcripciones-ver":
+      return "mostrar tus transcripciones";
+    case "transcripciones-hoy":
+      return "mostrar lo que grabaste hoy";
   }
 }
 

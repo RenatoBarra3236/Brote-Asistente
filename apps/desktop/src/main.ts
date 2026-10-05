@@ -18,17 +18,20 @@ import { TransporteSimulado } from "./agente/simulado";
 import type { ConfigFunciones } from "./agente/funciones";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
+import { avisoGrabacionBorrada } from "./agente/papelera";
 import {
   GRABACION_INACTIVA,
   conEvento,
+  accionDeFrase,
   nuevoIdDeGrabacion,
-  textoGrabacionLista,
+  textoGrabacionGuardada,
   tiempoGrabado,
   type AvisoAPresentes,
   type EstadoGrabacion,
   type EventoGrabacion,
 } from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
+import type { Grabaciones } from "./agente/grabaciones-memoria";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
 import { debeNotificarAlSistema, leerNotificaciones } from "./agente/notificaciones";
@@ -65,6 +68,8 @@ const personaje = new Personaje();
 /** Modo flotante: cuánto sigue abierto el panel después de que el cursor se va (ms). */
 const ESPERA_CIERRE_MS = 800;
 
+const EN_MAC = navigator.userAgent.includes("Mac");
+
 /** Cuánto sigue a la vista una descarga terminada, con su botón "Mostrar" (ms). */
 const DESCARGA_A_LA_VISTA_MS = 60_000;
 /** Cada cuánto se piden los tokens mientras la pestaña Claude está a la vista. */
@@ -86,6 +91,9 @@ const DURACION_ERROR = 6000;
  * El agente habla con OpenClaw a través del puente que lanza Rust. Si la app se abrió con
  * `ASISTENTE_SIMULADO=1`, reproduce eventos grabados (no hace falta OpenClaw).
  */
+/** Lo que hace la isla cuando el motor pide grabar ("graba esta clase"); se asigna en `iniciar`, donde vive la grabación. */
+let alPedirGrabarPorFrase: (datos: unknown) => void = () => {};
+
 async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
   if ((await invoke<string>("agente_modo")) === "simulado") {
     return { agente: new Agente(new TransporteSimulado({ escenas: ESCENAS })), puente: null };
@@ -97,6 +105,7 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
     alResolverSinIA: (intencion, datos) => {
       if (intencion === "ver-memoria") void invoke("abrir_memoria");
       // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
+      alPedirGrabarPorFrase(datos);
       const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
       if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
         mostrarDescarga(descarga.ruta, descarga.abrir === true);
@@ -121,6 +130,8 @@ async function iniciar(): Promise<void> {
     grabacion = e;
   };
   let detenerGrabacion = () => {};
+  // La pestaña Grabar pide al puente lo guardado (se asigna donde el puente existe; sin puente no hay pestaña).
+  let pedirGrabaciones = () => {};
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
@@ -156,6 +167,23 @@ async function iniciar(): Promise<void> {
               .catch(() => {}),
           alQuererGrabar: () => cambiarGrabacion({ fase: "pregunta" }),
           alCancelarGrabacion: () => cambiarGrabacion(GRABACION_INACTIVA),
+          alPedirGrabaciones: () => pedirGrabaciones(),
+          alTranscribir: (id: string) =>
+            void puente.consultar({ tipo: "transcribir", grabacion: id }).catch((error) => {
+              panel.avisarTranscripcion(id, "error");
+              panel.mostrarAviso(String(error).replace(/^Error: /, ""));
+            }),
+          alVerTexto: (id: string) => puente.consultar<{ texto: string; recortado: boolean }>({ tipo: "grabacion-ver", grabacion: id }),
+          alBorrarGrabacion: (que: "audio" | "transcripcion", id: string) =>
+            void puente
+              .consultar<{ borradas: number }>({ tipo: "grabacion-borrar", que, grabacion: id })
+              .then(({ borradas }) => {
+                panel.mostrarAviso(avisoGrabacionBorrada(EN_MAC, que, borradas));
+                pedirGrabaciones();
+              })
+              .catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
+          alAbrirPrivacidadMicrofono: () =>
+            void invoke("abrir_enlace", { cual: "privacidad-microfono" }).catch((error) => panel.mostrarAviso(String(error).replace(/^Error: /, ""))),
           alDetenerGrabacion: () => detenerGrabacion(),
           alElegirAviso: (aviso: AvisoAPresentes) => {
             avisoAPresentes = aviso;
@@ -185,21 +213,25 @@ async function iniciar(): Promise<void> {
     grabacion = e;
     panel.mostrarGrabacion(e);
   };
-  // Al detener: Rust cierra el WAV y la transcripción arranca sola en segundo plano (el puente solo
-  // transcribe con la función prendida y el aviso de privacidad aceptado; si no, el audio queda guardado).
+  // "Graba esta clase", "para la grabación", "¿estoy grabando?": lo mismo que el 🎙, con su pregunta.
+  alPedirGrabarPorFrase = (datos) => {
+    const accion = accionDeFrase(datos, grabacion);
+    if (!accion) return;
+    if (accion.hacer === "preguntar") cambiarGrabacion({ fase: "pregunta" });
+    else if (accion.hacer === "detener") detenerGrabacion();
+    else panel.mostrarAviso(accion.texto);
+  };
+  // Al detener: Rust cierra el WAV y queda guardado. Transcribir es un paso aparte (pestaña Grabar): aquí solo
+  // se guarda lo que respondió a «¿avisaste a los presentes?» para cuando se transcriba.
   detenerGrabacion = () => {
     const aviso = avisoAPresentes;
     cambiarGrabacion({ fase: "deteniendo", id: grabacion.fase === "grabando" || grabacion.fase === "deteniendo" ? grabacion.id : "" });
     invoke<{ id: string; segundos: number }>("grabacion_detener")
       .then(async ({ id, segundos }) => {
         cambiarGrabacion(GRABACION_INACTIVA);
-        const motivo = puente
-          ? await puente.consultar({ tipo: "transcribir", grabacion: id, avisoAPresentes: aviso }).then(
-              () => null,
-              (error: unknown) => String(error).replace(/^Error: /, ""),
-            )
-          : "no hay conexión con el puente";
-        avisar("transcripcion", motivo === null ? textoGrabacionLista(segundos, true) : `${textoGrabacionLista(segundos, false)} ${motivo}`);
+        if (puente) await puente.consultar({ tipo: "grabacion-aviso", grabacion: id, aviso }).catch(() => {});
+        avisar("transcripcion", textoGrabacionGuardada(segundos));
+        pedirGrabaciones();
       })
       .catch((error) => cambiarGrabacion({ fase: "error", mensaje: String(error).replace(/^Error: /, "") }));
   };
@@ -280,7 +312,10 @@ async function iniciar(): Promise<void> {
     });
     void puente.consultar<EstadoCalendario>({ tipo: "calendario-estado" }).then(cambiarCalendario, () => {});
     // Grabar y transcribir: solo el resultado importa (lista o error); "en cola" y "transcribiendo" no avisan.
+    pedirGrabaciones = () =>
+      void puente.consultar<Grabaciones | null>({ tipo: "grabaciones-listar" }).then((datos) => panel.ponerGrabaciones(datos), () => {});
     puente.alAvisoTranscripcion((aviso) => {
+      panel.avisarTranscripcion(aviso.id, aviso.fase);
       if (aviso.fase !== "lista" && aviso.fase !== "error") return;
       avisar("transcripcion", aviso.texto);
       if (aviso.fase === "lista") personaje.tocar();

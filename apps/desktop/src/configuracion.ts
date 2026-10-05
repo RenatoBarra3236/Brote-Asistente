@@ -229,7 +229,7 @@ function seccionAula(): HTMLElement[] {
   return partes;
 }
 
-const ESTADOS_PERMISO = { concedido: "Concedido", negado: "Negado", "sin-preguntar": "No lo ha pedido", "sin-usar": "Sin usar" } as const;
+const ESTADOS_PERMISO = { concedido: "Concedido", negado: "Negado", "sin-preguntar": "No lo ha pedido", "sin-usar": "Sin usar", "no-se-sabe": "No se puede saber" } as const;
 
 function seccionPermisos(): HTMLElement[] {
   const partes: HTMLElement[] = [cabecera("Permisos de macOS", "Qué permisos usa Brote, para qué, y cuáles puedes quitar.")];
@@ -248,13 +248,22 @@ function seccionPermisos(): HTMLElement[] {
       cabeza,
       crear("p", "tarjeta-texto", fila.usadoPor.length > 0 ? `Lo usa: ${fila.usadoPor.map((f) => f.nombre).join(", ")}.` : "Ninguna función activa lo usa."),
     );
+    if (fila.id === "microfono") {
+      tarjeta.append(
+        crear(
+          "p",
+          "nota-permiso",
+          "Brote no puede saber si lo diste sin abrir el micrófono, y no lo abre para averiguarlo: macOS lo pregunta la primera vez que grabas. Si dijiste que no, o quieres quitarlo, se cambia en Configuración del Sistema → " + fila.donde + ".",
+        ),
+      );
+    }
     if (fila.falta) tarjeta.append(crear("p", "nota-permiso", `Sin este permiso, «${fila.usadoPor[0].nombre}» no funciona. Actívalo en Configuración del Sistema → ${fila.donde}.`));
     if (fila.sobra) {
       tarjeta.append(
         crear("p", "nota-permiso", `Ya no hace falta. Si se lo diste antes, puedes quitarlo en Configuración del Sistema → ${fila.donde}.`),
       );
     }
-    if (fila.falta || fila.sobra) {
+    if (fila.falta || fila.sobra || (fila.id === "microfono" && fila.usadoPor.length > 0)) {
       const botones = crear("div", "botones");
       botones.append(
         boton("Abrir Privacidad y seguridad", "boton", () => void invoke("abrir_enlace", { cual: fila.enlace }).catch((e) => mostrarAviso(mensajeDe(e), true))),

@@ -16,7 +16,7 @@
 // permiso, a Claude cuando una sesión pide permiso, y vuelve a Brote si la isla pasa un rato cerrada.
 // Qué tarjetas se ven y en qué orden se elige en Configurar Brote → Funciones (funciones.json).
 
-import { GRABACION_INACTIVA, OPCIONES_AVISO, TEXTO_PREGUNTA_AVISO, tiempoGrabado, type AvisoAPresentes, type EstadoGrabacion } from "./agente/grabaciones";
+import { GRABACION_INACTIVA, OPCIONES_AVISO, esErrorDePermisoMicrofono, TEXTO_PREGUNTA_AVISO, tiempoGrabado, type AvisoAPresentes, type EstadoGrabacion } from "./agente/grabaciones";
 import type { Agente } from "./agente/agente";
 import { ocupado, type Conversacion } from "./agente/conversacion";
 import { agregarPaso, cuandoEmpieza, cuentaRegresiva, fechaLarga, gigas, saludo, tamanoCorto, venceEn } from "./agente/formato";
@@ -55,6 +55,21 @@ import type { Lugar } from "./mascotas";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
+import { copiarTexto } from "./copiar";
+import {
+  TEXTO_ESTADO_AUDIO,
+  duracionDeAudio,
+  estadoDeAudio,
+  textoAviso,
+  textoBotonGrabar,
+  textoCopiado,
+  textoDuracion,
+  textoFecha,
+  textoTamano,
+  textoVacioGrabar,
+  type FaseTranscripcion,
+  type Grabaciones,
+} from "./agente/grabaciones-memoria";
 
 export { cuentaRegresiva } from "./agente/formato";
 export type { Pestana } from "./agente/tarjetas";
@@ -112,6 +127,16 @@ interface Opciones {
   alDetenerGrabacion?: () => void;
   /** Cerró la pregunta o el error sin grabar. */
   alCancelarGrabacion?: () => void;
+  /** «Abrir Privacidad» en el error del micrófono (el enlace `privacidad-microfono` de Rust). */
+  alAbrirPrivacidadMicrofono?: () => void;
+  /** La pestaña Grabar pide sus listas al abrirse y cuando algo cambia. */
+  alPedirGrabaciones?: () => void;
+  /** «Transcribir» en un audio guardado. */
+  alTranscribir?: (id: string) => void;
+  /** El texto de una transcripción (el puente lo lee del disco). */
+  alVerTexto?: (id: string) => Promise<{ texto: string; recortado: boolean }>;
+  /** Borrar un audio o una transcripción (a la Papelera en Mac). */
+  alBorrarGrabacion?: (que: "audio" | "transcripcion", id: string) => void;
 }
 
 /** Lo que llega del historial de una sesión hija (chat.history). */
@@ -237,6 +262,12 @@ export class Panel {
   // Plata
   private readonly plata: HTMLDivElement;
   private estadoPlata: EstadoPlata | null = null;
+  // Grabar: el micrófono, los audios guardados y sus transcripciones
+  private readonly grabar: HTMLDivElement;
+  private datosGrabar: Grabaciones | null = null;
+  private subGrabar: "audios" | "textos" = "audios";
+  private grabacionAbierta: string | null = null;
+  private readonly fasesTranscripcion = new Map<string, FaseTranscripcion>();
   // Agenda
   private readonly agenda: HTMLDivElement;
   private estadoAgenda: EstadoAgenda | null = null;
@@ -283,8 +314,8 @@ export class Panel {
       ["brote", "brote", "Brote"],
       ["plata", "plata", "Plata"],
       ["agenda", "calendario", "Agenda"],
+      ["grabar", "microfono", "Grabar"],
       ["claude", "codigo", "Claude"],
-      ["equipo", "equipo", "Equipo"],
     ];
     for (const [nombre, ic, titulo] of pestanas) {
       const boton = botonIcono("pestana", ic, titulo);
@@ -293,6 +324,12 @@ export class Panel {
       izquierda.append(boton);
     }
     const derecha = crear("div", "barra-grupo");
+    // Equipo (la supervisión del computador) vive a la derecha, con «Lo que sé de ti» y Configurar:
+    // así la izquierda no se llena de pestañas.
+    const equipoBoton = botonIcono("pestana", "equipo", "Equipo");
+    equipoBoton.addEventListener("click", () => this.elegir("equipo"));
+    this.botonesPestana.set("equipo", equipoBoton);
+    derecha.append(equipoBoton);
     if (opciones.alAbrirMemoria) {
       const memoria = botonIcono("pestana", "memoria", "Lo que sé de ti");
       memoria.addEventListener("click", opciones.alAbrirMemoria);
@@ -465,7 +502,13 @@ export class Panel {
     sinAgenda.textContent = "Armando tu agenda…";
     this.agenda.append(sinAgenda);
 
-    this.vistas.set("brote", inicio).set("plata", this.plata).set("agenda", this.agenda).set("claude", codigo).set("equipo", equipo);
+    // --- Grabar ---
+    this.grabar = crear("div", "vista vista-grabar");
+    const sinGrabar = crear("p", "vacia-texto");
+    sinGrabar.textContent = "Buscando tus grabaciones…";
+    this.grabar.append(sinGrabar);
+
+    this.vistas.set("brote", inicio).set("plata", this.plata).set("agenda", this.agenda).set("grabar", this.grabar).set("claude", codigo).set("equipo", equipo);
 
     // --- Campo de texto (en todas las pestañas) ---
     const formulario = crear("form", "formulario");
@@ -499,7 +542,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -545,6 +588,10 @@ export class Panel {
     }
     if (pestana === "brote") this.respuestaSinVer = false;
     if (pestana === "agenda") this.opciones.alPedirAgenda?.();
+    if (pestana === "grabar") {
+      this.mostrarGrabaciones();
+      this.opciones.alPedirGrabaciones?.();
+    }
     if (this.visible) this.novedades.marcarVistasDe(pestana);
     this.actualizarPuntos();
   }
@@ -657,6 +704,211 @@ export class Panel {
       this.tarjetaCalendario.classList.toggle("pronto", proximo.inicioMs - Date.now() <= 15 * 60_000);
     }
     this.actualizarInicio();
+  }
+
+  /** Las listas de la pestaña Grabar (las pide main al puente). */
+  ponerGrabaciones(datos: Grabaciones | null): void {
+    this.datosGrabar = datos;
+    if (this.pestana === "grabar") this.mostrarGrabaciones();
+  }
+
+  /** Lo que avisa el puente mientras transcribe: la fila cambia de estado al tiro. */
+  avisarTranscripcion(id: string, fase: FaseTranscripcion): void {
+    this.fasesTranscripcion.set(id, fase);
+    if (fase === "lista") {
+      this.fasesTranscripcion.delete(id);
+      this.opciones.alPedirGrabaciones?.();
+    }
+    if (this.pestana === "grabar") this.mostrarGrabaciones();
+  }
+
+  /** ¿Se está viendo la pestaña Grabar? */
+  get grabarAbierta(): boolean {
+    return this.visible && this.pestana === "grabar";
+  }
+
+  /**
+   * La pestaña Grabar: el botón del micrófono arriba y, debajo, dos listas: las grabaciones guardadas
+   * (al tocar una sale «Transcribir») y sus transcripciones. Lo guardado se ve aunque la función esté apagada.
+   */
+  mostrarGrabaciones(): void {
+    const prendida = this.funciones.activas.grabaciones;
+    const partes: HTMLElement[] = [];
+    const fase = this.estadoGrabacion.fase;
+    const nueva = crear("button", `grabar-nueva${fase === "inactiva" ? "" : " ocupada"}`);
+    nueva.type = "button";
+    nueva.disabled = fase !== "inactiva" || !prendida;
+    const punto = crear("span", "grabar-nueva-punto");
+    const etiqueta = crear("span", "grabar-nueva-texto");
+    etiqueta.textContent = textoBotonGrabar(fase);
+    nueva.append(icono("microfono"), etiqueta, punto);
+    nueva.addEventListener("click", () => this.opciones.alQuererGrabar?.());
+    partes.push(nueva);
+
+    const datos = this.datosGrabar;
+    const subs = crear("div", "grabar-subs");
+    for (const [clave, nombre, cuantas] of [
+      ["audios", "Grabaciones", datos?.audios.length ?? 0],
+      ["textos", "Transcripciones", datos?.transcripciones.length ?? 0],
+    ] as const) {
+      const b = boton(`grabar-sub${this.subGrabar === clave ? " activa" : ""}`, `${nombre} · ${cuantas}`);
+      b.addEventListener("click", () => {
+        this.subGrabar = clave;
+        this.grabacionAbierta = null;
+        this.mostrarGrabaciones();
+      });
+      subs.append(b);
+    }
+    partes.push(subs);
+
+    const lista = crear("div", "grabar-lista");
+    const filas = this.subGrabar === "audios" ? (datos?.audios.length ?? 0) : (datos?.transcripciones.length ?? 0);
+    if (!datos) {
+      const p = crear("p", "vacia-texto");
+      p.textContent = "Buscando tus grabaciones…";
+      lista.append(p);
+    } else if (filas === 0) {
+      const p = crear("p", "vacia-texto");
+      p.textContent = textoVacioGrabar(this.subGrabar, prendida);
+      lista.append(p);
+    } else if (this.subGrabar === "audios") {
+      for (const a of datos.audios) lista.append(this.filaAudio(a));
+    } else {
+      for (const t of datos.transcripciones) lista.append(this.filaTranscripcion(t));
+    }
+    partes.push(lista);
+    this.grabar.replaceChildren(...partes);
+  }
+
+  private filaAudio(a: Grabaciones["audios"][number]): HTMLElement {
+    const estado = estadoDeAudio(a, this.fasesTranscripcion.get(a.id));
+    const abierta = this.grabacionAbierta === `audio:${a.id}`;
+    const fila = crear("div", `grabar-fila${abierta ? " abierta" : ""}`);
+    const cabeza = crear("button", "grabar-cabeza");
+    cabeza.type = "button";
+    const titulo = crear("span", "grabar-titulo");
+    titulo.textContent = textoFecha(a.fecha, a.id);
+    const meta = crear("span", "grabar-meta");
+    meta.textContent = `${textoDuracion(duracionDeAudio(a.bytes))} · ${textoTamano(a.bytes)}`;
+    const chip = crear("span", `grabar-chip ${estado}`);
+    chip.textContent = TEXTO_ESTADO_AUDIO[estado];
+    cabeza.append(titulo, meta, chip);
+    cabeza.addEventListener("click", () => {
+      this.grabacionAbierta = abierta ? null : `audio:${a.id}`;
+      this.mostrarGrabaciones();
+    });
+    fila.append(cabeza);
+    if (abierta) {
+      const acciones = crear("div", "grabar-acciones");
+      if (estado === "sin-transcribir" || estado === "error") {
+        const t = boton("boton boton-fila", estado === "error" ? "Reintentar" : "Transcribir");
+        t.addEventListener("click", () => {
+          this.fasesTranscripcion.set(a.id, "en-cola");
+          this.opciones.alTranscribir?.(a.id);
+          this.mostrarGrabaciones();
+        });
+        acciones.append(t);
+      } else if (estado === "transcrita") {
+        const ver = boton("boton boton-fila", "Ver la transcripción");
+        ver.addEventListener("click", () => {
+          this.subGrabar = "textos";
+          this.grabacionAbierta = `texto:${a.id}`;
+          this.mostrarGrabaciones();
+          void this.cargarTexto(a.id);
+        });
+        acciones.append(ver);
+      } else {
+        const p = crear("span", "grabar-meta");
+        p.textContent = "Esto puede tardar un rato: puedes cerrar la isla, te aviso.";
+        acciones.append(p);
+      }
+      if (estado !== "en-cola" && estado !== "transcribiendo") acciones.append(this.botonBorrar("audio", a.id));
+      fila.append(acciones);
+    }
+    return fila;
+  }
+
+  private filaTranscripcion(t: Grabaciones["transcripciones"][number]): HTMLElement {
+    const abierta = this.grabacionAbierta === `texto:${t.id}`;
+    const fila = crear("div", `grabar-fila${abierta ? " abierta" : ""}`);
+    const cabeza = crear("button", "grabar-cabeza");
+    cabeza.type = "button";
+    const titulo = crear("span", "grabar-titulo");
+    titulo.textContent = textoFecha(t.fecha, t.id);
+    const meta = crear("span", "grabar-meta");
+    meta.textContent = `${textoDuracion(t.duracionSeg)} · ${textoAviso(t.avisoAPresentes)}`;
+    cabeza.append(titulo, meta);
+    cabeza.addEventListener("click", () => {
+      this.grabacionAbierta = abierta ? null : `texto:${t.id}`;
+      this.mostrarGrabaciones();
+      if (!abierta) void this.cargarTexto(t.id);
+    });
+    fila.append(cabeza);
+    if (abierta) {
+      const cuerpo = crear("pre", "grabar-texto");
+      cuerpo.dataset.id = t.id;
+      cuerpo.textContent = "Leyendo…";
+      const acciones = crear("div", "grabar-acciones");
+      acciones.append(this.botonCopiar(t.id), this.botonBorrar("transcripcion", t.id));
+      fila.append(cuerpo, acciones);
+    }
+    return fila;
+  }
+
+  /** Pide el texto al puente y lo pone en la fila abierta (siempre como texto, nunca como HTML). */
+  private async cargarTexto(id: string): Promise<void> {
+    const cuerpo = this.grabar.querySelector<HTMLPreElement>(`.grabar-texto[data-id="${id}"]`);
+    if (!cuerpo || !this.opciones.alVerTexto) return;
+    try {
+      const { texto, recortado } = await this.opciones.alVerTexto(id);
+      if (cuerpo.isConnected) cuerpo.textContent = recortado ? `${texto}\n\n[…se cortó aquí: el texto es larguísimo]` : texto;
+    } catch (error) {
+      if (cuerpo.isConnected) cuerpo.textContent = `No pude leerla: ${String(error).replace(/^Error: /, "")}`;
+    }
+  }
+
+  /** «Copiar»: pide el texto completo (con sus marcas de tiempo) y lo pone en el portapapeles. */
+  private botonCopiar(id: string): HTMLButtonElement {
+    const b = boton("boton boton-fila", "Copiar");
+    let plazo: ReturnType<typeof setTimeout> | undefined;
+    b.addEventListener("click", async () => {
+      if (!this.opciones.alVerTexto) return;
+      b.disabled = true;
+      let mensaje: string;
+      try {
+        const { texto, recortado } = await this.opciones.alVerTexto(id);
+        mensaje = textoCopiado(await copiarTexto(texto), recortado);
+      } catch {
+        mensaje = textoCopiado(false, false);
+      }
+      b.textContent = mensaje;
+      b.disabled = false;
+      clearTimeout(plazo);
+      plazo = setTimeout(() => (b.textContent = "Copiar"), 2000);
+    });
+    return b;
+  }
+
+  /** «Borrar» con segundo toque (a la Papelera en Mac; en Windows y Linux se borra de verdad). */
+  private botonBorrar(que: "audio" | "transcripcion", id: string): HTMLButtonElement {
+    const b = boton("boton boton-fila peligro", "Borrar");
+    let plazo: ReturnType<typeof setTimeout> | undefined;
+    b.addEventListener("click", () => {
+      if (!b.classList.contains("confirmando")) {
+        b.classList.add("confirmando");
+        b.textContent = "¿Seguro?";
+        plazo = setTimeout(() => {
+          b.classList.remove("confirmando");
+          b.textContent = "Borrar";
+        }, 3000);
+        return;
+      }
+      clearTimeout(plazo);
+      b.disabled = true;
+      this.grabacionAbierta = null;
+      this.opciones.alBorrarGrabacion?.(que, id);
+    });
+    return b;
   }
 
   /** ¿Se está viendo la agenda? (main la refresca cuando cambia el calendario, el aula o los temporizadores). */
@@ -1522,11 +1774,15 @@ export class Panel {
         f.append(texto("🎙 Guardando la grabación…"));
         break;
       case "error": {
-        f.append(texto(`⚠️ ${estado.mensaje}`, "franja-texto alerta"), accion("Entendido", () => this.opciones.alCancelarGrabacion?.(), "franja-boton suave"));
+        const fila = crear("div", "franja-botones");
+        if (esErrorDePermisoMicrofono(estado.mensaje)) fila.append(accion("Abrir Privacidad", () => this.opciones.alAbrirPrivacidadMicrofono?.()));
+        fila.append(accion("Entendido", () => this.opciones.alCancelarGrabacion?.(), "franja-boton suave"));
+        f.append(texto(`⚠️ ${estado.mensaje}`, "franja-texto alerta"), fila);
         break;
       }
     }
     this.actualizarMicrofono();
+    if (this.pestana === "grabar") this.mostrarGrabaciones();
   }
 
   /** El 🎙 se ve con la función prendida y se apaga mientras hay una grabación o una pregunta en curso. */
@@ -1672,6 +1928,7 @@ export class Panel {
     this.botonesPestana.get("plata")!.hidden = !this.funciones.activas.gastos;
     const { calendario, aula, temporizadores } = this.funciones.activas;
     this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores;
+    this.botonesPestana.get("grabar")!.hidden = !this.funciones.activas.grabaciones;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");
   }
 
@@ -1763,6 +2020,7 @@ export class Panel {
       brote: brotePendiente || nuevos.has("brote"),
       plata: nuevos.has("plata"),
       agenda: nuevos.has("agenda"),
+      grabar: nuevos.has("grabar"),
       claude: this.hayPermisoClaude || nuevos.has("claude"),
       equipo: nuevos.has("equipo"),
     };

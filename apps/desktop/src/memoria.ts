@@ -3,8 +3,21 @@
 // memoria, así que siempre se pone como texto, nunca como HTML.
 
 import { invoke } from "@tauri-apps/api/core";
-import { avisoOlvidado, avisoTemaOlvidado, pieOlvidar } from "./agente/papelera";
+import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
+import {
+  textoAviso,
+  textoCopiado,
+  textoDuracion,
+  textoFecha,
+  textoTamano,
+  textoVencimiento,
+  totalGrabaciones,
+  type Grabaciones,
+  type ItemAudio,
+  type ItemTranscripcion,
+} from "./agente/grabaciones-memoria";
 import { TransportePuente } from "./agente/puente";
+import { copiarTexto } from "./copiar";
 
 type TipoRecuerdo = "brote" | "conversacion" | "importado";
 
@@ -57,6 +70,8 @@ const temaTexto = document.querySelector<HTMLSpanElement>("#tema-texto")!;
 const temaOlvidar = document.querySelector<HTMLButtonElement>("#tema-olvidar")!;
 
 let memoria: Memoria | null = null;
+/** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
+let grabaciones: Grabaciones | null = null;
 /** Lo que se está buscando y los ids que lo mencionan (según el contenido completo, que ve el puente). */
 let filtro = "";
 let coincidencias: Set<string> | null = null;
@@ -84,17 +99,17 @@ function fechaCorta(iso: string | null): string {
 }
 
 /** Un botón "Olvidar" que pide un segundo toque para confirmar. */
-function botonOlvidar(alConfirmar: () => Promise<void>): HTMLButtonElement {
-  const boton = crear("button", "boton boton-peligro", "Olvidar");
+function botonOlvidar(alConfirmar: () => Promise<void>, etiqueta = "Olvidar", pregunta = "¿Seguro?"): HTMLButtonElement {
+  const boton = crear("button", "boton boton-peligro", etiqueta);
   boton.type = "button";
   let plazo: ReturnType<typeof setTimeout> | undefined;
   boton.addEventListener("click", async () => {
     if (!boton.classList.contains("confirmando")) {
       boton.classList.add("confirmando");
-      boton.textContent = "¿Seguro?";
+      boton.textContent = pregunta;
       plazo = setTimeout(() => {
         boton.classList.remove("confirmando");
-        boton.textContent = "Olvidar";
+        boton.textContent = etiqueta;
       }, CONFIRMACION_MS);
       return;
     }
@@ -104,7 +119,7 @@ function botonOlvidar(alConfirmar: () => Promise<void>): HTMLButtonElement {
       await alConfirmar();
     } catch (error) {
       boton.disabled = false;
-      mostrarAviso(`No pude olvidarlo: ${mensajeDe(error)}`, true);
+      mostrarAviso(`No pude ${etiqueta.toLowerCase()}: ${mensajeDe(error)}`, true);
     }
   });
   return boton;
@@ -183,6 +198,116 @@ function tarjetaFrase(frase: Frase): HTMLElement {
   return tarjeta;
 }
 
+// ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
+
+async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
+  const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "grabacion-borrar", que, grabacion: id });
+  mostrarAviso(avisoGrabacionBorrada(EN_MAC, que, borradas));
+  await cargarGrabaciones();
+  pintarTodo();
+}
+
+function tarjetaTranscripcion(t: ItemTranscripcion): HTMLElement {
+  const tarjeta = crear("article", "tarjeta grabacion transcripcion");
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, textoFecha(t.fecha, t.id)), crear("span", "fecha", textoDuracion(t.duracionSeg)));
+  const meta = crear("p", "meta", `${textoAviso(t.avisoAPresentes)} · modelo ${t.modelo}`);
+  const botones = crear("div", "botones");
+  const ver = crear("button", "boton", "Ver el texto");
+  ver.type = "button";
+  let cuerpo: HTMLPreElement | null = null;
+  ver.addEventListener("click", async () => {
+    if (cuerpo) {
+      cuerpo.remove();
+      cuerpo = null;
+      ver.textContent = "Ver el texto";
+      return;
+    }
+    ver.disabled = true;
+    try {
+      const { texto, recortado } = await puente.consultar<{ texto: string; recortado: boolean }>({ tipo: "grabacion-ver", grabacion: t.id });
+      cuerpo = crear("pre", "texto-grabacion", recortado ? `${texto}\n\n[…se cortó aquí: el texto es larguísimo]` : texto);
+      tarjeta.insertBefore(cuerpo, botones);
+      ver.textContent = "Ocultar el texto";
+    } catch (error) {
+      mostrarAviso(`No pude leer la transcripción: ${mensajeDe(error)}`, true);
+    } finally {
+      ver.disabled = false;
+    }
+  });
+  const copiar = crear("button", "boton", "Copiar");
+  copiar.type = "button";
+  let plazoCopiar: ReturnType<typeof setTimeout> | undefined;
+  copiar.addEventListener("click", async () => {
+    copiar.disabled = true;
+    let mensaje: string;
+    try {
+      const { texto, recortado } = await puente.consultar<{ texto: string; recortado: boolean }>({ tipo: "grabacion-ver", grabacion: t.id });
+      mensaje = textoCopiado(await copiarTexto(texto), recortado);
+    } catch {
+      mensaje = textoCopiado(false, false);
+    }
+    copiar.textContent = mensaje;
+    copiar.disabled = false;
+    clearTimeout(plazoCopiar);
+    plazoCopiar = setTimeout(() => (copiar.textContent = "Copiar"), 2000);
+  });
+  botones.append(ver, copiar, botonOlvidar(() => borrarGrabaciones("transcripcion", t.id), "Borrar"));
+  tarjeta.append(cabeza, meta, botones);
+  return tarjeta;
+}
+
+function tarjetaAudio(a: ItemAudio): HTMLElement {
+  const tarjeta = crear("article", `tarjeta grabacion audio${a.vencido ? " vencido" : ""}`);
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, `Audio · ${textoFecha(a.fecha, a.id)}`), crear("span", "fecha", textoTamano(a.bytes)));
+  const vence = textoVencimiento(a, Date.now());
+  const meta = crear("p", "meta", `${a.transcrito ? "Ya tiene transcripción" : "Sin transcripción"}${vence ? ` · ${vence}` : ""}`);
+  const botones = crear("div", "botones");
+  botones.append(botonOlvidar(() => borrarGrabaciones("audio", a.id), "Borrar"));
+  tarjeta.append(cabeza, meta, botones);
+  return tarjeta;
+}
+
+/** Un subtítulo con su botón «Borrar todo» (con segundo toque). */
+function subtitulo(texto: string, que: QueGrabacion, cuantas: number): HTMLElement {
+  const fila = crear("div", "subtitulo");
+  fila.append(crear("span", undefined, `${texto} (${cuantas})`), botonOlvidar(() => borrarGrabaciones(que, null), "Borrar todo", confirmarBorrarTodo(que, cuantas)));
+  return fila;
+}
+
+function seccionGrabaciones(g: Grabaciones): HTMLElement {
+  const seccion = crear("section", "seccion seccion-grabaciones");
+  const encabezado = crear("h2", undefined, "Grabaciones");
+  encabezado.append(crear("span", "cuenta", String(totalGrabaciones(g))));
+  seccion.append(
+    encabezado,
+    crear("p", "nota", "Lo que grabaste y transcribiste en este computador. Brote solo lo usa cuando tú se lo pides; el audio no sale de tu equipo."),
+  );
+  if (totalGrabaciones(g) === 0) {
+    seccion.append(crear("p", "vacio", "No hay grabaciones ni transcripciones guardadas."));
+    return seccion;
+  }
+  if (g.transcripciones.length > 0) seccion.append(subtitulo("Transcripciones", "transcripcion", g.transcripciones.length), ...g.transcripciones.map(tarjetaTranscripcion));
+  if (g.audios.length > 0) {
+    seccion.append(subtitulo(`Audios (se borran solos a los ${g.diasAudio} días)`, "audio", g.audios.length), ...g.audios.map(tarjetaAudio));
+  }
+  seccion.append(crear("p", "nota", pieGrabaciones(EN_MAC)));
+  return seccion;
+}
+
+async function cargarGrabaciones(): Promise<void> {
+  try {
+    grabaciones = await puente.consultar<Grabaciones>({ tipo: "grabaciones-listar" });
+  } catch {
+    grabaciones = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+function pintarTodo(): void {
+  if (memoria) pintar(memoria);
+}
+
 function simplificar(texto: string): string {
   return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
@@ -208,12 +333,15 @@ function pintar(memoria: Memoria): void {
     seccion.append(...(tarjetas.length > 0 ? tarjetas : [crear("p", "vacio", vacio)]));
     return seccion;
   });
+  // Buscar es sobre lo que Brote recuerda; las grabaciones son aparte (y «olvidar todo sobre» no las toca).
+  if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
 
 async function cargar(): Promise<void> {
   try {
     memoria = await puente.consultar<Memoria>({ tipo: "memoria-listar" });
+    await cargarGrabaciones();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

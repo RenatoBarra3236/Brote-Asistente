@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   GRABACION_INACTIVA,
+  accionDeFrase,
+  esErrorDePermisoMicrofono,
   OPCIONES_AVISO,
   conEvento,
   nuevoIdDeGrabacion,
-  textoGrabacionLista,
+  textoGrabacionGuardada,
   tiempoGrabado,
   type EstadoGrabacion,
 } from "../src/agente/grabaciones.ts";
@@ -66,7 +68,44 @@ describe("la grabación en la isla", () => {
   });
 
   it("el aviso de lista dice si va a transcribir", () => {
-    assert.match(textoGrabacionLista(65, true), /01:05.*Transcribiendo/);
-    assert.match(textoGrabacionLista(65, false), /apagada/);
+    assert.match(textoGrabacionGuardada(65), /01:05.*pestaña Grabar.*transcribirla/);
+  });
+});
+
+describe("las frases sin IA en la isla", () => {
+  const grabando: EstadoGrabacion = { fase: "grabando", id: "x", segundos: 125, sinSonido: null };
+  it("iniciar siempre pasa por la pregunta, nunca graba directo", () => {
+    assert.deepEqual(accionDeFrase({ grabar: "iniciar" }, GRABACION_INACTIVA), { hacer: "preguntar" });
+    assert.deepEqual(accionDeFrase({ grabar: "iniciar" }, { fase: "error", mensaje: "x" }), { hacer: "preguntar" });
+  });
+  it("iniciar con una grabación en curso o a medio abrir no abre otra", () => {
+    assert.equal(accionDeFrase({ grabar: "iniciar" }, grabando)?.hacer, "avisar");
+    for (const estado of [{ fase: "pregunta" }, { fase: "iniciando" }, { fase: "deteniendo", id: "x" }] as EstadoGrabacion[]) {
+      assert.equal(accionDeFrase({ grabar: "iniciar" }, estado)?.hacer, "avisar");
+    }
+  });
+  it("detener solo detiene si se está grabando", () => {
+    assert.deepEqual(accionDeFrase({ grabar: "detener" }, grabando), { hacer: "detener" });
+    assert.equal(accionDeFrase({ grabar: "detener" }, GRABACION_INACTIVA)?.hacer, "avisar");
+    assert.equal(accionDeFrase({ grabar: "detener" }, { fase: "pregunta" })?.hacer, "avisar");
+  });
+  it("el estado responde con el tiempo", () => {
+    assert.match((accionDeFrase({ grabar: "estado" }, grabando) as { texto: string }).texto, /02:05/);
+    assert.match((accionDeFrase({ grabar: "estado" }, GRABACION_INACTIVA) as { texto: string }).texto, /no estoy grabando/);
+  });
+  it("datos que no son de grabar no hacen nada", () => {
+    for (const datos of [undefined, null, {}, { grabar: "otra" }, { ruta: "/x" }, "iniciar"]) {
+      assert.equal(accionDeFrase(datos, GRABACION_INACTIVA), null);
+    }
+  });
+});
+
+describe("el error del micrófono", () => {
+  it("ofrece Abrir Privacidad solo cuando es por el permiso", () => {
+    assert.equal(esErrorDePermisoMicrofono("macOS no le dio permiso a Brote para usar el micrófono: actívalo en Ajustes del Sistema → Privacidad y seguridad → Micrófono."), true);
+    assert.equal(esErrorDePermisoMicrofono("El sistema no le dio permiso a Brote para usar el micrófono: revisa Configuración → Privacidad → Micrófono."), true);
+    assert.equal(esErrorDePermisoMicrofono("No encuentro un micrófono conectado."), false);
+    assert.equal(esErrorDePermisoMicrofono("El micrófono está ocupado por otra aplicación."), false);
+    assert.equal(esErrorDePermisoMicrofono("No pude abrir el micrófono: algo raro"), false);
   });
 });

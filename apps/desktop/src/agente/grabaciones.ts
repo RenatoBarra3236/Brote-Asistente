@@ -76,9 +76,48 @@ export const OPCIONES_AVISO: readonly { valor: AvisoAPresentes; texto: string }[
 
 export const TEXTO_PREGUNTA_AVISO = "¿Avisaste a los presentes que vas a grabar?";
 
-/** Cómo quedó la grabación, para avisar sin abrir la isla. */
-export function textoGrabacionLista(segundos: number, transcribe: boolean): string {
-  return transcribe
-    ? `🎙 Grabé ${tiempoGrabado(segundos)}. Transcribiendo…`
-    : `🎙 Grabé ${tiempoGrabado(segundos)}. El audio quedó guardado (la transcripción está apagada).`;
+/** Cómo quedó la grabación, para avisar sin abrir la isla. Transcribir es un paso aparte, en la pestaña Grabar. */
+export function textoGrabacionGuardada(segundos: number): string {
+  return `🎙 Grabé ${tiempoGrabado(segundos)}. Está en la pestaña Grabar: tócala para transcribirla.`;
+}
+
+/**
+ * Si el error de la captura es por el permiso del micrófono (Rust lo explica en `explicar`, con «permiso»
+ * y «micrófono»): entonces la isla ofrece «Abrir Privacidad». Un micrófono ausente u ocupado no lo es.
+ */
+export function esErrorDePermisoMicrofono(mensaje: string): boolean {
+  return /permiso/i.test(mensaje) && /micr[oó]fono/i.test(mensaje);
+}
+
+// ---- Las frases sin IA ("graba esta clase") ----
+
+/** Lo que hace la isla cuando el motor pide grabar (`datos: { grabar }`). */
+export type AccionDeFrase =
+  | { hacer: "preguntar" }
+  | { hacer: "detener" }
+  | { hacer: "avisar"; texto: string };
+
+/**
+ * Qué hacer con `datos.grabar` del motor según el estado. Iniciar SIEMPRE pasa por la pregunta
+ * «¿avisaste a los presentes?» (nunca graba directo); detener solo si se está grabando.
+ */
+export function accionDeFrase(datos: unknown, estado: EstadoGrabacion): AccionDeFrase | null {
+  const grabar = (datos as { grabar?: unknown } | null | undefined)?.grabar;
+  if (grabar !== "iniciar" && grabar !== "detener" && grabar !== "estado") return null;
+  const grabando = estado.fase === "grabando";
+  switch (grabar) {
+    case "iniciar":
+      if (grabando) return { hacer: "avisar", texto: `🔴 Ya estoy grabando (${tiempoGrabado(estado.segundos)}).` };
+      if (estado.fase === "inactiva" || estado.fase === "error") return { hacer: "preguntar" };
+      return { hacer: "avisar", texto: "Ya hay una grabación en curso o a punto de empezar." };
+    case "detener":
+      if (grabando) return { hacer: "detener" };
+      if (estado.fase === "pregunta") return { hacer: "avisar", texto: "Todavía no empecé a grabar: no hay nada que detener." };
+      return { hacer: "avisar", texto: "No estoy grabando nada." };
+    case "estado":
+      return {
+        hacer: "avisar",
+        texto: grabando ? `🔴 Sí, llevo ${tiempoGrabado(estado.segundos)} grabando.` : estado.fase === "iniciando" ? "Estoy abriendo el micrófono…" : "No, no estoy grabando.",
+      };
+  }
 }

@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  Vista previa de "Lo que sé de ti" en un navegador, sin la app: simula Tauri y el puente con datos de
+  ejemplo (inventados). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa-memoria.html
+  Parámetros:
+    ?grabaciones=con|sin|apagada   con grabaciones (por defecto), sin ninguna, o con la función apagada
+                                   (se ven igual: lo guardado es del usuario aunque apague la función)
+    ?plataforma=windows            los textos de borrar sin Papelera
+    ?busca=notebook                escribe esa búsqueda (la sección Grabaciones se esconde)
+  No es parte de la app (no está entre las páginas de vite.config.ts).
+-->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vista previa de Lo que sé de ti</title>
+    <link rel="stylesheet" href="/src/memoria.css" />
+    <script>
+      const parametros = new URLSearchParams(location.search);
+      const ua = parametros.get("plataforma") === "windows" ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
+      Object.defineProperty(navigator, "userAgent", { get: () => ua });
+      const modo = parametros.get("grabaciones") ?? "con";
+      const dia = (d, h, m) => new Date(2026, 9, d, h, m, 0).toISOString();
+      const sim = {
+        transcripciones:
+          modo === "sin"
+            ? []
+            : [
+                { id: "2026-10-05-103000", fecha: dia(5, 10, 30), duracionSeg: 4980, avisoAPresentes: "si", modelo: "small" },
+                { id: "2026-10-03-143000", fecha: dia(3, 14, 30), duracionSeg: 2400, avisoAPresentes: "solo-mi-voz", modelo: "small" },
+                { id: "2026-09-28-080000", fecha: dia(28, 8, 0).replace("-10-", "-09-"), duracionSeg: 600, avisoAPresentes: "no", modelo: "base" },
+              ],
+        audios:
+          modo === "sin"
+            ? []
+            : [
+                { id: "2026-10-05-103000", fecha: dia(5, 10, 30), bytes: 159_360_000, venceEn: dia(12, 10, 30), vencido: false, transcrito: true },
+                { id: "2026-09-28-080000", fecha: dia(28, 8, 0).replace("-10-", "-09-"), bytes: 19_200_000, venceEn: dia(5, 8, 0), vencido: true, transcrito: true },
+              ],
+        diasAudio: 7,
+      };
+      const TEXTO = "[00:00:00] Buenos días, hoy vemos derivadas y la regla de la cadena.\n[00:00:07] Recuerden que la prueba es el jueves 15.\n[00:00:12] (texto de ejemplo, inventado)";
+      const callbacks = new Map();
+      const oyentes = new Map();
+      let siguiente = 1;
+      const emitir = (evento, payload) => {
+        const id = oyentes.get(evento);
+        if (id) callbacks.get(id)?.({ event: evento, id: 0, payload });
+      };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: "memoria" }, currentWebview: { windowLabel: "memoria", label: "memoria" } },
+        transformCallback(cb) {
+          const id = siguiente++;
+          callbacks.set(id, cb);
+          return id;
+        },
+        unregisterCallback(id) {
+          callbacks.delete(id);
+        },
+        async invoke(comando, args) {
+          switch (comando) {
+            case "plugin:event|listen":
+              oyentes.set(args.event, args.handler);
+              return args.handler;
+            case "agente_conexion":
+              return JSON.stringify({ tipo: "conexion", conectado: true });
+            case "agente_escribir": {
+              const pedido = JSON.parse(args.linea);
+              let datos = null;
+              switch (pedido.tipo) {
+                case "memoria-listar":
+                  datos = {
+                    sinIA: 42,
+                    frases: [{ id: 1, ejemplo: "paque 2500 de sushi", accion: "anotar un gasto" }],
+                    recuerdos: [
+                      { id: "brote:preferencias.md", tipo: "brote", titulo: "Cómo te gusta estudiar", texto: "Prefiere estudiar de mañana, en bloques de 25 minutos.", fecha: dia(3, 9, 0), editable: true },
+                      { id: "conversacion:2026-10-04-2100.md", tipo: "conversacion", titulo: "Conversación del 4 de octubre", texto: "Hablamos de la prueba de cálculo y de armar un plan de estudio.", fecha: dia(4, 21, 0), editable: false },
+                    ],
+                  };
+                  break;
+                case "memoria-buscar":
+                  datos = [];
+                  break;
+                case "grabaciones-listar":
+                  datos = { transcripciones: sim.transcripciones, audios: sim.audios, diasAudio: sim.diasAudio };
+                  break;
+                case "grabacion-ver":
+                  datos = { texto: TEXTO, recortado: false };
+                  break;
+                case "grabacion-borrar": {
+                  const lista = pedido.que === "audio" ? "audios" : "transcripciones";
+                  const antes = sim[lista].length;
+                  sim[lista] = pedido.grabacion === null ? [] : sim[lista].filter((x) => x.id !== pedido.grabacion);
+                  datos = { borradas: antes - sim[lista].length };
+                  break;
+                }
+              }
+              setTimeout(() => emitir("puente", JSON.stringify({ tipo: "respuesta", id: pedido.id, ok: true, datos })), 80);
+              return null;
+            }
+            default:
+              return null;
+          }
+        },
+      };
+    </script>
+    <script type="module" src="/src/memoria.ts"></script>
+    <script>
+      addEventListener("load", () => {
+        const q = parametros.get("busca");
+        if (q) setTimeout(() => { const b = document.querySelector("#buscar"); b.value = q; b.dispatchEvent(new Event("input")); }, 600);
+      });
+    </script>
+  </head>
+  <body>
+    <header class="cabecera">
+      <div>
+        <h1>Lo que sé de ti 🌱</h1>
+        <p class="bajada">Todo lo que Brote recuerda. Puedes corregirlo u olvidarlo.</p>
+      </div>
+      <div class="cabecera-derecha">
+        <span class="sin-ia" id="sin-ia" hidden></span>
+        <button type="button" class="enlace" id="configurar">⚙︎ Configurar</button>
+      </div>
+    </header>
+    <input class="buscar" id="buscar" type="search" placeholder="Buscar en lo que sé de ti (ej.: notebook)" autocomplete="off" />
+    <div class="tema" id="tema" hidden>
+      <span id="tema-texto"></span>
+      <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+    </div>
+    <p class="aviso" id="aviso" hidden></p>
+    <main id="secciones" aria-live="polite"></main>
+    <footer class="pie">
+      <p id="pie-olvidar"></p>
+      <button type="button" class="boton" id="nueva">Empezar conversación nueva</button>
+    </footer>
+  </body>
+</html>

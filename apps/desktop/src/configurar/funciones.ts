@@ -21,6 +21,7 @@ function nombrePermiso(funcion: Funcion): string {
   if (!funcion.permiso) return "No pide permisos de macOS.";
   const permiso = PERMISOS.find((p) => p.id === funcion.permiso)!;
   if (funcion.id === "calendario") return "macOS pide permiso de Calendarios (solo si usas el Calendario del Mac).";
+  if (funcion.id === "grabaciones") return "macOS pide permiso del Micrófono la primera vez que grabas (nunca antes).";
   if (funcion.id === "musica") return "macOS pide permiso de Automatización la primera vez que Spotify o Música están abiertos.";
   return `macOS pide permiso: ${permiso.nombre}.`;
 }

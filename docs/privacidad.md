@@ -38,6 +38,7 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 
 ## Cómo borrar tus datos
 
+- **Grabaciones y transcripciones**: Lo que sé de ti → Grabaciones. Ahí ves cada transcripción (fecha, duración, si avisaste a los presentes) y su texto, ves los audios que esperan borrarse, y puedes borrar de a una o con «Borrar todo». En Mac van a la Papelera (siguen en tu disco hasta que la vacíes); en Windows y Linux se borran para siempre. Esa lista sale aunque apagues Grabar y transcribir: lo ya guardado es tuyo.
 - **Lo que Brote recuerda**: Lo que sé de ti → Olvidar (o "olvidar todo sobre «tema»"). En Mac va a la Papelera y sigue en tu disco hasta que la vacíes; en Windows se borra de inmediato.
 - **Todo lo de Brote**: cierra la app y borra `~/.asistente-prototipo`. La memoria y los registros de OpenClaw están en `~/.openclaw` y se borran aparte (o desinstalando OpenClaw).
 - **Lo que quedó en cada empresa**: se borra desde tu cuenta de esa empresa (Claude, Google, etc.), no desde Brote.
@@ -45,12 +46,12 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 ## Voces de otras personas (grabaciones)
 
 Una clase o una reunión grabada tiene la voz, y a veces datos personales, de gente que no usa Brote. Por eso:
-Brote graba solo cuando tú lo inicias (con el botón 🎙 de la isla) y para cuando tú lo detienes, o a las 3 horas;
+Brote graba solo cuando tú lo inicias (con el botón 🎙 de la isla o diciendo «graba esta clase»: en los dos casos antes te pregunta si avisaste a los presentes, siempre) y para cuando tú lo detienes, o a las 3 horas;
 nunca por su cuenta, ni siquiera si el calendario dice que tienes clase. Mientras graba hay un punto rojo en la
 isla y junto al 🌱 de la barra de menú. La captura la hace la propia app (no una página web), así que el permiso
 del micrófono es de Brote: macOS lo pide la primera vez que grabas, y lo puedes quitar en Ajustes del Sistema →
 Privacidad y seguridad → Micrófono. En Windows no hay un aviso por app, solo el interruptor general del micrófono.
-Si no llega sonido, Brote te lo dice. Te pregunta **en cada grabación** si avisaste a los presentes (sí, no o
+Si no llega sonido, Brote te lo dice, y si macOS negó el permiso, el error trae un botón para abrir Privacidad. En Configurar Brote → Permisos el Micrófono aparece como «No se puede saber»: Brote no abre el micrófono para averiguarlo. Te pregunta **en cada grabación** si avisaste a los presentes (sí, no o
 «solo mi voz») y lo anota en la transcripción (`avisoAPresentes`). El audio se conserva **7 días** (puedes cambiarlo)
 y después se borra; la transcripción, no, hasta que tú la borres. Todo en claro, con permisos de tu usuario:
 cifra el disco. Brote no da asesoría legal ni firma por ti: avisar o pedir permiso es cosa tuya, y conviene que

@@ -7,6 +7,8 @@ import { after, beforeEach, describe, it } from "node:test";
 import {
   audiosVencidos,
   borrarAudiosVencidos,
+  borrarGrabacion,
+  borrarTodasLasGrabaciones,
   guardarTranscripcion,
   leerTranscripcionGuardada,
   listarAudios,
@@ -158,5 +160,72 @@ describe("borrado de audios vencidos", () => {
     llenar();
     assert.deepEqual(borrarAudiosVencidos(7, ahora, audios), ["2026-10-01-080000"]);
     assert.deepEqual(listarAudios(audios).map((a) => a.id), ["2026-10-09-230000", "2026-10-03-120001", "2026-10-03-120000"]);
+  });
+});
+
+describe("borrar desde «Lo que sé de ti»", () => {
+  it("borra una transcripción por su id exacto y deja las demás", () => {
+    guardarTranscripcion(armar("2026-10-01-080000"), textos);
+    guardarTranscripcion(armar("2026-10-02-080000"), textos);
+    const { rutas, eliminar } = espia();
+    assert.equal(borrarGrabacion("transcripcion", "2026-10-01-080000", textos, eliminar), true);
+    assert.deepEqual(rutas, [join(textos, "2026-10-01-080000.md")]);
+  });
+
+  it("borra un audio y no una transcripción con el mismo id", () => {
+    writeFileSync(join(audios, "2026-10-01-080000.wav"), "x");
+    writeFileSync(join(audios, "2026-10-01-080000.md"), "x");
+    const { rutas, eliminar } = espia();
+    assert.equal(borrarGrabacion("audio", "2026-10-01-080000", audios, eliminar), true);
+    assert.deepEqual(rutas, [join(audios, "2026-10-01-080000.wav")]);
+  });
+
+  it("rechaza ids que no son exactos (rutas, comodines, extensiones)", () => {
+    writeFileSync(join(textos, "2026-10-01-080000.md"), "x");
+    const { rutas, eliminar } = espia();
+    for (const id of ["../2026-10-01-080000", "2026-10-01-080000.md", "*", "", "2026-10-01-08000", "2026-10-01-080000/", "/etc/passwd", "2026-10-01-080000\0"]) {
+      assert.equal(borrarGrabacion("transcripcion", id, textos, eliminar), false, id);
+    }
+    assert.deepEqual(rutas, []);
+  });
+
+  it("no borra enlaces simbólicos ni carpetas con ese nombre", () => {
+    writeFileSync(join(RAIZ, "secreto.md"), "no me toques");
+    symlinkSync(join(RAIZ, "secreto.md"), join(textos, "2026-10-01-080000.md"));
+    mkdirSync(join(textos, "2026-10-02-080000.md"));
+    const { rutas, eliminar } = espia();
+    assert.equal(borrarGrabacion("transcripcion", "2026-10-01-080000", textos, eliminar), false);
+    assert.equal(borrarGrabacion("transcripcion", "2026-10-02-080000", textos, eliminar), false);
+    assert.deepEqual(rutas, []);
+    assert.equal(existsSync(join(RAIZ, "secreto.md")), true);
+  });
+
+  it("un archivo que no existe devuelve false sin lanzar", () => {
+    assert.equal(borrarGrabacion("audio", "2026-10-01-080000", audios, espia().eliminar), false);
+  });
+
+  it("si eliminar falla, devuelve false y no lanza", () => {
+    guardarTranscripcion(armar("2026-10-01-080000"), textos);
+    assert.equal(borrarGrabacion("transcripcion", "2026-10-01-080000", textos, () => { throw new Error("no se pudo"); }), false);
+  });
+
+  it("«borrar todo» borra solo los archivos exactos de ese tipo, uno por uno", () => {
+    guardarTranscripcion(armar("2026-10-01-080000"), textos);
+    guardarTranscripcion(armar("2026-10-02-080000"), textos);
+    writeFileSync(join(textos, "notas.md"), "mías");
+    writeFileSync(join(textos, "2026-10-03-080000.wav"), "x");
+    const { rutas, eliminar } = espia();
+    assert.deepEqual(borrarTodasLasGrabaciones("transcripcion", textos, eliminar).sort(), ["2026-10-01-080000", "2026-10-02-080000"]);
+    assert.deepEqual(rutas.sort(), [join(textos, "2026-10-01-080000.md"), join(textos, "2026-10-02-080000.md")]);
+  });
+
+  it("«borrar todo» de una carpeta que no existe no hace nada", () => {
+    assert.deepEqual(borrarTodasLasGrabaciones("audio", join(RAIZ, "no-existe"), espia().eliminar), []);
+  });
+
+  it("borrado real en carpeta temporal (no Mac): el archivo desaparece", { skip: process.platform === "darwin" }, () => {
+    guardarTranscripcion(armar("2026-10-01-080000"), textos);
+    assert.equal(borrarGrabacion("transcripcion", "2026-10-01-080000", textos), true);
+    assert.equal(existsSync(join(textos, "2026-10-01-080000.md")), false);
   });
 });

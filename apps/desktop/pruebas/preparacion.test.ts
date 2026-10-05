@@ -58,6 +58,18 @@ describe("permisos de macOS", () => {
     assert.equal(sinMusica.find((f) => f.id === "automatizacion")!.sobra, true);
   });
 
+  it("el micrófono no se puede saber sin pedirlo: se explica y nunca figura como dado ni negado", () => {
+    const lectura = { descargas: "sin-usar", automatizacion: {}, calendarios: "concedido" } as const;
+    const con = filasPermisos({ ...activasDePreset("todo"), grabaciones: true }, lectura).find((f) => f.id === "microfono")!;
+    assert.deepEqual(con.usadoPor.map((f) => f.id), ["grabaciones"]);
+    assert.equal(con.estado, "no-se-sabe");
+    assert.equal(con.falta, false);
+    assert.equal(con.sobra, false);
+    const sin = filasPermisos({ ...activasDePreset("todo"), grabaciones: false }, lectura).find((f) => f.id === "microfono")!;
+    assert.equal(sin.sobra, true);
+    assert.equal(filasPermisos(activasDePreset("todo"), null).find((f) => f.id === "microfono")!.estado, "no-se-sabe");
+  });
+
   it("el permiso de Calendarios sale del paso del Calendario del Mac", () => {
     assert.equal(permisoCalendarioDePaso([ok("calendario-mac")]), "concedido");
     assert.equal(

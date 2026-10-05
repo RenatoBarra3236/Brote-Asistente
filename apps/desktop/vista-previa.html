@@ -3,7 +3,7 @@
   Vista previa de la isla en un navegador, para trabajar el diseño sin abrir la app: simula Tauri y
   el puente con datos de ejemplo (pomodoro, calendario, entregas del aula, música, una descarga y una
   sesión de Claude Code). Con `tauri dev` (o `pnpm dev`) corriendo: http://localhost:1420/vista-previa.html
-  Parámetros: ?pestana=brote|chat|claude|equipo (chat = la pestaña Brote con una pregunta enviada: las
+  Parámetros: ?pestana=brote|chat|claude|equipo|grabar (&grabaciones=sin: sin nada guardado; &abrir=audio|texto: deja una fila abierta; &transcribir=1: toca «Transcribir») (chat = la pestaña Brote con una pregunta enviada: las
   tarjetas se encogen a píldoras) · ?permiso=1 (Brote pide permiso) · ?cerrada=1 (sin abrir la isla) · ?aviso=descarga|calendario|claude|plata (un aviso sin abrir la isla) ·
   ?vacia=1 (sin datos) · ?plataforma=windows (la isla de Windows, con su notch simulado) · ?modo=flotante (la ventana flotante, que ya no es la de Windows) · ?ocultas=musica,descargas (tarjetas
   ocultas en Configurar Brote) · ?apagadas=equipo,programador (funciones apagadas) · ?plan=con|sin|sin-statusline|limite|app|reiniciado
@@ -284,10 +284,32 @@
                   window.__plata.presupuesto(pedido.monto);
                   emitir({ tipo: "plata", plata: window.__plata.estado() });
                   return responder(id, { datos: window.__plata.estado() });
-                case "transcribir":
-                  // El puente acepta, transcribe en segundo plano y avisa; aquí avisa a los 3 s.
-                  setTimeout(() => emitir({ tipo: "transcripcion", id: pedido.grabacion, fase: "lista", texto: "🎙 Tu transcripción está lista (12:34)" }), 3000);
-                  return responder(id, { datos: { pendientes: [pedido.grabacion] } });
+                case "transcribir": {
+                  // El puente acepta, transcribe en segundo plano y avisa: en cola → transcribiendo → lista.
+                  const g = pedido.grabacion;
+                  emitir({ tipo: "transcripcion", id: g, fase: "en-cola", texto: "" });
+                  setTimeout(() => emitir({ tipo: "transcripcion", id: g, fase: "transcribiendo", texto: "" }), 600);
+                  setTimeout(() => {
+                    const a = window.__grabar.audios.find((x) => x.id === g);
+                    if (a) a.transcrito = true;
+                    if (!window.__grabar.transcripciones.some((x) => x.id === g)) window.__grabar.transcripciones.unshift({ id: g, fecha: a?.fecha ?? null, duracionSeg: 600, avisoAPresentes: "si", modelo: "small" });
+                    emitir({ tipo: "transcripcion", id: g, fase: "lista", texto: "🎙 Tu transcripción está lista (10:00)" });
+                  }, 3500);
+                  return responder(id, { datos: { pendientes: [g] } });
+                }
+                // Las listas de la pestaña Grabar (?grabaciones=sin: vacías). Datos inventados.
+                case "grabaciones-listar":
+                  return responder(id, { datos: window.__grabar });
+                case "grabacion-aviso":
+                  return responder(id, { datos: {} });
+                case "grabacion-ver":
+                  return responder(id, { datos: { texto: "[00:00:00] Buenos días, hoy vemos derivadas y la regla de la cadena.\n[00:00:07] Recuerden que la prueba es el jueves 15.\n(texto de ejemplo, inventado)", recortado: false } });
+                case "grabacion-borrar": {
+                  const lista = pedido.que === "audio" ? "audios" : "transcripciones";
+                  const antes = window.__grabar[lista].length;
+                  window.__grabar[lista] = window.__grabar[lista].filter((x) => x.id !== pedido.grabacion);
+                  return responder(id, { datos: { borradas: antes - window.__grabar[lista].length } });
+                }
                 case "especialistas-estado":
                   return responder(id, { datos: { lista: [], frenado: parametros.has("freno") } });
                 case "enviar":
@@ -481,17 +503,43 @@
         };
       };
 
+      // Lo guardado en la pestaña Grabar (inventado; con ?grabaciones=sin no hay nada).
+      {
+        const d = (dia, h, m) => new Date(2026, 9, dia, h, m, 0).toISOString();
+        const hay = parametros.get("grabaciones") !== "sin";
+        window.__grabar = {
+          diasAudio: 7,
+          audios: hay
+            ? [
+                { id: "2026-10-05-103000", fecha: d(5, 10, 30), bytes: 159_360_000, venceEn: d(12, 10, 30), vencido: false, transcrito: false },
+                { id: "2026-10-03-143000", fecha: d(3, 14, 30), bytes: 76_800_000, venceEn: d(10, 14, 30), vencido: false, transcrito: true },
+                { id: "2026-10-02-080000", fecha: d(2, 8, 0), bytes: 19_200_000, venceEn: d(9, 8, 0), vencido: false, transcrito: false },
+              ]
+            : [],
+          transcripciones: hay ? [{ id: "2026-10-03-143000", fecha: d(3, 14, 30), duracionSeg: 2400, avisoAPresentes: "solo-mi-voz", modelo: "small" }] : [],
+        };
+      }
+
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.
       const pestana = parametros.get("pestana");
       if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
-          const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", claude: "Claude", equipo: "Equipo" };
+          const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", grabar: "Grabar", claude: "Claude", equipo: "Equipo" };
           if (pestana === "chat" || parametros.has("permiso") || parametros.has("delegar")) {
             const entrada = document.querySelector(".entrada");
             entrada.value = parametros.has("delegar") ? "Pídele al equipo que me ayude a estudiar la fotosíntesis" : "¿cuánto llevo esta semana?";
             entrada.dispatchEvent(new Event("input"));
             document.querySelector(".formulario").requestSubmit();
           } else document.querySelector(`.pestana[title="${titulos[pestana]}"]`)?.click();
+          // ?pestana=grabar&abrir=audio|texto[&transcribir=1]
+          const abrir = parametros.get("abrir");
+          if (pestana === "grabar" && abrir) {
+            setTimeout(() => {
+              if (abrir === "texto") document.querySelectorAll(".grabar-sub")[1]?.click();
+              setTimeout(() => document.querySelector(".grabar-cabeza")?.click(), 150);
+              if (parametros.has("transcribir")) setTimeout(() => document.querySelector(".grabar-acciones .boton-fila")?.click(), 400);
+            }, 400);
+          }
         }, 1500);
       }
     </script>

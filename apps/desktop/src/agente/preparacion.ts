@@ -102,7 +102,7 @@ export function necesitaAsistente(pasos: readonly Paso[], hayFunciones: boolean)
 
 // ---------------------------------------------------------------- permisos de macOS
 
-export type EstadoPermiso = "concedido" | "negado" | "sin-preguntar" | "sin-usar";
+export type EstadoPermiso = "concedido" | "negado" | "sin-preguntar" | "sin-usar" | "no-se-sabe";
 
 /** Lo que el puente sabe de los permisos (pedido `permisos-estado`), solo por lecturas ya hechas. */
 export interface LecturaPermisos {
@@ -120,6 +120,7 @@ export const PERMISOS: readonly { id: PermisoMac; nombre: string; donde: string;
     enlace: "privacidad-automatizacion",
   },
   { id: "descargas", nombre: "Carpeta Descargas", donde: "Privacidad y seguridad → Archivos y carpetas → Brote", enlace: "privacidad-descargas" },
+  { id: "microfono", nombre: "Micrófono", donde: "Privacidad y seguridad → Micrófono → Brote", enlace: "privacidad-microfono" },
 ];
 
 export interface FilaPermiso {
@@ -141,6 +142,8 @@ export interface FilaPermiso {
 
 /** El estado de un permiso a partir de lo que vio el puente (`null`: el puente no respondió). */
 export function estadoPermiso(id: PermisoMac, lectura: LecturaPermisos | null): EstadoPermiso {
+  // El micrófono no se puede mirar sin abrirlo (y abrirlo pide el permiso): se explica, nunca se pide solo.
+  if (id === "microfono") return "no-se-sabe";
   if (!lectura) return "sin-usar";
   if (id === "calendarios") return lectura.calendarios;
   if (id === "descargas") return lectura.descargas;
@@ -164,7 +167,7 @@ export function filasPermisos(activas: Record<IdFuncion, boolean>, lectura: Lect
   return PERMISOS.map((p) => {
     const usadoPor = FUNCIONES.filter((f) => f.permiso === p.id && activas[f.id]);
     const estado = estadoPermiso(p.id, lectura);
-    const sobra = usadoPor.length === 0 && (estado === "concedido" || estado === "sin-usar");
+    const sobra = usadoPor.length === 0 && (estado === "concedido" || estado === "sin-usar" || estado === "no-se-sabe");
     return { ...p, usadoPor, estado, sobra, falta: estado === "negado" && usadoPor.length > 0 };
   });
 }

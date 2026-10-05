@@ -19,6 +19,8 @@ import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
 import { MENSAJE_APAGADA, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
 import { describirPlan, describirReinicio, type LecturaPlan } from "./plan.ts";
 import { describirUso, type ResumenUso } from "./uso.ts";
+import { TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, type AccionGrabar } from "./grabaciones-frases.ts";
+import type { CabeceraTranscripcion } from "./transcripciones.ts";
 import { describirHoy, describirPresupuestoPuesto, describirQueda, presupuestoDelMes, type PresupuestoMes } from "./plata.ts";
 
 export interface Resultado {
@@ -59,7 +61,8 @@ export type Accion =
   | { intencion: "aula-entregas" | "aula-semana" }
   | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" }
   | { intencion: "presupuesto-poner"; monto: number }
-  | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" };
+  | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" }
+  | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" };
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -114,6 +117,11 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "presupuesto-quitar":
     case "presupuesto-queda":
     case "presupuesto-hoy":
+    case "grabar-iniciar":
+    case "grabar-detener":
+    case "grabar-estado":
+    case "transcripciones-ver":
+    case "transcripciones-hoy":
       return { intencion };
     case "presupuesto-poner": {
       const monto = ranuras.monto === undefined ? null : leerMonto(ranuras.monto);
@@ -158,6 +166,7 @@ export class Motor {
   private readonly aula: (() => Entrega[] | null) | null;
   private readonly activa: (funcion: IdFuncion) => boolean;
   private readonly uso: (() => UsoClaude) | null;
+  private readonly transcripciones: (() => CabeceraTranscripcion[]) | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -184,9 +193,12 @@ export class Motor {
       activa?: (funcion: IdFuncion) => boolean;
       /** El plan de Claude y el uso por tokens (lo mantiene el puente). */
       uso?: () => UsoClaude;
+      /** Las transcripciones guardadas, de la más nueva a la más vieja (solo la cabecera). */
+      transcripciones?: () => CabeceraTranscripcion[];
     } = {},
   ) {
     this.uso = opciones.uso ?? null;
+    this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
     this.aula = opciones.aula ?? null;
     this.crearEvento = opciones.crearEvento ?? null;
@@ -237,6 +249,18 @@ export class Motor {
           : accion.intencion === "plan-uso"
             ? describirPlan(plan, ahora, statusline)
             : describirReinicio(plan, ahora, statusline);
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto };
+    }
+    if (accion.intencion === "grabar-iniciar" || accion.intencion === "grabar-detener" || accion.intencion === "grabar-estado") {
+      // La captura es de Rust y de la ventana: aquí solo se pide. La isla pregunta "¿avisaste?" antes de grabar.
+      const grabar: AccionGrabar = accion.intencion === "grabar-iniciar" ? "iniciar" : accion.intencion === "grabar-detener" ? "detener" : "estado";
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: TEXTO_GRABAR[grabar], datos: { grabar } };
+    }
+    if (accion.intencion === "transcripciones-ver" || accion.intencion === "transcripciones-hoy") {
+      if (!this.transcripciones) return null;
+      const lista = this.transcripciones();
+      const ahora = this.reloj();
+      const texto = accion.intencion === "transcripciones-ver" ? describirTranscripciones(lista, ahora) : describirGrabadoHoy(lista, ahora);
       return { intencion: accion.intencion, plantilla: plantilla.id, texto };
     }
     if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {

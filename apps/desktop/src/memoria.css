@@ -275,3 +275,44 @@ h3 {
 .pie .boton {
   flex: none;
 }
+
+/* Sección «Grabaciones» (sección 8 del plan): transcripciones y audios que esperan borrarse. */
+.seccion-grabaciones .subtitulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 6px;
+  color: var(--suave);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.seccion-grabaciones .subtitulo .boton {
+  font-size: 11px;
+}
+
+.grabacion .meta {
+  margin: 0;
+  color: var(--suave);
+  font-size: 12px;
+}
+
+.grabacion .texto-grabacion {
+  max-height: 220px;
+  margin: 8px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.grabacion.vencido h3::after {
+  content: " · vencido";
+  color: var(--peligro);
+  font-weight: 500;
+}

@@ -1661,3 +1661,142 @@ button.tarjeta:hover {
 .tarjeta.calendario {
   cursor: pointer;
 }
+
+/* Grabar: el micrófono y las listas de grabaciones y transcripciones. */
+.vista-grabar {
+  gap: 8px;
+}
+.grabar-nueva,
+.grabar-sub,
+.grabar-cabeza {
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.grabar-cabeza {
+  background: transparent;
+}
+.grabar-nueva {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 69, 58, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 69, 58, 0.32);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.grabar-nueva:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.24);
+}
+.grabar-nueva:disabled {
+  opacity: 0.55;
+}
+.grabar-nueva.ocupada .grabar-nueva-punto {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--rojo);
+  animation: latido-grabacion 1.2s ease-in-out infinite;
+}
+.grabar-subs {
+  display: flex;
+  gap: 4px;
+}
+.grabar-sub {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--texto-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.grabar-sub.activa {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.grabar-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.grabar-fila {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.grabar-fila.abierta {
+  background: rgba(255, 255, 255, 0.09);
+}
+.grabar-cabeza {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  color: #fff;
+  font-size: 11px;
+  text-align: left;
+}
+.grabar-titulo {
+  font-weight: 600;
+}
+.grabar-meta {
+  color: var(--texto-2);
+  font-size: 11px;
+}
+.grabar-chip {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--texto-2);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.grabar-chip.transcrita {
+  background: rgba(99, 214, 138, 0.18);
+  color: rgb(132, 226, 160);
+}
+.grabar-chip.en-cola,
+.grabar-chip.transcribiendo {
+  background: rgba(122, 178, 255, 0.18);
+  color: rgb(150, 195, 255);
+}
+.grabar-chip.error {
+  background: rgba(255, 196, 0, 0.16);
+  color: rgb(255, 222, 130);
+}
+.grabar-acciones {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.grabar-acciones .grabar-meta {
+  margin-right: auto;
+}
+.grabar-acciones .peligro {
+  color: var(--rojo);
+}
+.grabar-acciones .peligro.confirmando {
+  background: var(--rojo);
+  color: #fff;
+}
+.grabar-texto {
+  max-height: 130px;
+  margin: 0 10px 6px;
+  padding: 7px 8px;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--texto-2);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

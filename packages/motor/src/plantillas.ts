@@ -48,7 +48,12 @@ export type Intencion =
   | "presupuesto-poner"
   | "presupuesto-quitar"
   | "presupuesto-queda"
-  | "presupuesto-hoy";
+  | "presupuesto-hoy"
+  | "grabar-iniciar"
+  | "grabar-detener"
+  | "grabar-estado"
+  | "transcripciones-ver"
+  | "transcripciones-hoy";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora";
 
@@ -217,6 +222,7 @@ const ACTIVIDAD = "clase|reunion|evento|prueba|actividad|ayudantia|cita";
 const MUSICA = "musica|cancion|tema|spotify";
 const ENTREGABLES = "entregas|tareas|trabajos|informes";
 const PLAN = "plan|limite|limites";
+const GRABABLE = "clase|reunion|charla|conferencia|ayudantia|catedra|exposicion|sesion";
 const CUANTO = "cuanto (he gastado|hemos gastado|gaste|gastamos|llevo gastado|llevo|gasto)";
 
 /** Las plantillas que trae la app. El orden importa: gana la primera que calza y se puede interpretar. */
@@ -335,4 +341,13 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "aula-entregas-mis", intencion: "aula-entregas", patron: "[(muestrame|ver|dame)] [mis] [proximas] entregas [pendientes]" },
   { id: "aula-entregar", intencion: "aula-entregas", patron: `(que|que cosas|cuales) [(${ENTREGABLES})] tengo que entregar` },
   { id: "aula-falta", intencion: "aula-entregas", patron: "que me falta entregar" },
+  // Grabar y transcribir. El motor no graba: la isla hace lo mismo que el botón 🎙 (y pregunta si avisaste).
+  { id: "grabar-esta", intencion: "grabar-iniciar", patron: `(graba|grabame|grabar) (esta|la|mi|esta misma) (${GRABABLE})` },
+  { id: "grabar-empieza", intencion: "grabar-iniciar", patron: "(empieza|empezar|inicia|iniciar|comienza|comenzar|arranca|arrancar) (a grabar|la grabacion|una grabacion)" },
+  { id: "grabar-quiero", intencion: "grabar-iniciar", patron: `(quiero|voy a|necesito) grabar (esta|la|mi) (${GRABABLE})` },
+  { id: "grabar-para", intencion: "grabar-detener", patron: "(para|parar|deten|detener|termina|terminar|finaliza|finalizar|corta|cortar|cancela|cancelar) [la|mi|esta] grabacion" },
+  { id: "grabar-deja", intencion: "grabar-detener", patron: "(deja|dejar|para|parar|ya no|termina|terminar) de grabar" },
+  { id: "grabar-estado", intencion: "grabar-estado", patron: "(estoy|estas|esta|sigo|seguimos|estamos) grabando" },
+  { id: "transcripciones-ver", intencion: "transcripciones-ver", patron: "[(muestrame|ver|dame|lista|listame|revisa)] [mis|las] [ultimas] (transcripciones|grabaciones)" },
+  { id: "transcripciones-hoy", intencion: "transcripciones-hoy", patron: "(que|cuales) (grabe|he grabado|transcripciones tengo|grabaciones tengo|transcribi|he transcrito) hoy" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

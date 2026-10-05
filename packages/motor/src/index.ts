@@ -31,6 +31,7 @@ export { ESPECIALISTAS, FRENO_PLAN, IAS, IDS_ESPECIALISTAS, IDS_IAS, MARCA_FIN, 
 export { aplicarPedidoSecretos, fijarSecretos, leerSecretos, versionSecretos, type Secretos } from "./secretos.ts";
 export { MODELOS_WHISPER, MODELO_WHISPER_POR_DEFECTO, FICHAS_MODELOS_WHISPER, COMMIT_MODELOS_WHISPER, HOST_MODELOS_WHISPER, esModeloWhisper, urlModeloWhisper, tamanoDeModelo, duracionDeWav, type ModeloWhisper, type FichaModeloWhisper } from "./modelos-whisper.ts";
 export { AVISOS_A_PRESENTES, DIAS_AUDIO_POR_DEFECTO, IDIOMA_POR_DEFECTO, MAX_DURACION_SEG, PATRON_ARCHIVO_AUDIO, PATRON_ID, fechaDeId, idDeGrabacion, textoConMarcas, type AvisoAPresentes, type Segmento, type Transcribir, type Transcripcion } from "./transcripciones.ts";
-export { borrarAudiosVencidos, carpetaGrabaciones, carpetaTranscripciones, guardarTranscripcion, listarAudios, listarTranscripciones, leerTranscripcionGuardada } from "./transcripciones-archivo.ts";
+export { borrarAudiosVencidos, borrarGrabacion, borrarTodasLasGrabaciones, audiosVencidos, carpetaGrabaciones, carpetaTranscripciones, guardarTranscripcion, listarAudios, listarTranscripciones, leerTranscripcionGuardada } from "./transcripciones-archivo.ts";
 export { leerAjustesGrabaciones, marcaAjustesGrabaciones, rutaAjustesGrabaciones } from "./grabaciones-ajustes.ts";
 export { MAX_DIAS_AUDIO, MIN_DIAS_AUDIO, TEXTO_CONSENTIMIENTO_GRABACIONES, VERSION_CONSENTIMIENTO_GRABACIONES, normalizarAjustesGrabaciones, type AjustesGrabaciones } from "./grabaciones-textos.ts";
+export { MAX_LISTADAS, TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, duracionCorta, type AccionGrabar } from "./grabaciones-frases.ts";

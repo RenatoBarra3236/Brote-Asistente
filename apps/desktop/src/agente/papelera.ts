@@ -22,3 +22,28 @@ export function avisoTemaOlvidado(enMac: boolean, olvidados: number, tema: strin
   const destino = enMac ? " Quedaron en la Papelera hasta que la vacíes." : " Se borraron para siempre.";
   return `Olvidé ${cosas} sobre «${tema}» y empecé una conversación nueva.${destino} 🌱`;
 }
+
+// ---- Grabaciones y transcripciones (sección 8, fase 4) ----
+
+/** Qué es lo que se borra: una transcripción o un audio. */
+export type QueGrabacion = "transcripcion" | "audio";
+
+/** Texto fijo al pie de la sección «Grabaciones». */
+export function pieGrabaciones(enMac: boolean): string {
+  return enMac
+    ? "Lo que borras aquí va a la Papelera: sigue en tu Mac hasta que la vacíes. El audio se borra solo a los días que elijas en Configurar Brote; las transcripciones, no."
+    : "Lo que borras aquí se borra para siempre (no pasa por la Papelera). El audio se borra solo a los días que elijas en Configurar Brote; las transcripciones, no.";
+}
+
+/** Aviso al borrar una o varias grabaciones. */
+export function avisoGrabacionBorrada(enMac: boolean, que: QueGrabacion, cuantas: number): string {
+  if (cuantas === 0) return "No había nada que borrar: ya no estaba.";
+  const cosa = que === "audio" ? (cuantas === 1 ? "el audio" : `${cuantas} audios`) : cuantas === 1 ? "la transcripción" : `${cuantas} transcripciones`;
+  return enMac ? `Borré ${cosa}. Quedó en la Papelera hasta que la vacíes.` : `Borré ${cosa} para siempre.`;
+}
+
+/** Lo que dice el botón «Borrar todo» al pedir el segundo toque. */
+export function confirmarBorrarTodo(que: QueGrabacion, cuantas: number): string {
+  const cosa = que === "audio" ? "audios" : "transcripciones";
+  return `¿Seguro? Se borran ${cuantas} ${cosa}`;
+}

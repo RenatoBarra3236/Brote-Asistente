@@ -36,7 +36,7 @@ export const PESTANA_DE: Record<TipoNovedad, Pestana> = {
   plata: "plata",
   equipo: "brote",
   computador: "equipo",
-  transcripcion: "brote",
+  transcripcion: "grabar",
 };
 
 /** El color del pulso alrededor del notch (rgb): el mismo que usan las tarjetas de cada tema. */

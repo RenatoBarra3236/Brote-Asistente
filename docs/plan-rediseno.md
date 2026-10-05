@@ -183,7 +183,7 @@ con "Acceso completo" (captura del 4-10-2026), porque con `tauri dev` el permiso
 Brote.app empaquetada tiene que pedir y tener el suyo (ver `Info.plist` y el paso "Calendario del Mac" de
 Configurar Brote), y la sección nueva debe explicar qué hacer si falta.
 
-## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; fases 1, 2 y 3 hechas el 5-10-2026; la 3 sin probar con un micrófono real)
+## 8. Grabar y transcribir (conversado y aprobado el 4-10-2026; fases 1 a 4 hechas el 5-10-2026; la 3 sin probar con un micrófono real)
 
 Grabar audio (por ejemplo una clase), transcribirlo y que Brote ayude con el texto: resúmenes y, en la fase 2,
 tareas y fechas para Agenda (sección 7). El proyecto vivirá además en el celular (app Tauri móvil) y en una "casa"
@@ -245,7 +245,7 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
    audio de ejemplo y un `whisper-cli` falso.
 3. **Captura y permiso (hecha el 5-10-2026):** `grabacion.rs` (cpal), `Info.plist`, punto rojo y pregunta de
    consentimiento. Solo se prueba de verdad con `Brote.app` en un Mac.
-4. **Isla y memoria:** botón 🎙, frases sin IA, sección en "Lo que sé de ti", vista previa, `docs/privacidad.md`.
+4. **Isla y memoria (hecha el 5-10-2026):** frases sin IA, sección «Grabaciones» en "Lo que sé de ti" (ver y borrar), botón «Abrir Privacidad» en el error del micrófono, el micrófono en Configurar → Permisos, vistas previas y `docs/privacidad.md`. El botón 🎙 ya venía de la fase 3.
 5. **Fase 2 (B):** tareas y fechas hacia Agenda, con confirmación en la isla.
 
 ### Pruebas pendientes de la fase 1 (anotadas el 5-10-2026, para hacer en un Mac)
@@ -277,7 +277,7 @@ segundo plano → guarda el texto → aviso por Novedades (sin abrir la isla).
 - **Decisiones del usuario sin responder**: (1) ¿se queda el consentimiento obligatorio, sin el cual el puente no transcribe? (2) ¿descargar modelos con el `curl` del sistema (en Windows, `curl.exe`) o sumar una librería HTTP a Rust? (3) quién revisa el texto de consentimiento y de `docs/privacidad.md` antes de repartir Brote.
 - **Sin probar**: descarga real del modelo por Rust (`modelo_descargar`) en `Brote.app`; `small` y velocidad en el M5; grabaciones largas (10 min o más); el botón "Instalar con Homebrew" (`brew-whisper`); borrado a la Papelera real; el aviso de la isla y la notificación del sistema; Windows (`whisper-cli.exe`, `curl.exe`); ver "Pruebas pendientes de la fase 2" arriba.
 - **Cabos sueltos conocidos**: no hay frases sin IA, ni botón 🎙, ni sección en "Lo que sé de ti" (fase 4); nada lanza `transcribir` salvo el pedido al puente; `modelo_borrar` existe en Rust pero ninguna ventana lo usa; el MCP `transcripciones_*` sigue sin probarse bajo OpenClaw (lista de la fase 1); Agenda tiene dos pendientes ajenos (diseño estilo Notion y mensaje cuando falla `agenda-estado`).
-- **Siguiente (5-10-2026)**: la fase 3 está hecha (ver «Pruebas pendientes de la fase 3»); sigue la fase 4 (frases sin IA «graba esta clase», sección en «Lo que sé de ti» con un lugar para borrar transcripciones, y el botón «Abrir Privacidad» en el error del micrófono).
+- **Siguiente (5-10-2026, actualizado al cerrar la fase 4)**: la fase 4 está hecha (ver «Pruebas pendientes de la fase 4»); sigue la fase 5 (tareas y fechas hacia Agenda, con confirmación). Antes: la fase 3 está hecha (ver «Pruebas pendientes de la fase 3»); sigue la fase 4 (frases sin IA «graba esta clase», sección en «Lo que sé de ti» con un lugar para borrar transcripciones, y el botón «Abrir Privacidad» en el error del micrófono).
 
 ### Pruebas pendientes de la fase 3 (anotadas el 5-10-2026, para hacer en un Mac)
 
@@ -296,6 +296,28 @@ y las cinco escenas en la vista previa (Chrome). NUNCA se abrió el micrófono r
 - [ ] Punta a punta: grabar 1 min diciendo una frase, detener, responder «¿avisaste?», y comprobar que `transcripciones/<id>.md` queda con `avisoAPresentes` igual a lo respondido, permisos 600, y que el aviso de la isla dice «Transcribiendo…» y luego «Tu transcripción está lista». Sin la función o sin el consentimiento: el audio queda guardado y el aviso lo explica.
 - [ ] Windows: compilar con `cpal` (WASAPI), el aviso del micrófono (no hay por app), `ms-settings:privacy-microphone`, grabar con el micrófono por defecto y el texto de «no llega sonido». Linux: necesita `libasound2-dev` para compilar; la CI de Linux (si se agrega) debe instalarlo.
 - [ ] Segunda grabación seguida sin cerrar la app y grabar con la ventana de Configurar abierta (los dos comparten el proceso Rust).
+
+### Pruebas pendientes de la fase 4 (anotadas el 5-10-2026, para hacer en un Mac)
+
+Hecho: frases del motor con sus frases de control (`pnpm --dir packages/motor test`), la decisión de la isla (`accionDeFrase`), el borrado con nombres exactos, sin enlaces ni carpetas, en carpeta temporal (motor y adaptador), el pedido del puente de punta a punta con la función apagada (el borrado real se salta en Mac), los textos por plataforma, y las vistas previas en Chrome (`vista-previa-memoria.html`, el error del micrófono, Permisos). Decisiones del usuario: el punto rojo de la barra de menú se queda como `🌱🔴` (a revisar cuando se vea en el Mac); las transcripciones y los audios se borran de a una y con «Borrar todo».
+
+- [ ] Frases con la app real (`Brote.app`): «graba esta clase» abre la pregunta «¿avisaste a los presentes?» y NO graba hasta responderla; «para la grabación» detiene; «¿estoy grabando?» responde; «mis transcripciones» y «¿qué grabé hoy?» listan. Con la función apagada, «graba esta clase» responde «Eso está apagado» y no abre nada. (La vista previa del navegador no pasa por el motor: no se vieron estas frases en la isla.)
+- [ ] Borrar a la Papelera real en Mac, desde «Lo que sé de ti»: una transcripción, un audio y «Borrar todo» de cada tipo, con transcripciones armadas a mano en una carpeta de prueba (`ASISTENTE_TRANSCRIPCIONES` / `ASISTENTE_GRABACIONES` al lanzar la app) — nunca con las grabaciones reales. Comprobar que van a la Papelera de Finder y que el aviso lo dice.
+- [ ] Windows y Linux: el borrado es de verdad (sin Papelera) y los textos dicen «para siempre» (la prueba automática del borrado real corre en Linux; en Windows no se probó).
+- [ ] «Ver el texto» con una transcripción de 3 h real (hasta ~300.000 caracteres): que la ventana no se trabe.
+- [ ] Con la función apagada, la sección Grabaciones sigue mostrando y borrando lo guardado (se probó con el puente real, no con la ventana).
+- [ ] El error de permiso del micrófono con `Brote.app`: el botón «Abrir Privacidad» abre Ajustes del Sistema en Micrófono (en Windows, `ms-settings:privacy-microphone`). La detección del error es por el texto de Rust (`esErrorDePermisoMicrofono`: «permiso» y «micrófono»); si se cambia `explicar` en `grabacion.rs`, revisarla.
+- [ ] Configurar → Permisos → Micrófono: el texto «No se puede saber» y el botón a Privacidad se leen bien en el Mac.
+
+**Pestaña Grabar de la isla (pedido del usuario el 5-10-2026):** el micrófono arriba, y dos listas: «Grabaciones» guardadas (al tocar una sale «Transcribir») y «Transcripciones». Cambia el flujo de la fase 3: detener ya no transcribe solo. Pendiente de probar en un Mac:
+
+- [ ] Grabar → detener → el audio aparece en la pestaña Grabar como «Sin transcribir» y el aviso dice que está ahí (sin transcribir solo).
+- [ ] «Transcribir» con `whisper-cli` y modelo reales: pasa a «En cola», «Transcribiendo…», «Transcrita» y aparece en «Transcripciones» con `avisoAPresentes` igual a lo respondido al grabar (`avisos-grabaciones.json`, permisos 600).
+- [ ] «Transcribir» sin consentimiento aceptado o sin modelo: la fila muestra «No se pudo transcribir» y el aviso explica por qué.
+- [ ] Cerrar la isla mientras transcribe y volver: el estado sigue (hoy se pierde el chip «Transcribiendo…» si se reinicia la app a mitad; el audio sigue sin transcripción).
+- [ ] Ver el texto de una transcripción larga dentro de la fila (130 px con scroll) y borrar con segundo toque (a la Papelera en Mac).
+- [ ] «Copiar» una transcripción en `Brote.app` (isla y «Lo que sé de ti»): pegar en otra app y comprobar que trae el texto completo con marcas de tiempo. En el navegador se probó con Chrome y permisos concedidos; el webview de Tauri en macOS/Windows no.
+- [ ] La pestaña sobre el notch real: con 6 pestañas a la izquierda ya cabe justo en la vista previa; revisar que no choque con el notch.
 
 ### Sin probar hasta tener un Mac (y otros aparatos)
 

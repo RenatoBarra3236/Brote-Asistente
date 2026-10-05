@@ -349,6 +349,18 @@ general de micrófono); celular y casa (solo quedan el contrato y la interfaz, s
    (un brote de planta) deja de calzar. Decidirlo junto con el rediseño; el nombre está en la app, `Brote.app`, los
    textos, la identidad del agente (`IDENTITY.md`/`SOUL.md`), `docs/` y el repo.
 
+4. **Conectar los gastos con los bancos (anotado el 5-10-2026, sin decidir ni empezar).** Hoy los gastos los anota el
+   usuario o el agente; Brote no se conecta a ningún banco. Caminos, de más a menos recomendado:
+   (a) **importar la cartola** que el banco deja descargar (CSV o Excel), en el computador y sin red, con categoría
+   propuesta por el motor: encaja con la privacidad y no depende de nadie (probar solo con cartolas inventadas);
+   (b) un **agregador por API** (Fintoc o Belvo; Fintoc cubre Chile y México, sin tarjetas de crédito según un
+   desarrollador, precio no público y orientado a empresas), solo lectura y con consentimiento propio, si lo piden los
+   usuarios; (c) las **Finanzas Abiertas** de la Ley Fintech 21.521 (NCG 514 y 569 de la CMF), cuyo plazo se
+   postergó a julio de 2027 según las fuentes (confirmar en cmfchile.cl) y que exigen registrarse como proveedor;
+   (d) **no** guardar claves del banco ni hacer scraping. Antes de cualquier agregador: sumarlo a la lista de empresas de
+   `docs/privacidad.md`, no pasar nunca esos datos a especialistas de planes gratuitos y nada de pagos ni
+   transferencias (solo lectura).
+
 ## Orden sugerido
 
 1. Unir a `main` la rama de conectores (`claude/inspiring-clarke-qq0ulj`, con los arreglos de la revisión).

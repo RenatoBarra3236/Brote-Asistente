@@ -65,3 +65,23 @@ export function avisoDocumentoBorrado(enMac: boolean, cuantos: number): string {
 export function confirmarBorrarTodosDocumentos(cuantos: number): string {
   return `¿Seguro? Se borran ${cuantos} documentos`;
 }
+
+// ---- Etiqueta y explicación por tipo de almacenamiento (rediseño de «Lo que sé de ti») ----
+
+/**
+ * Dónde vive lo que guarda una sección: en archivos (en macOS va a la Papelera) o en la base de datos
+ * de Brote (se borra de verdad). En Windows y Linux todo se borra para siempre.
+ */
+export type Almacenamiento = "papelera" | "definitivo";
+
+/** La etiqueta corta que va junto al título de cada sección. */
+export function etiquetaAlmacenamiento(a: Almacenamiento): string {
+  return a === "papelera" ? "🗑 Papelera" : "⚠ Definitivo";
+}
+
+/** Una sola explicación por tipo, al pie de cada grupo (en vez de repetirla en cada sección). */
+export function explicacionAlmacenamiento(a: Almacenamiento): string {
+  return a === "papelera"
+    ? "🗑 Papelera: lo que borras va a la Papelera y sigue en tu Mac hasta que la vacíes. Brote deja de usarlo desde la próxima conversación."
+    : "⚠ Definitivo: se borra para siempre (no pasa por la Papelera). Brote deja de usarlo desde la próxima conversación.";
+}

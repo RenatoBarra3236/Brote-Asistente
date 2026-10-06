@@ -10,7 +10,27 @@ import { NOTA_PLAN_MEMORIA, avisoPlanBorrado, describirPrueba as describirPrueba
 import { describirDocumento, type DocumentoVista } from "./agente/documentos";
 import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
 import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
-import { avisoDocumentoBorrado, confirmarBorrarTodosDocumentos, pieDocumentos, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
+import { avisoDocumentoBorrado, confirmarBorrarTodosDocumentos, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, etiquetaAlmacenamiento, explicacionAlmacenamiento, type QueGrabacion } from "./agente/papelera";
+import {
+  GRUPOS,
+  SECCIONES_DE,
+  almacenamientoDe,
+  almacenamientosDeGrupo,
+  buscaEnElPuente,
+  coincide,
+  lineaDeGrupo,
+  plural,
+  resumenDeClase,
+  simplificar,
+  textoBuscado,
+  textoVacioDeGrupo,
+  textoVer,
+  totalDeGrupo,
+  type Conteos,
+  type GrupoConDatos,
+  type GrupoId,
+  type SeccionId,
+} from "./agente/memoria-vista";
 import {
   textoAviso,
   textoCopiado,
@@ -18,7 +38,6 @@ import {
   textoFecha,
   textoTamano,
   textoVencimiento,
-  totalGrabaciones,
   type Grabaciones,
   type ItemAudio,
   type ItemTranscripcion,
@@ -49,12 +68,14 @@ interface Memoria {
   sinIA: number;
 }
 
-const SECCIONES: { tipo: TipoRecuerdo | "frases"; titulo: string; nota?: string; vacio: string }[] = [
-  { tipo: "brote", titulo: "Lo que me contaste", vacio: "Todavía no guardo nada de lo que me has contado." },
-  { tipo: "frases", titulo: "Frases que aprendí", vacio: "Aún no aprendo frases nuevas." },
-  { tipo: "conversacion", titulo: "Conversaciones guardadas", vacio: "No hay conversaciones guardadas." },
+/** Las cuatro secciones del grupo «Brote recuerda»; las demás las arma cada `seccion…` de más abajo. */
+const SECCIONES: { tipo: TipoRecuerdo | "frases"; seccion: SeccionId; titulo: string; nota?: string; vacio: string }[] = [
+  { tipo: "brote", seccion: "brote", titulo: "Lo que me contaste", vacio: "Todavía no guardo nada de lo que me has contado." },
+  { tipo: "frases", seccion: "frases", titulo: "Frases que aprendí", vacio: "Aún no aprendo frases nuevas." },
+  { tipo: "conversacion", seccion: "conversacion", titulo: "Conversaciones guardadas", vacio: "No hay conversaciones guardadas." },
   {
     tipo: "importado",
+    seccion: "importado",
     titulo: "De otros proyectos",
     nota: "OpenClaw copió estas memorias de tus proyectos de Claude Code al instalarse. Olvidarlas no toca tus proyectos.",
     vacio: "No hay memorias importadas.",
@@ -70,7 +91,7 @@ const puente = new TransportePuente();
 const secciones = document.querySelector<HTMLElement>("#secciones")!;
 const aviso = document.querySelector<HTMLParagraphElement>("#aviso")!;
 const sinIA = document.querySelector<HTMLSpanElement>("#sin-ia")!;
-const nueva = document.querySelector<HTMLButtonElement>("#nueva")!;
+const nav = document.querySelector<HTMLElement>("#nav")!;
 const buscar = document.querySelector<HTMLInputElement>("#buscar")!;
 const tema = document.querySelector<HTMLDivElement>("#tema")!;
 const temaTexto = document.querySelector<HTMLSpanElement>("#tema-texto")!;
@@ -95,6 +116,13 @@ let documentosGuardados: DocumentoVista[] | null = null;
 let grabaciones: Grabaciones | null = null;
 /** Lo que se está buscando y los ids que lo mencionan (según el contenido completo, que ve el puente). */
 let filtro = "";
+/** Lo que se busca en títulos y nombres ya cargados (simplificado; vacío = sin búsqueda). */
+let buscado = "";
+/** El grupo que se está viendo y qué secciones están abiertas (se recuerda entre repintados). */
+let grupoActual: GrupoId = "resumen";
+const abiertas = new Map<string, boolean>();
+/** Qué filas resumidas tienen su «Ver» abierto (para no cerrarlo al borrar una cosa de adentro). */
+const detallesAbiertos = new Set<string>();
 let coincidencias: Set<string> | null = null;
 
 function crear<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase?: string, texto?: string): HTMLElementTagNameMap[K] {
@@ -219,6 +247,80 @@ function tarjetaFrase(frase: Frase): HTMLElement {
   return tarjeta;
 }
 
+
+// ---- Secciones plegables ----
+
+/** Una sección con su cuenta, la etiqueta de cómo se borra (Papelera o definitivo) y su nota detrás de un ⓘ. */
+function envolver(id: SeccionId, titulo: string, cuenta: string, nota: string | undefined, hijos: Node[]): HTMLElement {
+  const detalle = crear("details", "seccion");
+  detalle.dataset.seccion = id;
+  detalle.open = buscado !== "" || abiertas.get(id) === true;
+  const resumen = crear("summary");
+  resumen.append(crear("span", undefined, titulo), crear("span", "cuenta", cuenta));
+  const almacen = almacenamientoDe(id, EN_MAC);
+  const etiqueta = crear("span", `etiqueta-borrado ${almacen}`, etiquetaAlmacenamiento(almacen));
+  const contenido: Node[] = [];
+  if (nota) {
+    const parrafo = crear("p", "nota", nota);
+    parrafo.hidden = true;
+    const info = crear("button", "info", "ⓘ");
+    info.type = "button";
+    info.title = "Más sobre esto";
+    info.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      parrafo.hidden = !parrafo.hidden;
+    });
+    resumen.append(info);
+    contenido.push(parrafo);
+  }
+  resumen.append(etiqueta);
+  detalle.addEventListener("toggle", () => {
+    if (buscado === "") abiertas.set(id, detalle.open);
+  });
+  detalle.append(resumen, ...contenido, ...hijos);
+  return detalle;
+}
+
+/** Una fila resumida con «Ver» que despliega el detalle (con sus botones de borrar finos) y su borrar de grupo aparte. */
+function filaConDetalle(clave: string, tarjeta: HTMLElement, detalle: HTMLElement[], botonesGrupo: HTMLElement[]): void {
+  const abierta = buscado !== "" || detallesAbiertos.has(clave);
+  const cuerpo = crear("div", "detalle");
+  cuerpo.append(...detalle);
+  cuerpo.hidden = !abierta;
+  const ver = crear("button", "boton", textoVer(abierta));
+  ver.type = "button";
+  ver.addEventListener("click", () => {
+    cuerpo.hidden = !cuerpo.hidden;
+    ver.textContent = textoVer(!cuerpo.hidden);
+    if (cuerpo.hidden) detallesAbiertos.delete(clave);
+    else detallesAbiertos.add(clave);
+  });
+  const botones = crear("div", "botones reparto");
+  botones.append(ver, ...botonesGrupo);
+  tarjeta.append(botones, cuerpo);
+}
+
+// ---- Brote recuerda ----
+
+function pasaRecuerdo(r: Recuerdo): boolean {
+  if (buscado === "") return true;
+  return coincidencias ? coincidencias.has(r.id) : coincide(buscado, r.titulo, r.texto);
+}
+
+function seccionesBrote(m: Memoria): HTMLElement[] {
+  const hechas: HTMLElement[] = [];
+  for (const { tipo, seccion, titulo, nota, vacio } of SECCIONES) {
+    const tarjetas =
+      tipo === "frases"
+        ? m.frases.filter((f) => coincide(buscado, f.ejemplo)).map(tarjetaFrase)
+        : m.recuerdos.filter((r) => r.tipo === tipo && pasaRecuerdo(r)).map(tarjetaRecuerdo);
+    if (buscado !== "" && tarjetas.length === 0) continue;
+    hechas.push(envolver(seccion, titulo, String(tarjetas.length), nota, tarjetas.length > 0 ? tarjetas : [crear("p", "vacio", vacio)]));
+  }
+  return hechas;
+}
+
 // ---- Ramos (A1 de docs/plan-estudio-y-mejoras.md): ver, desarchivar y borrar ----
 
 async function cargarRamos(): Promise<void> {
@@ -264,13 +366,10 @@ function tarjetaRamo(r: Ramo): HTMLElement {
   return tarjeta;
 }
 
-function seccionRamos(lista: Ramo[]): HTMLElement {
-  const seccion = crear("section", "seccion seccion-ramos");
-  const encabezado = crear("h2", undefined, "Ramos");
-  encabezado.append(crear("span", "cuenta", String(lista.length)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_RAMOS));
-  seccion.append(...(lista.length > 0 ? lista.map(tarjetaRamo) : [crear("p", "vacio", "No tienes ramos guardados.")]));
-  return seccion;
+function seccionRamos(lista: Ramo[]): HTMLElement | null {
+  const filtrados = lista.filter((r) => coincide(buscado, r.nombre, ...r.alias));
+  if (filtrados.length === 0) return null;
+  return envolver("ramos", "Ramos", String(filtrados.length), NOTA_RAMOS, filtrados.map(tarjetaRamo));
 }
 
 // ---- Notas (A2): ver y borrar una evaluación, las de un ramo o todas ----
@@ -285,12 +384,12 @@ async function cargarNotas(): Promise<void> {
 
 function tarjetaNotasRamo(ficha: FichaNotas, ramo: Ramo | undefined): HTMLElement {
   const nombre = ramo?.nombre ?? "Ramo";
-  const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+  const tarjeta = crear("article", `tarjeta ramo resumen-fila${ramo?.archivado ? " archivado" : ""}`);
   if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
   const cabeza = crear("div", "tarjeta-cabeza");
   cabeza.append(crear("h3", undefined, nombre), crear("span", "fecha", ramo?.archivado ? "Archivado" : ""));
-  tarjeta.append(cabeza, crear("p", "meta", resumenNotas(ficha)));
-  for (const e of ficha.evaluaciones) {
+  tarjeta.append(cabeza, crear("p", "meta", `${plural(ficha.evaluaciones.length, "evaluación", "evaluaciones")} · ${resumenNotas(ficha)}`));
+  const filas = ficha.evaluaciones.map((e) => {
     const fila = crear("div", "botones fila-nota");
     fila.append(crear("span", "meta", `${e.nombre} · ${e.peso} % · ${e.nota === null ? "pendiente" : formatearNota(e.nota)}`));
     fila.append(
@@ -301,28 +400,23 @@ function tarjetaNotasRamo(ficha: FichaNotas, ramo: Ramo | undefined): HTMLElemen
         pintarTodo();
       }, "Borrar"),
     );
-    tarjeta.append(fila);
-  }
-  const botones = crear("div", "botones");
-  botones.append(
-    botonOlvidar(async () => {
-      const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "notas-borrar", ramo: ficha.ramoId });
-      mostrarAviso(avisoNotasBorradas(nombre, borradas));
-      await cargarNotas();
-      pintarTodo();
-    }, "Borrar las de este ramo"),
-  );
-  tarjeta.append(botones);
+    return fila;
+  });
+  const borrarRamo = botonOlvidar(async () => {
+    const { borradas } = await puente.consultar<{ borradas: number }>({ tipo: "notas-borrar", ramo: ficha.ramoId });
+    mostrarAviso(avisoNotasBorradas(nombre, borradas));
+    await cargarNotas();
+    pintarTodo();
+  }, "Borrar las de este ramo");
+  filaConDetalle(`notas:${ficha.ramoId}`, tarjeta, filas, [borrarRamo]);
   return tarjeta;
 }
 
-function seccionNotas(datos: { ramos: Ramo[]; fichas: FichaNotas[] }): HTMLElement {
-  const seccion = crear("section", "seccion seccion-ramos");
-  const total = datos.fichas.reduce((n, f) => n + f.evaluaciones.length, 0);
-  const encabezado = crear("h2", undefined, "Notas");
-  encabezado.append(crear("span", "cuenta", String(total)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_NOTAS_MEMORIA));
-  seccion.append(...datos.fichas.map((f) => tarjetaNotasRamo(f, datos.ramos.find((r) => r.id === f.ramoId))));
+function seccionNotas(datos: { ramos: Ramo[]; fichas: FichaNotas[] }): HTMLElement | null {
+  const nombreDe = (f: FichaNotas) => datos.ramos.find((r) => r.id === f.ramoId);
+  const fichas = datos.fichas.filter((f) => coincide(buscado, nombreDe(f)?.nombre, ...f.evaluaciones.map((e) => e.nombre)));
+  if (fichas.length === 0) return null;
+  const total = fichas.reduce((n, f) => n + f.evaluaciones.length, 0);
   const todo = crear("div", "botones");
   todo.append(
     botonOlvidar(async () => {
@@ -332,11 +426,10 @@ function seccionNotas(datos: { ramos: Ramo[]; fichas: FichaNotas[] }): HTMLEleme
       pintarTodo();
     }, "Borrar todas las notas"),
   );
-  seccion.append(todo);
-  return seccion;
+  return envolver("notas", "Notas", String(total), NOTA_NOTAS_MEMORIA, [...fichas.map((f) => tarjetaNotasRamo(f, nombreDe(f))), todo]);
 }
 
-// ---- Repaso (A3): ver y borrar tarjetas, lo de una clase, lo de un ramo o todo ----
+// ---- Repaso (A3): una fila por clase o documento; el detalle y el borrar fino bajo «Ver» ----
 
 async function cargarRepaso(): Promise<void> {
   try {
@@ -353,43 +446,49 @@ async function borrarRepaso(pedido: Record<string, unknown>): Promise<void> {
   pintarTodo();
 }
 
+function tituloDeClase(grabacion: string): string {
+  const nombreDoc = grabacion.startsWith("doc-") ? (documentosGuardados?.find((d) => d.id === grabacion)?.nombre ?? "un documento que ya borraste") : null;
+  return nombreDoc !== null ? `Documento «${nombreDoc}»` : `Clase del ${fechaDeClase(grabacion)}`;
+}
+
 function tarjetaRepasoClase(grabacion: string, datos: NonNullable<typeof repasoGuardado>): HTMLElement {
   const tarjetas = datos.tarjetas.filter((t) => t.grabacion === grabacion);
   const temas = datos.resumenes.filter((r) => r.grabacion === grabacion).flatMap((r) => r.temas);
   const ramoId = tarjetas[0]?.ramoId ?? datos.resumenes.find((r) => r.grabacion === grabacion)?.ramoId ?? null;
   const ramo = datos.ramos.find((r) => r.id === ramoId);
-  const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+  const tarjeta = crear("article", `tarjeta ramo resumen-fila${ramo?.archivado ? " archivado" : ""}`);
   if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
   const cabeza = crear("div", "tarjeta-cabeza");
-  const nombreDoc = grabacion.startsWith("doc-") ? (documentosGuardados?.find((d) => d.id === grabacion)?.nombre ?? "un documento que ya borraste") : null;
-  cabeza.append(crear("h3", undefined, nombreDoc !== null ? `Documento «${nombreDoc}»` : `Clase del ${fechaDeClase(grabacion)}`), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
-  tarjeta.append(cabeza, crear("p", "meta", `${tarjetas.length} tarjeta${tarjetas.length === 1 ? "" : "s"} · ${temas.length} tema${temas.length === 1 ? "" : "s"}`));
+  cabeza.append(crear("h3", undefined, tituloDeClase(grabacion)), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
+  tarjeta.append(cabeza, crear("p", "meta", resumenDeClase(tarjetas.length, temas.length)));
+  const detalle: HTMLElement[] = [];
   for (const t of tarjetas) {
     const fila = crear("div", "botones fila-nota");
     fila.append(crear("span", "meta", `${t.frente} · ${estadoDeTarjeta(t, Date.now())}`));
     fila.append(botonOlvidar(() => borrarRepaso({ que: "tarjeta", tarjeta: t.id }), "Borrar"));
-    tarjeta.append(fila);
+    detalle.push(fila);
   }
-  for (const t of temas) tarjeta.append(crear("p", "meta", `Tema: ${t.titulo}`));
-  const botones = crear("div", "botones");
-  botones.append(botonOlvidar(() => borrarRepaso({ que: "grabacion", grabacion }), "Borrar lo de esta clase"));
-  tarjeta.append(botones);
+  for (const t of temas) detalle.push(crear("p", "meta", `Tema: ${t.titulo}`));
+  filaConDetalle(`repaso:${grabacion}`, tarjeta, detalle, [botonOlvidar(() => borrarRepaso({ que: "grabacion", grabacion }), "Borrar lo de esta clase")]);
   return tarjeta;
 }
 
-function seccionRepaso(datos: NonNullable<typeof repasoGuardado>): HTMLElement {
-  const seccion = crear("section", "seccion seccion-ramos");
-  const clases = [...new Set([...datos.tarjetas.map((t) => t.grabacion), ...datos.resumenes.map((r) => r.grabacion)])].sort().reverse();
-  const encabezado = crear("h2", undefined, "Repaso");
-  encabezado.append(crear("span", "cuenta", String(datos.tarjetas.length)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_REPASO_MEMORIA));
-  seccion.append(...clases.map((g) => tarjetaRepasoClase(g, datos)));
-  const botones = crear("div", "botones");
-  const ramosConRepaso = datos.ramos.filter((r) => datos.tarjetas.some((t) => t.ramoId === r.id) || datos.resumenes.some((x) => x.ramoId === r.id));
-  for (const r of ramosConRepaso) botones.append(botonOlvidar(() => borrarRepaso({ que: "ramo", ramo: r.id }), `Borrar el repaso de ${r.nombre}`));
-  botones.append(botonOlvidar(() => borrarRepaso({ que: "todo" }), "Borrar todo el repaso"));
-  seccion.append(botones);
-  return seccion;
+function seccionRepaso(datos: NonNullable<typeof repasoGuardado>): HTMLElement | null {
+  const todas = [...new Set([...datos.tarjetas.map((t) => t.grabacion), ...datos.resumenes.map((r) => r.grabacion)])].sort().reverse();
+  const nombreRamo = (g: string) => {
+    const id = datos.tarjetas.find((t) => t.grabacion === g)?.ramoId ?? datos.resumenes.find((r) => r.grabacion === g)?.ramoId ?? null;
+    return datos.ramos.find((r) => r.id === id)?.nombre;
+  };
+  const clases = todas.filter((g) => coincide(buscado, tituloDeClase(g), nombreRamo(g), ...datos.tarjetas.filter((t) => t.grabacion === g).map((t) => t.frente)));
+  if (clases.length === 0) return null;
+  const cuantas = datos.tarjetas.filter((t) => clases.includes(t.grabacion)).length;
+  const botones = crear("div", "botones reparto");
+  if (buscado === "") {
+    const ramosConRepaso = datos.ramos.filter((r) => datos.tarjetas.some((t) => t.ramoId === r.id) || datos.resumenes.some((x) => x.ramoId === r.id));
+    for (const r of ramosConRepaso) botones.append(botonOlvidar(() => borrarRepaso({ que: "ramo", ramo: r.id }), `Borrar el repaso de ${r.nombre}`));
+    botones.append(botonOlvidar(() => borrarRepaso({ que: "todo" }), "Borrar todo el repaso"));
+  }
+  return envolver("repaso", "Repaso", String(cuantas), NOTA_REPASO_MEMORIA, [...clases.map((g) => tarjetaRepasoClase(g, datos)), botones]);
 }
 
 // ---- Plan de estudio (A4): ver y borrar un plan, los de un ramo o todos ----
@@ -409,12 +508,11 @@ async function borrarPlanes(pedido: Record<string, unknown>): Promise<void> {
   pintarTodo();
 }
 
-function seccionPlanes(datos: NonNullable<typeof planesGuardados>): HTMLElement {
-  const seccion = crear("section", "seccion seccion-ramos");
-  const encabezado = crear("h2", undefined, "Plan de estudio");
-  encabezado.append(crear("span", "cuenta", String(datos.planes.length)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_PLAN_MEMORIA));
-  for (const plan of datos.planes) {
+function seccionPlanes(datos: NonNullable<typeof planesGuardados>): HTMLElement | null {
+  const planes = datos.planes.filter((p) => coincide(buscado, datos.evaluaciones[p.evaluacionId], datos.ramos.find((r) => r.id === p.ramoId)?.nombre));
+  if (planes.length === 0) return null;
+  const hijos: HTMLElement[] = [];
+  for (const plan of planes) {
     const ramo = datos.ramos.find((r) => r.id === plan.ramoId);
     const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
     if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
@@ -425,14 +523,16 @@ function seccionPlanes(datos: NonNullable<typeof planesGuardados>): HTMLElement 
     const botones = crear("div", "botones");
     botones.append(botonOlvidar(() => borrarPlanes({ que: "plan", plan: plan.id }), "Borrar este plan"));
     tarjeta.append(botones);
-    seccion.append(tarjeta);
+    hijos.push(tarjeta);
   }
-  const botones = crear("div", "botones");
-  const ramosConPlan = datos.ramos.filter((r) => datos.planes.some((p) => p.ramoId === r.id));
-  for (const r of ramosConPlan) botones.append(botonOlvidar(() => borrarPlanes({ que: "ramo", ramo: r.id }), `Borrar los planes de ${r.nombre}`));
-  botones.append(botonOlvidar(() => borrarPlanes({ que: "todo" }), "Borrar todos los planes"));
-  seccion.append(botones);
-  return seccion;
+  if (buscado === "") {
+    const botones = crear("div", "botones reparto");
+    const ramosConPlan = datos.ramos.filter((r) => datos.planes.some((p) => p.ramoId === r.id));
+    for (const r of ramosConPlan) botones.append(botonOlvidar(() => borrarPlanes({ que: "ramo", ramo: r.id }), `Borrar los planes de ${r.nombre}`));
+    botones.append(botonOlvidar(() => borrarPlanes({ que: "todo" }), "Borrar todos los planes"));
+    hijos.push(botones);
+  }
+  return envolver("planes", "Plan de estudio", String(planes.length), NOTA_PLAN_MEMORIA, hijos);
 }
 
 // ---- Estadísticas de estudio (A5): ver y borrar el tiempo de un ramo o todo ----
@@ -452,15 +552,16 @@ async function borrarEstadisticas(pedido: Record<string, unknown>): Promise<void
   pintarTodo();
 }
 
-function seccionEstadisticas(datos: NonNullable<typeof estudioGuardado>): HTMLElement {
+function seccionEstadisticas(datos: NonNullable<typeof estudioGuardado>): HTMLElement | null {
   const { resumen } = datos;
-  const seccion = crear("section", "seccion seccion-ramos");
-  const encabezado = crear("h2", undefined, "Estadísticas de estudio");
-  encabezado.append(crear("span", "cuenta", formatearMinutos(resumen.totalHistoricoMin)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_ESTADISTICAS_MEMORIA));
+  const totales = [...resumen.totales]
+    .sort((a, b) => b.totalMin - a.totalMin)
+    .filter((t) => coincide(buscado, datos.ramos.find((r) => r.id === t.ramoId)?.nombre ?? "Sin ramo"));
+  if (totales.length === 0) return null;
+  const hijos: HTMLElement[] = [];
   const desde = textoDesde(resumen.desdeMs);
-  if (desde) seccion.append(crear("p", "meta", desde));
-  for (const total of [...resumen.totales].sort((a, b) => b.totalMin - a.totalMin)) {
+  if (desde) hijos.push(crear("p", "meta", desde));
+  for (const total of totales) {
     const ramo = total.ramoId === null ? undefined : datos.ramos.find((r) => r.id === total.ramoId);
     const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
     if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
@@ -470,12 +571,14 @@ function seccionEstadisticas(datos: NonNullable<typeof estudioGuardado>): HTMLEl
     const botones = crear("div", "botones");
     botones.append(botonOlvidar(() => borrarEstadisticas({ que: "ramo", ramo: total.ramoId }), ramo ? `Borrar el tiempo de ${ramo.nombre}` : "Borrar el tiempo sin ramo"));
     tarjeta.append(botones);
-    seccion.append(tarjeta);
+    hijos.push(tarjeta);
   }
-  const todo = crear("div", "botones");
-  todo.append(botonOlvidar(() => borrarEstadisticas({ que: "todo" }), "Borrar todo el tiempo de estudio"));
-  seccion.append(todo);
-  return seccion;
+  if (buscado === "") {
+    const todo = crear("div", "botones");
+    todo.append(botonOlvidar(() => borrarEstadisticas({ que: "todo" }), "Borrar todo el tiempo de estudio"));
+    hijos.push(todo);
+  }
+  return envolver("estadisticas", "Estadísticas de estudio", formatearMinutos(resumen.totalHistoricoMin), NOTA_ESTADISTICAS_MEMORIA, hijos);
 }
 
 // ---- Metas de ahorro: ver y borrar una meta (con sus aportes) o todas ----
@@ -495,12 +598,11 @@ async function borrarAhorro(meta: number | null): Promise<void> {
   pintarTodo();
 }
 
-function seccionAhorro(datos: NonNullable<typeof ahorroGuardado>): HTMLElement {
-  const seccion = crear("section", "seccion seccion-ramos");
-  const encabezado = crear("h2", undefined, "Metas de ahorro");
-  encabezado.append(crear("span", "cuenta", String(datos.metas.length)));
-  seccion.append(encabezado, crear("p", "nota", NOTA_AHORRO_MEMORIA));
-  for (const meta of datos.metas) {
+function seccionAhorro(datos: NonNullable<typeof ahorroGuardado>): HTMLElement | null {
+  const metas = datos.metas.filter((m) => coincide(buscado, m.nombre));
+  if (metas.length === 0) return null;
+  const hijos: HTMLElement[] = [];
+  for (const meta of metas) {
     const tarjeta = crear("article", `tarjeta ramo${meta.estado === "archivada" ? " archivado" : ""}`);
     const cabeza = crear("div", "tarjeta-cabeza");
     cabeza.append(crear("h3", undefined, meta.nombre), crear("span", "fecha", meta.estado === "archivada" ? "Archivada" : ""));
@@ -508,12 +610,14 @@ function seccionAhorro(datos: NonNullable<typeof ahorroGuardado>): HTMLElement {
     const botones = crear("div", "botones");
     botones.append(botonOlvidar(() => borrarAhorro(meta.id), `Borrar la meta «${meta.nombre}»`));
     tarjeta.append(botones);
-    seccion.append(tarjeta);
+    hijos.push(tarjeta);
   }
-  const todo = crear("div", "botones");
-  todo.append(botonOlvidar(() => borrarAhorro(null), "Borrar todas las metas de ahorro"));
-  seccion.append(todo);
-  return seccion;
+  if (buscado === "") {
+    const todo = crear("div", "botones");
+    todo.append(botonOlvidar(() => borrarAhorro(null), "Borrar todas las metas de ahorro"));
+    hijos.push(todo);
+  }
+  return envolver("ahorro", "Metas de ahorro", String(metas.length), NOTA_AHORRO_MEMORIA, hijos);
 }
 
 // ---- Documentos (D): lo que Brote leyó de los archivos del usuario; solo su texto, nunca el original ----
@@ -537,20 +641,8 @@ function tarjetaDocumento(d: DocumentoVista): HTMLElement {
   return tarjeta;
 }
 
-function seccionDocumentos(lista: DocumentoVista[]): HTMLElement {
-  const seccion = crear("section", "seccion seccion-documentos");
-  const encabezado = crear("h2", undefined, "Documentos");
-  encabezado.append(crear("span", "cuenta", String(lista.length)));
-  seccion.append(
-    encabezado,
-    crear("p", "nota", "Los PDF, Word, PowerPoint y textos que le diste a Brote para que los lea. Guarda solo el texto que sacó, y solo lo usa cuando tú se lo pides."),
-    ...lista.map(tarjetaDocumento),
-  );
-  const fila = crear("div", "botones");
-  fila.append(botonOlvidar(() => borrarDocumentos("todo", null), "Borrar todo", confirmarBorrarTodosDocumentos(lista.length)));
-  seccion.append(fila, crear("p", "nota", pieDocumentos(EN_MAC)));
-  return seccion;
-}
+const NOTA_DOCUMENTOS =
+  "Los PDF, Word, PowerPoint y textos que le diste a Brote para que los lea. Guarda solo el texto que sacó (tu archivo original no se toca) y solo lo usa cuando tú se lo pides. Las tarjetas que ya aceptaste de un documento se quedan: se borran en «Repaso».";
 
 async function cargarDocumentos(): Promise<void> {
   try {
@@ -558,6 +650,18 @@ async function cargarDocumentos(): Promise<void> {
   } catch {
     documentosGuardados = null; // un puente más viejo no conoce el pedido: la sección no aparece
   }
+}
+
+function seccionDocumentos(lista: DocumentoVista[]): HTMLElement | null {
+  const docs = lista.filter((d) => coincide(buscado, d.nombre, ramosGuardados?.find((r) => r.id === d.ramoId)?.nombre));
+  if (docs.length === 0) return null;
+  const hijos: HTMLElement[] = docs.map(tarjetaDocumento);
+  if (buscado === "") {
+    const fila = crear("div", "botones");
+    fila.append(botonOlvidar(() => borrarDocumentos("todo", null), "Borrar todo", confirmarBorrarTodosDocumentos(lista.length)));
+    hijos.push(fila);
+  }
+  return envolver("documentos", "Documentos", String(docs.length), NOTA_DOCUMENTOS, hijos);
 }
 
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
@@ -631,80 +735,167 @@ function tarjetaAudio(a: ItemAudio): HTMLElement {
   return tarjeta;
 }
 
-/** Un subtítulo con su botón «Borrar todo» (con segundo toque). */
-function subtitulo(texto: string, que: QueGrabacion, cuantas: number): HTMLElement {
-  const fila = crear("div", "subtitulo");
-  fila.append(crear("span", undefined, `${texto} (${cuantas})`), botonOlvidar(() => borrarGrabaciones(que, null), "Borrar todo", confirmarBorrarTodo(que, cuantas)));
-  return fila;
+const NOTA_GRABACIONES = "Lo que grabaste y transcribiste en este computador. Brote solo lo usa cuando tú se lo pides; el audio no sale de tu equipo.";
+
+function seccionTranscripciones(g: Grabaciones): HTMLElement | null {
+  const lista = g.transcripciones.filter((t) => coincide(buscado, textoFecha(t.fecha, t.id), t.modelo));
+  if (lista.length === 0) return null;
+  const hijos: HTMLElement[] = lista.map(tarjetaTranscripcion);
+  if (buscado === "") {
+    const fila = crear("div", "botones");
+    fila.append(botonOlvidar(() => borrarGrabaciones("transcripcion", null), "Borrar todo", confirmarBorrarTodo("transcripcion", lista.length)));
+    hijos.push(fila);
+  }
+  return envolver("transcripciones", "Transcripciones", String(lista.length), NOTA_GRABACIONES, hijos);
 }
 
-function seccionGrabaciones(g: Grabaciones): HTMLElement {
-  const seccion = crear("section", "seccion seccion-grabaciones");
-  const encabezado = crear("h2", undefined, "Grabaciones");
-  encabezado.append(crear("span", "cuenta", String(totalGrabaciones(g))));
-  seccion.append(
-    encabezado,
-    crear("p", "nota", "Lo que grabaste y transcribiste en este computador. Brote solo lo usa cuando tú se lo pides; el audio no sale de tu equipo."),
-  );
-  if (totalGrabaciones(g) === 0) {
-    seccion.append(crear("p", "vacio", "No hay grabaciones ni transcripciones guardadas."));
-    return seccion;
+function seccionAudios(g: Grabaciones): HTMLElement | null {
+  const lista = g.audios.filter((a) => coincide(buscado, textoFecha(a.fecha, a.id)));
+  if (lista.length === 0) return null;
+  const hijos: HTMLElement[] = lista.map(tarjetaAudio);
+  if (buscado === "") {
+    const fila = crear("div", "botones");
+    fila.append(botonOlvidar(() => borrarGrabaciones("audio", null), "Borrar todo", confirmarBorrarTodo("audio", lista.length)));
+    hijos.push(fila);
   }
-  if (g.transcripciones.length > 0) seccion.append(subtitulo("Transcripciones", "transcripcion", g.transcripciones.length), ...g.transcripciones.map(tarjetaTranscripcion));
-  if (g.audios.length > 0) {
-    seccion.append(subtitulo(`Audios (se borran solos a los ${g.diasAudio} días)`, "audio", g.audios.length), ...g.audios.map(tarjetaAudio));
-  }
-  seccion.append(crear("p", "nota", pieGrabaciones(EN_MAC)));
-  return seccion;
+  return envolver("audios", "Audios", String(lista.length), `Se borran solos a los ${g.diasAudio} días (lo eliges en Configurar Brote). ${NOTA_GRABACIONES}`, hijos);
 }
 
-async function cargarGrabaciones(): Promise<void> {
-  try {
-    grabaciones = await puente.consultar<Grabaciones>({ tipo: "grabaciones-listar" });
-  } catch {
-    grabaciones = null; // un puente más viejo no conoce el pedido: la sección no aparece
-  }
+// ---- Pintar: Resumen, un grupo o los resultados de una búsqueda ----
+
+function conteos(): Conteos {
+  const recuerdos = (tipo: TipoRecuerdo) => memoria?.recuerdos.filter((r) => r.tipo === tipo).length ?? 0;
+  const repaso = repasoGuardado;
+  return {
+    brote: recuerdos("brote"),
+    frases: memoria?.frases.length ?? 0,
+    conversacion: recuerdos("conversacion"),
+    importado: recuerdos("importado"),
+    ramos: ramosGuardados?.length ?? 0,
+    notas: notasGuardadas?.fichas.reduce((n, f) => n + f.evaluaciones.length, 0) ?? 0,
+    repaso: repaso ? (repaso.tarjetas.length > 0 ? repaso.tarjetas.length : repaso.resumenes.length) : 0,
+    planes: planesGuardados?.planes.length ?? 0,
+    estadisticas: estudioGuardado?.resumen.hay ? formatearMinutos(estudioGuardado.resumen.totalHistoricoMin) : null,
+    documentos: documentosGuardados?.length ?? 0,
+    ahorro: ahorroGuardado?.metas.length ?? 0,
+    transcripciones: grabaciones?.transcripciones.length ?? 0,
+    audios: grabaciones?.audios.length ?? 0,
+  };
 }
 
 function pintarTodo(): void {
-  if (memoria) pintar(memoria);
+  pintar();
 }
 
-function simplificar(texto: string): string {
-  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+/** Las secciones de un grupo con lo que haya guardado; solo las que tienen algo (menos en «Brote recuerda»). */
+function seccionesDeGrupo(grupo: GrupoConDatos): HTMLElement[] {
+  const nulas: (HTMLElement | null)[] = [];
+  switch (grupo) {
+    case "brote":
+      return memoria ? seccionesBrote(memoria) : [];
+    case "estudio":
+      if (ramosGuardados) nulas.push(seccionRamos(ramosGuardados));
+      if (notasGuardadas) nulas.push(seccionNotas(notasGuardadas));
+      if (repasoGuardado && (repasoGuardado.tarjetas.length > 0 || repasoGuardado.resumenes.length > 0)) nulas.push(seccionRepaso(repasoGuardado));
+      if (planesGuardados) nulas.push(seccionPlanes(planesGuardados));
+      if (estudioGuardado?.resumen.hay) nulas.push(seccionEstadisticas(estudioGuardado));
+      if (documentosGuardados) nulas.push(seccionDocumentos(documentosGuardados));
+      break;
+    case "plata":
+      if (ahorroGuardado) nulas.push(seccionAhorro(ahorroGuardado));
+      break;
+    case "grabaciones":
+      if (grabaciones) nulas.push(seccionTranscripciones(grabaciones), seccionAudios(grabaciones));
+      break;
+  }
+  return nulas.filter((s): s is HTMLElement => s !== null);
 }
 
-function pintar(memoria: Memoria): void {
+function pintarNav(): void {
+  const c = conteos();
+  const botones = GRUPOS.map(({ id, titulo, icono }) => {
+    const boton = crear("button");
+    boton.type = "button";
+    boton.dataset.grupo = id;
+    boton.classList.toggle("activo", buscado === "" && grupoActual === id);
+    boton.append(crear("span", undefined, `${icono} ${titulo}`));
+    if (id !== "resumen") boton.append(crear("span", "cuenta", String(totalDeGrupo(id, c))));
+    boton.addEventListener("click", () => {
+      grupoActual = id;
+      if (filtro !== "") {
+        buscar.value = filtro = "";
+        void filtrar();
+      } else {
+        pintar();
+      }
+    });
+    return boton;
+  });
+  nav.replaceChildren(...botones);
+}
+
+function pintarResumen(): HTMLElement[] {
+  const c = conteos();
+  const tarjetas = GRUPOS.filter((g): g is (typeof GRUPOS)[number] & { id: GrupoConDatos } => g.id !== "resumen").map(({ id, titulo, icono }) => {
+    const boton = crear("button", "tarjeta-grupo");
+    boton.type = "button";
+    boton.append(crear("h3", undefined, `${icono} ${titulo}`), crear("p", undefined, lineaDeGrupo(id, c)));
+    boton.addEventListener("click", () => {
+      grupoActual = id;
+      pintar();
+    });
+    return boton;
+  });
+  const pie = crear("div", "resumen-pie");
+  const nueva = crear("button", "boton", "Empezar conversación nueva");
+  nueva.type = "button";
+  nueva.addEventListener("click", async () => {
+    nueva.disabled = true;
+    try {
+      await puente.consultar({ tipo: "conversacion-nueva" });
+      mostrarAviso("Empecé una conversación nueva. Brote ya no usa lo que olvidaste. 🌱");
+      // OpenClaw guarda un resumen de la conversación anterior: aparece al recargar.
+      setTimeout(() => void cargar(), 1500);
+    } catch (error) {
+      mostrarAviso(`No pude empezar una conversación nueva: ${mensajeDe(error)}`, true);
+    } finally {
+      nueva.disabled = false;
+    }
+  });
+  pie.append(crear("p", undefined, "Si olvidaste algo, empieza una conversación nueva para que Brote deje de usarlo ya."), nueva);
+  return [...tarjetas, pie];
+}
+
+function pintarGrupo(grupo: GrupoConDatos): HTMLElement[] {
+  const hechas = seccionesDeGrupo(grupo);
+  if (hechas.length === 0) return [crear("p", "vacio", textoVacioDeGrupo(grupo))];
+  // La primera sección del grupo se abre sola si el usuario todavía no tocó ninguna.
+  if (!SECCIONES_DE[grupo].some((s) => abiertas.has(s))) {
+    const primera = hechas[0] as HTMLDetailsElement;
+    primera.open = true;
+    abiertas.set(primera.dataset.seccion!, true);
+  }
+  const pie = crear("div", "pie-grupo");
+  for (const tipo of almacenamientosDeGrupo(grupo, EN_MAC)) pie.append(crear("p", undefined, explicacionAlmacenamiento(tipo)));
+  return [...hechas, pie];
+}
+
+/** Con una búsqueda: todas las secciones de todos los grupos, solo con lo que coincide. */
+function pintarBusqueda(): HTMLElement[] {
+  const hechas = (Object.keys(SECCIONES_DE) as GrupoConDatos[]).flatMap(seccionesDeGrupo);
+  return hechas.length > 0 ? hechas : [crear("p", "vacio", "Nada coincide con lo que buscas.")];
+}
+
+function pintar(): void {
+  if (!memoria) return;
+  buscado = textoBuscado(filtro);
   sinIA.textContent = `⚡ ${memoria.sinIA}% sin IA`;
   sinIA.title = "De todo lo que le has pedido, cuánto resolvió el motor sin usar IA";
   sinIA.hidden = false;
-
-  const contenido = SECCIONES.map(({ tipo, titulo, nota, vacio }) => {
-    const seccion = crear("section", "seccion");
-    const buscado = simplificar(filtro.trim());
-    const tarjetas =
-      tipo === "frases"
-        ? memoria.frases.filter((f) => !coincidencias || simplificar(f.ejemplo).includes(buscado)).map(tarjetaFrase)
-        : memoria.recuerdos
-            .filter((r) => r.tipo === tipo && (!coincidencias || coincidencias.has(r.id)))
-            .map(tarjetaRecuerdo);
-    const encabezado = crear("h2", undefined, titulo);
-    encabezado.append(crear("span", "cuenta", String(tarjetas.length)));
-    seccion.append(encabezado);
-    if (nota) seccion.append(crear("p", "nota", nota));
-    seccion.append(...(tarjetas.length > 0 ? tarjetas : [crear("p", "vacio", vacio)]));
-    return seccion;
-  });
-  // Buscar es sobre lo que Brote recuerda; las grabaciones son aparte (y «olvidar todo sobre» no las toca).
-  if (ramosGuardados && ramosGuardados.length > 0 && !coincidencias) contenido.push(seccionRamos(ramosGuardados));
-  if (notasGuardadas && notasGuardadas.fichas.length > 0 && !coincidencias) contenido.push(seccionNotas(notasGuardadas));
-  if (repasoGuardado && (repasoGuardado.tarjetas.length > 0 || repasoGuardado.resumenes.length > 0) && !coincidencias) contenido.push(seccionRepaso(repasoGuardado));
-  if (planesGuardados && planesGuardados.planes.length > 0 && !coincidencias) contenido.push(seccionPlanes(planesGuardados));
-  if (estudioGuardado && estudioGuardado.resumen.hay && !coincidencias) contenido.push(seccionEstadisticas(estudioGuardado));
-  if (ahorroGuardado && ahorroGuardado.metas.length > 0 && !coincidencias) contenido.push(seccionAhorro(ahorroGuardado));
-  if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
-  if (documentosGuardados && documentosGuardados.length > 0 && !coincidencias) contenido.push(seccionDocumentos(documentosGuardados));
-  secciones.replaceChildren(...contenido);
+  pintarNav();
+  const y = secciones.scrollTop;
+  secciones.replaceChildren(...(buscado !== "" ? pintarBusqueda() : grupoActual === "resumen" ? pintarResumen() : pintarGrupo(grupoActual)));
+  secciones.scrollTop = y;
 }
 
 async function cargar(): Promise<void> {
@@ -724,27 +915,37 @@ async function cargar(): Promise<void> {
   }
 }
 
-/** Aplica la búsqueda: muestra solo lo que menciona el tema y ofrece olvidarlo todo junto. */
+async function cargarGrabaciones(): Promise<void> {
+  try {
+    grabaciones = await puente.consultar<Grabaciones>({ tipo: "grabaciones-listar" });
+  } catch {
+    grabaciones = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+/** Aplica la búsqueda: muestra solo lo que coincide y, para los recuerdos, ofrece olvidar el tema entero. */
 async function filtrar(): Promise<void> {
-  const buscado = filtro.trim();
+  const texto = filtro.trim();
   coincidencias = null;
-  if (buscado.length >= 3) {
+  if (buscaEnElPuente(texto)) {
     try {
-      coincidencias = new Set(await puente.consultar<string[]>({ tipo: "memoria-buscar", tema: buscado }));
+      coincidencias = new Set(await puente.consultar<string[]>({ tipo: "memoria-buscar", tema: texto }));
     } catch (error) {
       mostrarAviso(`No pude buscar: ${mensajeDe(error)}`, true);
     }
   }
-  if (memoria) pintar(memoria);
+  pintar();
 
-  const frases = memoria?.frases.filter((f) => simplificar(f.ejemplo).includes(simplificar(buscado))).length ?? 0;
+  const frases = memoria?.frases.filter((f) => simplificar(f.ejemplo).includes(simplificar(texto))).length ?? 0;
   const total = (coincidencias?.size ?? 0) + (coincidencias ? frases : 0);
   tema.hidden = !coincidencias;
   if (!coincidencias) return;
   temaTexto.textContent =
-    total === 0 ? `Nada menciona «${buscado}».` : `«${buscado}» aparece en ${total} ${total === 1 ? "lugar" : "lugares"}.`;
+    total === 0
+      ? `Ningún recuerdo menciona «${texto}».`
+      : `«${texto}» aparece en ${total} ${total === 1 ? "recuerdo" : "recuerdos"} de Brote (recuerdos, frases, conversaciones e importados; lo demás se borra desde su sección).`;
   temaOlvidar.hidden = total === 0;
-  temaOlvidar.textContent = `Olvidar todo sobre «${buscado}»`;
+  temaOlvidar.textContent = `Olvidar todo sobre «${texto}»`;
   temaOlvidar.classList.remove("confirmando");
   temaOlvidar.disabled = false;
 }
@@ -758,7 +959,7 @@ buscar.addEventListener("input", () => {
 
 let plazoTema: ReturnType<typeof setTimeout> | undefined;
 temaOlvidar.addEventListener("click", async () => {
-  const buscado = filtro.trim();
+  const texto = filtro.trim();
   if (!temaOlvidar.classList.contains("confirmando")) {
     temaOlvidar.classList.add("confirmando");
     temaOlvidar.textContent = "¿Seguro? Se olvida todo y empieza una conversación nueva";
@@ -768,27 +969,13 @@ temaOlvidar.addEventListener("click", async () => {
   clearTimeout(plazoTema);
   temaOlvidar.disabled = true;
   try {
-    const { olvidados } = await puente.consultar<{ olvidados: number }>({ tipo: "memoria-olvidar-tema", tema: buscado });
-    mostrarAviso(avisoTemaOlvidado(EN_MAC, olvidados, buscado));
+    const { olvidados } = await puente.consultar<{ olvidados: number }>({ tipo: "memoria-olvidar-tema", tema: texto });
+    mostrarAviso(avisoTemaOlvidado(EN_MAC, olvidados, texto));
     buscar.value = filtro = "";
     await cargar();
   } catch (error) {
     temaOlvidar.disabled = false;
-    mostrarAviso(`No pude olvidar «${buscado}»: ${mensajeDe(error)}`, true);
-  }
-});
-
-nueva.addEventListener("click", async () => {
-  nueva.disabled = true;
-  try {
-    await puente.consultar({ tipo: "conversacion-nueva" });
-    mostrarAviso("Empecé una conversación nueva. Brote ya no usa lo que olvidaste. 🌱");
-    // OpenClaw guarda un resumen de la conversación anterior: aparece al recargar.
-    setTimeout(() => void cargar(), 1500);
-  } catch (error) {
-    mostrarAviso(`No pude empezar una conversación nueva: ${mensajeDe(error)}`, true);
-  } finally {
-    nueva.disabled = false;
+    mostrarAviso(`No pude olvidar «${texto}»: ${mensajeDe(error)}`, true);
   }
 });
 
@@ -796,7 +983,5 @@ document.querySelector("#configurar")!.addEventListener("click", () => void invo
 
 // Al volver a la ventana se recarga, por si Brote aprendió o recordó algo mientras tanto.
 window.addEventListener("focus", () => void cargar());
-
-document.querySelector("#pie-olvidar")!.textContent = pieOlvidar(EN_MAC);
 
 void puente.iniciar().then(cargar, (error) => mostrarAviso(`No pude conectar con el puente: ${mensajeDe(error)}`, true));

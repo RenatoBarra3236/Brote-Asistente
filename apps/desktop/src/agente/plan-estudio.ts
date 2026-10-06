@@ -121,7 +121,7 @@ export function bloquesVisibles(plan: PlanEstudio, ahoraMs: number): BloqueGuard
 
 export const TEXTO_SIN_PLAN_MEMORIA = "Todavía no hay planes de estudio. Cuando agendes uno para una prueba aparecerá aquí.";
 export const NOTA_PLAN_MEMORIA =
-  "Los planes se guardan solo en tu computador, en una base de datos de Brote (ramos, fechas y horas; nada de tus clases). Al borrarlos desaparecen de verdad (no hay Papelera). Los eventos que hayas copiado a tu calendario se borran a mano desde ahí.";
+  "Tus planes (ramos, fechas y horas; nada de tus clases), solo en tu computador. Los eventos que hayas copiado a tu calendario se borran a mano desde ahí.";
 
 export function avisoPlanBorrado(n: number): string {
   return n === 1 ? "Borré 1 plan de estudio." : `Borré ${n} planes de estudio.`;

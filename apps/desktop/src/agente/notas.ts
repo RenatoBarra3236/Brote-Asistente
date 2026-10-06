@@ -97,7 +97,7 @@ export function leerCampoPeso(texto: string): { ok: true; peso: number } | { ok:
 export const TEXTO_SIN_NOTAS_MEMORIA = "Todavía no hay notas guardadas. Las evaluaciones y notas de tus ramos aparecerán aquí.";
 
 /** Las notas están en una base de datos, no en archivos: no hay Papelera, se borran de verdad. */
-export const NOTA_NOTAS_MEMORIA = "Las notas se guardan solo en tu computador, en una base de datos de Brote. Al borrarlas desaparecen de verdad (no hay Papelera).";
+export const NOTA_NOTAS_MEMORIA = "Tus notas, solo en tu computador.";
 
 export function avisoNotasBorradas(ramo: string | null, n: number): string {
   const que = n === 1 ? "1 evaluación" : `${n} evaluaciones`;

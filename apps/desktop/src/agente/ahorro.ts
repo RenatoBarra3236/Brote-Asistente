@@ -61,7 +61,7 @@ export function frasePorAporte(nombre: string): { texto: string; cursor: number 
 
 /** «Lo que sé de ti → Metas de ahorro». */
 export const NOTA_AHORRO_MEMORIA =
-  "Tus metas de ahorro y lo que dijiste que apartaste se guardan solo en tu computador, en una base de datos de Brote. Brote no ve tus cuentas: solo anota lo que tú le dices. Al borrarlas desaparecen de verdad (no hay Papelera).";
+  "Tus metas de ahorro y lo que dijiste que apartaste, solo en tu computador. Brote no ve tus cuentas: solo anota lo que tú le dices.";
 
 export function avisoAhorroBorrado(n: number): string {
   return n === 1 ? "Borré 1 meta de ahorro con sus aportes." : `Borré ${n} metas de ahorro con sus aportes.`;

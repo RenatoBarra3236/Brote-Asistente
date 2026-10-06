@@ -17,17 +17,18 @@
         <button type="button" class="enlace" id="configurar">⚙︎ Configurar</button>
       </div>
     </header>
-    <input class="buscar" id="buscar" type="search" placeholder="Buscar en lo que sé de ti (ej.: notebook)" autocomplete="off" />
-    <div class="tema" id="tema" hidden>
-      <span id="tema-texto"></span>
-      <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+    <div class="barra">
+      <input class="buscar" id="buscar" type="search" placeholder="Buscar en todo lo que sé de ti (ej.: cálculo, notebook)" autocomplete="off" />
+      <div class="tema" id="tema" hidden>
+        <span id="tema-texto"></span>
+        <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+      </div>
+      <p class="aviso" id="aviso" hidden></p>
     </div>
-    <p class="aviso" id="aviso" hidden></p>
-    <main id="secciones" aria-live="polite"></main>
-    <footer class="pie">
-      <p id="pie-olvidar"></p>
-      <button type="button" class="boton" id="nueva">Empezar conversación nueva</button>
-    </footer>
+    <div class="cuerpo">
+      <nav class="nav" id="nav" aria-label="Qué guarda Brote"></nav>
+      <main id="secciones" aria-live="polite"></main>
+    </div>
     <script type="module" src="/src/memoria.ts"></script>
   </body>
 </html>

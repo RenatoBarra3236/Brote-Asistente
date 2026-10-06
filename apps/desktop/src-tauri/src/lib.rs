@@ -92,7 +92,7 @@ async fn abrir_ventana(app: &AppHandle, etiqueta: &str, pagina: &str, titulo: &s
 /// bloquear el hilo principal.
 #[tauri::command]
 async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
-    abrir_ventana(&app, "memoria", "memoria.html", "Lo que sé de ti", (480.0, 660.0)).await
+    abrir_ventana(&app, "memoria", "memoria.html", "Lo que sé de ti", (720.0, 660.0)).await
 }
 
 /// La ventana "Configurar Brote".

@@ -225,7 +225,7 @@ export function textoSerie(serie: readonly number[]): string {
 // ---- «Lo que sé de ti → Estadísticas de estudio» --------------------------------------------------------------
 
 export const NOTA_ESTADISTICAS_MEMORIA =
-  "El tiempo que estudias se guarda solo en tu computador, en una base de datos de Brote (cuánto, cuándo y de qué ramo; nada de tus clases). Al borrarlo desaparece de verdad (no hay Papelera).";
+  "El tiempo que estudias, solo en tu computador: cuánto, cuándo y de qué ramo; nada de tus clases.";
 
 export function avisoEstadisticasBorradas(n: number): string {
   return n === 1 ? "Borré 1 registro de estudio." : `Borré ${n} registros de estudio.`;

@@ -6,7 +6,10 @@
     ?grabaciones=con|sin|apagada   con grabaciones (por defecto), sin ninguna, o con la función apagada
                                    (se ven igual: lo guardado es del usuario aunque apague la función)
     ?plataforma=windows            los textos de borrar sin Papelera
-    ?busca=notebook                escribe esa búsqueda (la sección Grabaciones se esconde)
+    ?busca=notebook                escribe esa búsqueda (filtra todas las secciones por su título o nombre)
+    ?grupo=resumen|brote|estudio|plata|grabaciones   abre ese grupo de la barra lateral
+    ?abrir=todo                    despliega todas las secciones del grupo
+    ?documentos=con                con un documento guardado
   No es parte de la app (no está entre las páginas de vite.config.ts).
 -->
 <html lang="es">
@@ -206,9 +209,11 @@
                   datos = {};
                   break;
                 case "documentos-estado":
-                  return responder(id, { datos: parametros.get("documentos") === "con" ? [{ id: "doc-2026-10-05-101500", nombre: "Apuntes de cálculo — derivadas.pdf", tipo: "pdf", paginas: 12, caracteres: 21000, ramoId: null, creado: "2026-10-05T13:15:00.000Z" }] : [] });
+                  datos = parametros.get("documentos") === "con" ? [{ id: "doc-2026-10-05-101500", nombre: "Apuntes de cálculo — derivadas.pdf", tipo: "pdf", paginas: 12, caracteres: 21000, ramoId: null, creado: "2026-10-05T13:15:00.000Z" }] : [];
+                  break;
                 case "documento-borrar":
-                  return responder(id, { datos: { borrados: 1 } });
+                  datos = { borrados: 1 };
+                  break;
                 case "grabaciones-listar":
                   datos = { transcripciones: sim.transcripciones, audios: sim.audios, diasAudio: sim.diasAudio };
                   break;
@@ -235,6 +240,11 @@
     <script type="module" src="/src/memoria.ts"></script>
     <script>
       addEventListener("load", () => {
+        const g = parametros.get("grupo");
+        // La navegación aparece cuando termina de cargar: se reintenta hasta que esté.
+        const espera = (hacer, veces = 40) => { if (!hacer() && veces > 0) setTimeout(() => espera(hacer, veces - 1), 150); };
+        if (g) espera(() => { const b = document.querySelector(`[data-grupo="${g}"]`); b?.click(); return !!b; });
+        if (parametros.get("abrir") === "todo") setTimeout(() => espera(() => { const l = document.querySelectorAll("details.seccion"); l.forEach((d) => (d.open = true)); return l.length > 0; }), 900);
         const q = parametros.get("busca");
         if (q) setTimeout(() => { const b = document.querySelector("#buscar"); b.value = q; b.dispatchEvent(new Event("input")); }, 600);
       });
@@ -251,16 +261,17 @@
         <button type="button" class="enlace" id="configurar">⚙︎ Configurar</button>
       </div>
     </header>
-    <input class="buscar" id="buscar" type="search" placeholder="Buscar en lo que sé de ti (ej.: notebook)" autocomplete="off" />
-    <div class="tema" id="tema" hidden>
-      <span id="tema-texto"></span>
-      <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+    <div class="barra">
+      <input class="buscar" id="buscar" type="search" placeholder="Buscar en todo lo que sé de ti (ej.: cálculo, notebook)" autocomplete="off" />
+      <div class="tema" id="tema" hidden>
+        <span id="tema-texto"></span>
+        <button type="button" class="boton boton-peligro" id="tema-olvidar"></button>
+      </div>
+      <p class="aviso" id="aviso" hidden></p>
     </div>
-    <p class="aviso" id="aviso" hidden></p>
-    <main id="secciones" aria-live="polite"></main>
-    <footer class="pie">
-      <p id="pie-olvidar"></p>
-      <button type="button" class="boton" id="nueva">Empezar conversación nueva</button>
-    </footer>
+    <div class="cuerpo">
+      <nav class="nav" id="nav" aria-label="Qué guarda Brote"></nav>
+      <main id="secciones" aria-live="polite"></main>
+    </div>
   </body>
 </html>

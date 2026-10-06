@@ -30,8 +30,12 @@
 }
 
 body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   margin: 0;
-  padding: 20px 20px 0;
+  padding: 16px 20px 0;
+  overflow: hidden;
   background: var(--fondo);
   color: var(--texto);
   font: 13px/1.45 system-ui, -apple-system, sans-serif;
@@ -53,8 +57,7 @@ h1 {
 
 .bajada,
 .nota,
-.vacio,
-.pie p {
+.vacio {
   margin: 2px 0 0;
   color: var(--suave);
 }
@@ -123,7 +126,7 @@ h1 {
 }
 
 .aviso {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(63, 174, 106, 0.14);
@@ -255,27 +258,6 @@ h3 {
   resize: vertical;
 }
 
-.pie {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 -20px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--borde);
-  background: var(--fondo);
-}
-
-.pie p {
-  font-size: 12px;
-}
-
-.pie .boton {
-  flex: none;
-}
-
 /* Sección «Grabaciones» (sección 8 del plan): transcripciones y audios que esperan borrarse. */
 .seccion-grabaciones .subtitulo {
   display: flex;
@@ -333,4 +315,180 @@ h3 {
 }
 .botones.fila-nota .meta {
   margin: 0;
+}
+
+/* ---- Rediseño: barra fija arriba (búsqueda y avisos), navegación a la izquierda y contenido que se desplaza ---- */
+.cabecera {
+  flex: none;
+  margin-bottom: 10px;
+}
+.barra {
+  flex: none;
+}
+.cuerpo {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  min-height: 0;
+}
+.nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  width: 168px;
+  padding-bottom: 16px;
+  overflow-y: auto;
+}
+.nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--texto);
+  font: 13px system-ui, -apple-system, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.nav button:hover {
+  background: var(--boton);
+}
+.nav button.activo {
+  background: var(--tarjeta);
+  box-shadow: 0 0 0 1px var(--borde);
+  font-weight: 600;
+}
+.nav .cuenta {
+  margin-left: auto;
+}
+main {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 24px;
+  overflow-y: auto;
+}
+
+/* Resumen: una tarjeta por grupo. */
+.tarjeta-grupo {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--tarjeta);
+  box-shadow: 0 0 0 1px var(--borde);
+  color: var(--texto);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tarjeta-grupo:hover {
+  filter: brightness(1.05);
+}
+.tarjeta-grupo h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+.tarjeta-grupo p {
+  margin: 0;
+  color: var(--suave);
+}
+.resumen-pie {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--borde);
+}
+.resumen-pie p {
+  margin: 0 0 8px;
+  color: var(--suave);
+  font-size: 12px;
+}
+
+/* Secciones plegables con su cuenta y la etiqueta de cómo se borra. */
+details.seccion {
+  margin-bottom: 12px;
+}
+details.seccion > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+details.seccion > summary::-webkit-details-marker {
+  display: none;
+}
+details.seccion > summary::before {
+  content: "▸";
+  color: var(--suave);
+  font-size: 11px;
+}
+details.seccion[open] > summary::before {
+  content: "▾";
+}
+.etiqueta-borrado {
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--boton);
+  color: var(--suave);
+  font-size: 11px;
+  font-weight: 600;
+}
+.etiqueta-borrado.definitivo {
+  color: var(--peligro);
+}
+.info {
+  padding: 0 6px;
+  border: none;
+  border-radius: 999px;
+  background: var(--boton);
+  color: var(--suave);
+  font: 600 11px system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+.pie-grupo {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--borde);
+}
+.pie-grupo p {
+  margin: 0 0 4px;
+  color: var(--suave);
+  font-size: 12px;
+}
+.resumen-fila .meta {
+  margin: 0;
+}
+.detalle {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--borde);
+}
+.botones.reparto {
+  flex-wrap: wrap;
+}
+
+/* Con poco ancho la navegación pasa arriba, como pestañas. */
+@media (max-width: 600px) {
+  .cuerpo {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .nav {
+    flex-direction: row;
+    width: auto;
+    padding-bottom: 0;
+    overflow: auto hidden;
+  }
+  .nav button {
+    flex: none;
+  }
 }

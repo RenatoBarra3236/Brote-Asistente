@@ -197,7 +197,7 @@ export function debeAvisarTarjetas(hoy: number, ultimoDiaAvisado: string | null,
 
 export const TEXTO_SIN_REPASO_MEMORIA = "Todavía no hay tarjetas ni resúmenes de repaso. Cuando aceptes un repaso de una clase aparecerá aquí.";
 export const NOTA_REPASO_MEMORIA =
-  "Las tarjetas y los resúmenes se guardan solo en tu computador, en una base de datos de Brote, con tus palabras (no la transcripción). Al borrarlos desaparecen de verdad (no hay Papelera).";
+  "Las tarjetas y los resúmenes que aceptaste, solo en tu computador y con tus palabras (no la transcripción).";
 
 export function avisoRepasoBorrado(n: number): string {
   return n === 1 ? "Borré 1 elemento de repaso." : `Borré ${n} elementos de repaso.`;

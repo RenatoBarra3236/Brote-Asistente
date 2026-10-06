@@ -6,7 +6,7 @@
 
 import type { Pestana } from "./tarjetas.ts";
 
-export type TipoNovedad = "claude" | "descarga" | "temporizador" | "calendario" | "aula" | "plan" | "plata" | "equipo" | "computador" | "transcripcion" | "agenda" | "repaso" | "estudio";
+export type TipoNovedad = "claude" | "descarga" | "temporizador" | "calendario" | "aula" | "plan" | "plata" | "equipo" | "computador" | "transcripcion" | "agenda" | "repaso" | "estudio" | "resumen" | "celebracion";
 
 export interface Novedad {
   id: number;
@@ -16,6 +16,8 @@ export interface Novedad {
   ms: number;
   /** Si el usuario ya abrió la isla después de que llegó. */
   vista: boolean;
+  /** Llegó durante el modo concentración: queda en la lista y con su punto, pero no sale en el ala. */
+  silenciada: boolean;
 }
 
 /** Cuánto se queda el aviso en el ala izquierda. */
@@ -40,6 +42,8 @@ export const PESTANA_DE: Record<TipoNovedad, Pestana> = {
   agenda: "agenda",
   repaso: "estudio",
   estudio: "estudio",
+  resumen: "brote",
+  celebracion: "estudio",
 };
 
 /** El color del pulso alrededor del notch (rgb): el mismo que usan las tarjetas de cada tema. */
@@ -57,6 +61,8 @@ export const COLOR_DE: Record<TipoNovedad, string> = {
   agenda: "rgb(150, 195, 255)",
   repaso: "rgb(190, 170, 255)",
   estudio: "rgb(190, 170, 255)",
+  resumen: "rgb(255, 214, 120)",
+  celebracion: "rgb(132, 226, 160)",
 };
 
 /** Un texto corto para el ala: sin saltos de línea y con "…" si se pasa de `maximo`. */
@@ -70,15 +76,18 @@ export class Novedades {
   private siguiente = 1;
 
   /** Anota un aviso nuevo (el más reciente va primero). Devuelve la novedad. */
-  agregar(tipo: TipoNovedad, texto: string, ahora: number): Novedad {
-    const novedad: Novedad = { id: this.siguiente++, tipo, texto: texto.trim(), ms: ahora, vista: false };
+  agregar(tipo: TipoNovedad, texto: string, ahora: number, silenciada = false): Novedad {
+    const novedad: Novedad = { id: this.siguiente++, tipo, texto: texto.trim(), ms: ahora, vista: false, silenciada };
     this.lista = [novedad, ...this.lista].slice(0, MAXIMO);
     return novedad;
   }
 
-  /** El aviso que va en el ala ahora: el más reciente, mientras no pase `AVISO_EN_ALA_MS` ni se haya visto. */
+  /**
+   * El aviso que va en el ala ahora: el más reciente que no esté silenciado, mientras no pase `AVISO_EN_ALA_MS`
+   * ni se haya visto. Uno silenciado por el modo concentración no sale, aunque sea el último en llegar.
+   */
   enAla(ahora: number): Novedad | null {
-    const ultima = this.lista[0];
+    const ultima = this.lista.find((n) => !n.silenciada);
     return ultima && !ultima.vista && ahora - ultima.ms < AVISO_EN_ALA_MS ? ultima : null;
   }
 

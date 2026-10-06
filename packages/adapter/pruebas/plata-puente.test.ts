@@ -64,6 +64,11 @@ describe("pestaña Plata en el puente", { skip: process.platform === "win32" }, 
     try {
       await esperarHasta(() => ultimaPlata());
       assert.equal(ultimaPlata().mes.total, 0);
+      // La tendencia y la proyección viajan en el mismo aviso: seis meses (el último, parcial) y el estado de la proyección.
+      assert.equal(ultimaPlata().meses.length, 6);
+      assert.equal(ultimaPlata().meses.at(-1).parcial, true);
+      assert.ok(["pronto", "ok"].includes(ultimaPlata().proyeccion.estado));
+      assert.equal((await pedir({ tipo: "plata-estado" })).datos.meses.length, 6);
 
       // Pedidos inválidos: montos raros o un "toque" que no es de los frecuentes.
       assert.equal((await pedir({ tipo: "presupuesto-poner", monto: 50 })).ok, false);

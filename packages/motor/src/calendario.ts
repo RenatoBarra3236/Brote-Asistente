@@ -187,7 +187,7 @@ export async function descargarIcal(url: string, tiempoMs = 20_000): Promise<str
 }
 
 /** Cuántos días se leen: lo que muestra la pestaña Agenda (las frases y el MCP filtran solos por hora). */
-export const DIAS_VENTANA = 14;
+export const DIAS_VENTANA = 35;
 
 /** La ventana que se lee: desde el comienzo de hoy, `DIAS_VENTANA` días. */
 export function ventana(ahoraMs: number): { desde: number; hasta: number } {

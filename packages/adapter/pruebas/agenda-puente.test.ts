@@ -85,6 +85,55 @@ describe("pestaña Agenda en el puente", { skip: process.platform === "win32" },
     }
   });
 
+  it("muestra las pruebas con fecha (hasta 35 días), y solo con Estudio prendido", async () => {
+    const dia = (mas: number) => {
+      const d = new Date(Date.now() + mas * 86_400_000);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const { pedir, cerrar } = lanzar(mkdtempSync(join(tmpdir(), "agenda-")), ["estudio", "calendario"]);
+    try {
+      const ramo = (await pedir({ tipo: "ramo-crear", nombre: "Cálculo" })).datos;
+      const una = await pedir({ tipo: "evaluacion-guardar", ramo: ramo.id, nombre: "Certamen 2", peso: 30, fecha: `${dia(30)} 15:00` });
+      assert.equal(una.ok, true);
+      await pedir({ tipo: "evaluacion-guardar", ramo: ramo.id, nombre: "Examen", peso: 40, fecha: dia(60) });
+      const ya = await pedir({ tipo: "evaluacion-guardar", ramo: ramo.id, nombre: "Certamen 1", peso: 30, fecha: dia(2), nota: 5.5 });
+      assert.equal(ya.ok, true);
+      const items = (await pedir({ tipo: "agenda-estado" })).datos.dias.flatMap((d: any) => d.items);
+      assert.deepEqual(items.map((i: any) => [i.tipo, i.titulo, i.todoElDia]), [["prueba", "Certamen 2 · Cálculo", false]], "la de 60 días queda fuera y la que ya tiene nota no es una prueba por venir");
+      assert.equal(items[0].ramoId, ramo.id);
+      // Archivar el ramo la saca.
+      await pedir({ tipo: "ramo-archivar", ramo: ramo.id });
+      assert.deepEqual((await pedir({ tipo: "agenda-estado" })).datos.dias, []);
+    } finally {
+      await cerrar();
+    }
+  });
+
+  it("el resumen del día junta lo prendido y sale como pedido del puente", async () => {
+    const { pedir, cerrar } = lanzar(mkdtempSync(join(tmpdir(), "agenda-")), ["gastos", "calendario"], ["estudio", "aula", "temporizadores"]);
+    try {
+      const vacio = (await pedir({ tipo: "resumen-dia" })).datos;
+      assert.equal(vacio.hay, false);
+      assert.match(vacio.texto, /^(Buenos días|Buenas tardes|Buenas noches)\. Hoy no veo nada agendado/);
+      await pedir({ tipo: "presupuesto-poner", monto: 200_000 });
+      const r = (await pedir({ tipo: "resumen-dia" })).datos;
+      assert.equal(r.hay, true);
+      assert.match(r.texto, /Puedes gastar \$[\d.]+ hoy \(llevas \$0 de \$200\.000 del mes\)/);
+      assert.match(r.corto, /^☀️ Hoy: .*libres$/);
+    } finally {
+      await cerrar();
+    }
+  });
+
+  it("con Estudio apagado no salen las pruebas", async () => {
+    const { pedir, cerrar } = lanzar(mkdtempSync(join(tmpdir(), "agenda-")), ["calendario"], ["estudio"]);
+    try {
+      assert.deepEqual((await pedir({ tipo: "agenda-estado" })).datos.dias, []);
+    } finally {
+      await cerrar();
+    }
+  });
+
   it("con las funciones apagadas no entra nada y lo dice", async () => {
     const { pedir, cerrar } = lanzar(mkdtempSync(join(tmpdir(), "agenda-")), ["gastos"], ["calendario", "aula", "temporizadores"]);
     try {

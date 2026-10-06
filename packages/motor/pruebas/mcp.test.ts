@@ -82,6 +82,11 @@ describe("servidor MCP de gastos", () => {
     assert.equal(p.gastadoEsteMes, 5000);
     assert.equal(p.queda, 195_000);
     assert.ok(p.diasQueFaltan >= 1 && p.puedeGastarHoy <= p.porDia);
+    // La proyección va siempre (antes del día 5 dice que aún es pronto) y también sin presupuesto.
+    assert.equal(typeof p.proyeccion.disponible, "boolean");
+    gastos.ponerPresupuesto(null);
+    assert.equal(typeof JSON.parse(llamar("gastos_presupuesto", {}).texto).proyeccion.disponible, "boolean");
+    gastos.ponerPresupuesto(200_000);
     const herramienta = (atender(gastos, { jsonrpc: "2.0", id: 9, method: "tools/list" }) as any).result.tools.find((t: any) => t.name === "gastos_presupuesto");
     assert.equal(herramienta.annotations.readOnlyHint, true);
     assert.deepEqual(herramienta.inputSchema.properties, {});
@@ -351,6 +356,10 @@ describe("servidor MCP de gastos", () => {
     assert.equal(datos.minutos, 90);
     assert.equal(datos.texto, "1 h 30 min");
     assert.equal(datos.hayRegistros, true);
+    // Las últimas 8 semanas, de la más vieja a la actual, con los ramos por su nombre (nunca por id).
+    assert.equal(datos.ultimasSemanas.length, 8);
+    assert.deepEqual(datos.ultimasSemanas.at(-1).porRamo, [{ ramo: "Cálculo", minutos: 90 }]);
+    assert.match(datos.ultimasSemanas[0].lunes, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(e.registros().length, 1);
     assert.equal(llamar("estudio_estadisticas", { periodo: "el siglo pasado" }).error, true);
     assert.equal(llamar("estudio_estadisticas", { ramo: "física" }).error, true);

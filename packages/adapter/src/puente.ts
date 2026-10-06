@@ -49,6 +49,7 @@
 //   aviso { "tipo": "calendario", "proximo": { titulo, lugar, inicioMs, finMs } | null, "etiqueta": "Cálculo en 25 min" }
 //   aviso { "tipo": "calendario-aviso", "texto": "📅 En 10 min: Cálculo…" }
 //   pedido { "tipo": "calendario-estado" }   → "datos": { proximo, etiqueta }
+//   pedido { "tipo": "resumen-dia" }          → "datos": { texto, corto, hay } (el resumen de la mañana: la frase «dame el resumen del día»)
 //   pedido { "tipo": "agenda-estado" }       → "datos": { dias, fuentes } (la pestaña Agenda: 14 días de eventos,
 //                                               entregas del aula y recordatorios; `fuentes` dice qué hay conectado)
 //
@@ -159,6 +160,7 @@
 //   pedido { "tipo": "plan-estudio-borrar", "que": "plan"|"ramo"|"todo", "plan"?: 2, "ramo"?: 3 }   (los eventos ya creados en el calendario se borran a mano)
 //   pedido { "tipo": "pomodoro-iniciar", "ramo"?: 3, "etiqueta"?: "…" }   → un pomodoro enlazado al ramo
 //   aviso { "tipo": "estadisticas-estudio", "resumen": ResumenEstudio }   tiempo estudiado de la semana, racha y totales por ramo (A5); también si lo cambia el pomodoro, un bloque hecho o el MCP
+//   aviso { "tipo": "celebracion", "motivo": "meta"|"racha"|"tarea"|"bloque"|"aprobado", "texto": "…" }   Brote festeja algo que lograste y marcaste tú (una sola vez cada cosa)
 //   pedido { "tipo": "estadisticas-estado" }   → "datos": { resumen } (con la función apagada, vacío)
 //   pedido { "tipo": "estadisticas-todo" }   → "datos": { ramos, resumen } (no depende de la función: «Lo que sé de ti»)
 //   pedido { "tipo": "estadisticas-borrar", "que": "registro"|"ramo"|"todo", "registro"?: 4, "ramo"?: 3 | null }   (definitivo: no hay Papelera)
@@ -192,6 +194,7 @@ import {
   AvisadorEntregas,
   DIAS_VENTANA,
   armarAgenda,
+  type PruebaEntrada,
   TareasAgenda,
   describirErrorAula,
   leerAula,
@@ -205,6 +208,7 @@ import {
   marcaFunciones,
   type ConfigFunciones,
   type IdFuncion,
+  FUNCIONES_DE_AGENDA,
   combinar,
   descargarIcal,
   etiquetaProximo,
@@ -274,6 +278,12 @@ import {
   PlanesEstudio,
   EstadisticasEstudio,
   resumirEstudio,
+  celebracionesDeEstudio,
+  leerAprobados,
+  ramosPorCelebrar,
+  textoBloqueHecho,
+  textoRamoAprobado,
+  textoTareaHecha,
   POMODORO,
   HORARIO_POR_DEFECTO,
   bloquesPorAvisar,
@@ -466,6 +476,8 @@ const motor = new Motor(gastos, {
   // se vuelve a leer el calendario para que aparezca en la isla.
   crearEvento: (evento) => crearEvento(evento),
   aula: () => entregasAula,
+  // «¿Cómo viene mi semana?»: lo ya leído; sin ninguna fuente prendida no hay nada que decir.
+  agenda: () => (FUNCIONES_DE_AGENDA.some((f) => activa(f)) ? agendaDeAhora(Date.now()) : null),
   uso: () => {
     // Quien pregunta "¿cuánto he gastado en tokens?" recibe lo último calculado y deja pedido lo nuevo.
     void actualizarUso();
@@ -643,11 +655,21 @@ function bloquesParaAgenda(desdeMs: number, hastaMs: number) {
     hecho: b.estado === "hecho",
   }));
 }
-async function estadoAgenda() {
-  if (activa("calendario")) await leerCalendarios();
-  if (activa("aula")) await leerAulaSiToca();
-  const ahora = Date.now();
-  const dias = armarAgenda(
+/** Las pruebas (evaluaciones con fecha y sin nota) de ramos activos entre dos instantes, con «Certamen 2 · Cálculo» de título. */
+function pruebasParaAgenda(desdeMs: number, hastaMs: number): PruebaEntrada[] {
+  const nombres = new Map(ramos.listar(false).map((r) => [r.id, r.nombre]));
+  const lista: PruebaEntrada[] = [];
+  for (const e of notas.listar()) {
+    const fecha = e.nota === null ? leerFechaPrueba(e.fecha) : null;
+    const ramo = nombres.get(e.ramoId);
+    if (!fecha || !ramo || fecha.ms < desdeMs || fecha.ms >= hastaMs) continue;
+    lista.push({ id: e.id, ramoId: e.ramoId, titulo: `${e.nombre} · ${ramo}`, inicioMs: fecha.ms, conHora: fecha.conHora });
+  }
+  return lista;
+}
+/** La agenda con lo que ya se leyó (sin volver a leer el calendario ni el aula): la pestaña y «¿cómo viene mi semana?». */
+function agendaDeAhora(ahora: number) {
+  return armarAgenda(
     {
       eventos: activa("calendario") ? eventosCalendario() : [],
       entregas: activa("aula") && entregasAula ? pendientes(entregasAula, ahora) : [],
@@ -656,10 +678,18 @@ async function estadoAgenda() {
       tareas: tareasAgenda.tareas(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000),
       // Los bloques de un plan de estudio ya agendado también son del usuario.
       bloques: bloquesParaAgenda(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000),
+      // Las fechas de las pruebas (A2/A4) solo salen con Estudio prendido.
+      pruebas: activa("estudio") ? pruebasParaAgenda(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000) : [],
     },
     ahora,
     DIAS_VENTANA,
   );
+}
+async function estadoAgenda() {
+  if (activa("calendario")) await leerCalendarios();
+  if (activa("aula")) await leerAulaSiToca();
+  const ahora = Date.now();
+  const dias = agendaDeAhora(ahora);
   return {
     dias,
     fuentes: {
@@ -1254,6 +1284,7 @@ function revisarNotas(forzar = false): void {
   if (!forzar && marca === marcaNotas) return;
   marcaNotas = marca;
   avisar({ tipo: "notas", fichas: fichasNotas() });
+  revisarRamosAprobados();
 }
 function detenerNotas(): void {
   marcaNotas = "";
@@ -1306,14 +1337,39 @@ function revisarPlanEstudio(forzar = false): void {
 // frase o por el agente) y al cambiar el día. Solo números: nunca se registra su contenido.
 let marcaEstadisticas = "";
 function estadoEstadisticas() {
-  return { resumen: resumirEstudio(estadisticas.registros(), Date.now()) };
+  return { resumen: resumirEstudio(estadisticas.registros(), Date.now(), estadisticas.meta()) };
 }
 function revisarEstadisticas(forzar = false): void {
   const marca = `${estadisticas.marca()}|${ramos.marca()}|${inicioDeHoy(Date.now())}`;
   if (!forzar && marca === marcaEstadisticas) return;
   marcaEstadisticas = marca;
   avisar({ tipo: "estadisticas-estudio", ...estadoEstadisticas() });
+  revisarCelebracionesDeEstudio();
 }
+
+// Celebraciones (E3 y E4): Brote festeja lo que el usuario logra y marcó él mismo (la meta de la semana, los hitos
+// de la racha, una tarea o un bloque hechos, un ramo aprobado). Una sola vez cada cosa; nada de lo que pasó se
+// pierde ni se reprocha. En los registros solo queda el motivo, nunca el texto (que puede traer un ramo).
+function celebrar(motivo: string, texto: string): void {
+  registrar(`celebración: ${motivo}`);
+  avisar({ tipo: "celebracion", motivo, texto });
+}
+function revisarCelebracionesDeEstudio(): void {
+  const previos = estadisticas.avisos();
+  const { celebraciones, avisos } = celebracionesDeEstudio(estadisticas.registros(), estadisticas.meta(), Date.now(), previos);
+  if (JSON.stringify(avisos) !== JSON.stringify(previos)) estadisticas.guardarAvisos(avisos);
+  for (const c of celebraciones) celebrar(c.tipo, c.texto);
+}
+const CLAVE_APROBADOS = "ramos-aprobados";
+function revisarRamosAprobados(): void {
+  const aprobadosAhora = fichasNotas(true).filter((f) => f.calculo.veredicto === "aprobado").map((f) => f.ramoId);
+  const { celebrar: nuevos, guardar } = ramosPorCelebrar(aprobadosAhora, leerAprobados(gastos.ajuste(CLAVE_APROBADOS)));
+  if (nuevos.length > 0 || gastos.ajuste(CLAVE_APROBADOS) === null) gastos.guardarAjuste(CLAVE_APROBADOS, JSON.stringify(guardar));
+  const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
+  for (const id of nuevos) celebrar("aprobado", textoRamoAprobado(nombres.get(id) ?? "tu ramo"));
+}
+const tareasCelebradas = new Set<number>();
+const bloquesCelebrados = new Set<number>();
 function detenerEstadisticas(): void {
   marcaEstadisticas = "";
   avisar({ tipo: "estadisticas-estudio", resumen: resumirEstudio([], Date.now()) });
@@ -1781,6 +1837,12 @@ async function atender(pedido: any): Promise<Extra> {
       return { datos: estadoAula() };
     case "agenda-estado":
       return { datos: await estadoAgenda() };
+    case "resumen-dia": {
+      // El automático de la mañana y el botón de la isla: el mismo texto que la frase «dame el resumen del día».
+      if (activa("calendario")) await leerCalendarios();
+      if (activa("aula")) await leerAulaSiToca();
+      return { datos: motor.resumenDelDia() };
+    }
     case "programador-estado":
       return { datos: estadoProgramador() };
     case "uso-estado":
@@ -2028,6 +2090,10 @@ async function atender(pedido: any): Promise<Extra> {
       if (!Number.isInteger(pedido.bloque) || !["pendiente", "hecho", "saltado"].includes(pedido.estado)) break;
       if (!planesEstudio.marcar(pedido.bloque, pedido.estado)) throw new Error("Ese bloque ya no existe");
       revisarPlanEstudio();
+      if (pedido.estado === "hecho" && activa("estudio") && !bloquesCelebrados.has(pedido.bloque)) {
+        bloquesCelebrados.add(pedido.bloque);
+        celebrar("bloque", textoBloqueHecho(bloquesCelebrados.size - 1));
+      }
       return {};
     }
     case "plan-estudio-borrar": {
@@ -2110,6 +2176,11 @@ async function atender(pedido: any): Promise<Extra> {
     case "tarea-hecha":
       if (!Number.isInteger(pedido.tarea) || typeof pedido.hecha !== "boolean") break;
       if (!tareasAgenda.marcarHecha(pedido.tarea, pedido.hecha)) throw new Error("Esa tarea ya no existe");
+      // Brote celebra lo que marcas tú (una vez por tarea).
+      if (pedido.hecha && (activa("estudio") || activa("grabaciones")) && !tareasCelebradas.has(pedido.tarea)) {
+        tareasCelebradas.add(pedido.tarea);
+        celebrar("tarea", textoTareaHecha(tareasCelebradas.size - 1));
+      }
       return {};
     case "grabacion-borrar": {
       if ((pedido.que !== "transcripcion" && pedido.que !== "audio") || (pedido.grabacion !== null && typeof pedido.grabacion !== "string")) break;

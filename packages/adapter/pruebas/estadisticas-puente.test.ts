@@ -82,6 +82,10 @@ describe("estadísticas de estudio en el puente", { skip: process.platform === "
       assert.equal(anota.local.intencion, "estudio-anotar");
       const aviso = await esperarHasta(() => (p.estado()!.resumen.totalMin === 120 ? p.estado() : undefined));
       assert.equal(aviso!.resumen.hoyMin, 120);
+      // Las 8 semanas viajan en el mismo aviso: la última es la actual y trae lo mismo que el total de la semana.
+      assert.equal(aviso!.resumen.semanas.length, 8);
+      assert.equal(aviso!.resumen.semanas.at(-1).totalMin, 120);
+      assert.deepEqual(aviso!.resumen.semanas.at(-1).porRamo, [{ ramoId: ramo.id, min: 120 }]);
       assert.deepEqual(aviso!.resumen.porRamo.map((r: any) => [r.ramoId, r.min]), [[ramo.id, 120]]);
       assert.match((await p.pedir({ tipo: "enviar", texto: "¿cuánto he estudiado hoy?" })).local.texto, /Hoy llevas 2 h estudiados/);
       assert.match((await p.pedir({ tipo: "enviar", texto: "¿cuál es mi racha?" })).local.texto, /Llevas 1 día seguido/);

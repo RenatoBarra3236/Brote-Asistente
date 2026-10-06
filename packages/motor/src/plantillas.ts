@@ -50,6 +50,9 @@ export type Intencion =
   | "presupuesto-quitar"
   | "presupuesto-queda"
   | "presupuesto-hoy"
+  | "plata-proyeccion"
+  | "agenda-semana"
+  | "resumen-dia"
   | "grabar-iniciar"
   | "grabar-detener"
   | "grabar-estado"
@@ -72,7 +75,10 @@ export type Intencion =
   | "estudio-hoy"
   | "estudio-horas"
   | "estudio-racha"
-  | "estudio-anotar";
+  | "estudio-anotar"
+  | "estudio-meta-poner"
+  | "estudio-meta-quitar"
+  | "estudio-meta-como";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista" | "fecha" | "dia";
 
@@ -272,6 +278,18 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "presupuesto-como", intencion: "presupuesto-queda", patron: "como (voy|vamos|va|ando|anda) con [mi|el] presupuesto" },
   { id: "presupuesto-ver", intencion: "presupuesto-queda", patron: "[(muestrame|ver|dame)] [mi|el] presupuesto" },
   { id: "presupuesto-hoy", intencion: "presupuesto-hoy", patron: "cuanto (puedo gastar|puedo gastarme|me queda para gastar|me puedo gastar) [hoy|hoy dia|el dia de hoy|para hoy]" },
+  // El resumen del día (E2). «buenos días» solo si es el saludo suelto: con más palabras va al agente.
+  { id: "resumen-dia", intencion: "resumen-dia", patron: "[dame] [mi|el] resumen (del dia|de hoy|de la manana) [por favor]" },
+  { id: "resumen-dia-como", intencion: "resumen-dia", patron: "como (viene|se ve|va a estar|va) [mi|el] dia [de hoy|hoy]" },
+  { id: "resumen-dia-buenos", intencion: "resumen-dia", patron: "(buenos dias|buen dia) [brote]" },
+  // La semana (B2): qué tan cargada viene. «semana» sola, sin «entregas»/«plata»: eso son otras intenciones.
+  { id: "semana-como", intencion: "agenda-semana", patron: "como (viene|se ve|va a estar|va|vendra) [mi|la|esta] semana" },
+  { id: "semana-pesada", intencion: "agenda-semana", patron: "(viene|esta|va a estar) pesada [mi|la|esta] semana" },
+  { id: "semana-pesada-esta", intencion: "agenda-semana", patron: "[mi|la|esta] semana (viene|esta|va a estar|sera) (pesada|cargada|complicada|liviana|tranquila)" },
+  // La proyección del mes (sirve con o sin presupuesto). Siempre con «este mes» o «gasto»: "¿cómo voy en cálculo?" son las notas.
+  { id: "proyeccion-como", intencion: "plata-proyeccion", patron: "como voy (este mes|con la plata|con mis gastos) [este mes]" },
+  { id: "proyeccion-cuanto", intencion: "plata-proyeccion", patron: "cuanto (voy a gastar|gastare|terminare gastando|me voy a gastar) [en total] (este mes|en el mes)" },
+  { id: "proyeccion-ritmo", intencion: "plata-proyeccion", patron: "a que ritmo (gasto|estoy gastando|voy gastando) [este mes]" },
   { id: "gasto-verbo", intencion: "registrar-gasto", patron: `(${VERBO_GASTO}) {monto} (en|de|por|para) {cosa}` },
   {
     id: "gasto-anota",
@@ -420,6 +438,13 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "estudio-racha-cual", intencion: "estudio-racha", patron: "(cual es|como va|cuanto es) mi racha [de estudio]" },
   { id: "estudio-racha-mi", intencion: "estudio-racha", patron: "mi racha [de estudio]" },
   { id: "estudio-racha-dias", intencion: "estudio-racha", patron: "cuantos dias seguidos (he estudiado|llevo estudiando)" },
+  // La meta semanal de estudio (E3): siempre con «semana»/«semanal» o «de estudio», para no chocar con otras metas.
+  { id: "meta-estudio-estudiar", intencion: "estudio-meta-poner", patron: "(mi meta es|mi meta sera|quiero|voy a) estudiar {tiempo} (a la semana|por semana|semanales)" },
+  { id: "meta-estudio-de-estudio", intencion: "estudio-meta-poner", patron: "mi meta de estudio (es|sera) [de] {tiempo} [a la semana|por semana|semanales]" },
+  { id: "meta-estudio-semanal", intencion: "estudio-meta-poner", patron: "mi meta semanal [de estudio] (es|sera) [de] {tiempo}" },
+  { id: "meta-estudio-pon", intencion: "estudio-meta-poner", patron: "(pon|ponme|deja|fija|define) mi meta (semanal|de estudio) en {tiempo} [a la semana|por semana]" },
+  { id: "meta-estudio-quitar", intencion: "estudio-meta-quitar", patron: "(quita|quitame|borra|elimina|saca) mi meta (de estudio|semanal de estudio)" },
+  { id: "meta-estudio-como", intencion: "estudio-meta-como", patron: "(como voy con|cuanto me falta para) mi meta (de estudio|semanal)" },
   { id: "estudio-anotar-ramo-ayer", intencion: "estudio-anotar", patron: "estudie {tiempo} (de|en) {cosa} {dia}" },
   { id: "estudio-anotar-ramo", intencion: "estudio-anotar", patron: "estudie {tiempo} (de|en) {cosa}" },
   { id: "estudio-anotar-ayer", intencion: "estudio-anotar", patron: "estudie {tiempo} {dia}" },

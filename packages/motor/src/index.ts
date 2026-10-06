@@ -1,5 +1,5 @@
 export { CATEGORIAS, COLOR_CATEGORIA, EMOJI_CATEGORIA, categoriaDe, type Categoria } from "./categorias.ts";
-export { DIAS_PLATA, UMBRALES_PRESUPUESTO, avisosPresupuesto, claveMes, describirHoy, describirQueda, leerAvisados, presupuestoDelMes, resumenPlata, type AvisadosPresupuesto, type EstadoPlata, type GastoPlano, type PresupuestoMes } from "./plata.ts";
+export { DIAS_PLATA, UMBRALES_PRESUPUESTO, avisosPresupuesto, claveMes, describirHoy, describirProyeccion, describirQueda, leerAvisados, presupuestoDelMes, proyectarMes, resumenPlata, tendenciaMeses, type AvisadosPresupuesto, type EstadoPlata, type GastoPlano, type MesPlata, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
 export { Gastos, RUTA_BASE, type Gasto, type NuevoGasto, type Via } from "./gastos.ts";
 export { leerMonto } from "./montos.ts";
 export { Motor, type Resultado } from "./motor.ts";
@@ -15,11 +15,12 @@ export { MedidorCpu, UMBRALES, Vigilante, describirEquipo, formatearBytes, inter
 export { SeguidorDescargas, carpetaDescargas, describirDescargas, formatearTamano, hace, listarCarpeta, recientes, sePuedeAbrir, vigilarCarpeta, type Descarga, type DescargaEnCurso, type EntradaCarpeta } from "./descargas.ts";
 export { ACCIONES_MUSICA, controlarMusica, describirMusica, leerMusica, tituloCancion, type AccionMusica, type AppMusica, type EstadoMusica, type LecturaMusica } from "./musica.ts";
 export { type Musica } from "./motor.ts";
-export { armarAgenda, type DiaAgenda, type ItemAgenda, type TipoItemAgenda } from "./agenda.ts";
+export { armarAgenda, type DiaAgenda, type ItemAgenda, type PruebaEntrada, type TipoItemAgenda } from "./agenda.ts";
+export { PESO_ENTREGA, PESO_PRUEBA, SEMANAS_ADELANTE, UMBRAL_PESADO, cargaDeLaSemana, describirSemana, lunesDe, type DiaCarga, type NivelCarga, type PuntoDia, type SemanaCarga } from "./agenda-carga.ts";
 export { AvisadorCalendario, DIAS_VENTANA, combinar, descargarIcal, etiquetaProximo, eventosDeIcal, leerCalendarioMac, leerCalendarioMacAhora, leerUrlIcal, marcaConfigCalendario, normalizarUrlIcal, proximoEvento, proximos, hora, RUTA_CONFIG_CALENDARIO, crearEventoMacAhora, describirCreacion, validarEvento, type NuevoEvento, type ResultadoCreacion, type EventoCalendario, type LecturaMac } from "./calendario.ts";
 export { RUTA_CONEXION_HOOKS, SesionesClaude, describirHerramienta, describirSesiones, esDeOpenClaw, leerEventoHook, pedirAlPuente, pedirSesiones, type EventoHook, type Reaccion, type SesionClaude } from "./programador.ts";
 export { AVISOS_ENTREGA, AvisadorEntregas, RUTA_CONFIG_AULA, aulaSoloEnLlavero, cuandoVence, describirEntregas, describirErrorAula, etiquetaEntrega, interpretarCanvas, interpretarMoodle, leerAula, leerConfigAula, marcaConfigAula, pendientes, type ConfigAula, type Entrega, type LecturaAula, type Plataforma } from "./aula.ts";
-export { FUNCIONES, IDS_FUNCIONES, IDS_TARJETAS, MENSAJE_APAGADA, MENSAJE_APAGADA_MCP, NOMBRES_TARJETAS, PRESETS, activasDePreset, funcionDeHerramienta, funcionDeIntencion, funcionesPorDefecto, funcionesQueUsan, normalizarFunciones, presetDe, serializarFunciones, type ConfigFunciones, type Funcion, type IdFuncion, type IdPreset, type IdTarjeta, type PermisoMac } from "./funciones.ts";
+export { FUNCIONES, FUNCIONES_DE_AGENDA, FUNCIONES_DE_RESUMEN, esDeAgenda, IDS_FUNCIONES, IDS_TARJETAS, MENSAJE_APAGADA, MENSAJE_APAGADA_MCP, NOMBRES_TARJETAS, PRESETS, activasDePreset, funcionDeHerramienta, funcionDeIntencion, funcionesPorDefecto, funcionesQueUsan, normalizarFunciones, presetDe, serializarFunciones, type ConfigFunciones, type Funcion, type IdFuncion, type IdPreset, type IdTarjeta, type PermisoMac } from "./funciones.ts";
 export { FuncionesVigiladas, leerFunciones, marcaFunciones, rutaFunciones } from "./funciones-archivo.ts";
 export { FECHA_PRECIOS, FUENTE_PRECIOS, PRECIOS, PRECIOS_RAPIDO, claveModelo, nombreModelo, precioDe, type Precio } from "./precios.ts";
 export { DIAS_GUARDADOS, describirUso, formatearTokens, formatearUsd, leerLineaUso, nombreDeCarpeta, reconstruirRuta, resumirUso, tokensDe, valorApi, valorDe, type RegistroUso, type ResumenPeriodo, type ResumenUso, type TokensUso, type TotalUso } from "./uso.ts";
@@ -55,6 +56,10 @@ export { proponerPlan, type PropuestaPlan, type ResultadoPropuesta } from "./pla
 export { describirPrueba, textoAvisoBloque, textoBloquesDeHoy, textoFechaPuesta, textoPlanPedido } from "./plan-estudio-frases.ts";
 export { interpretarPlanEstudio, responderPlanEstudio, type AccionPlanEstudio } from "./plan-estudio-motor.ts";
 export { EstadisticasEstudio, asegurarTablaEstudio, quitarRegistroDeBloque, registrarEstudio, type ResultadoAnotar } from "./estadisticas.ts";
-export { AVISO_DIA_MIN, MAX_MANUAL_MIN, MIN_PARCIAL, MIN_RACHA, formatearMinutos, inicioDeSemana, minutosEnRango, minutosPorDia, racha, resumirEstudio, sinDuplicados, validarMinutosManual, type FuenteRegistro, type RegistroEstudio, type ResumenEstudio, type TotalDeRamo } from "./estadisticas-tipos.ts";
+export { AVISO_DIA_MIN, MAX_MANUAL_MIN, MIN_PARCIAL, MIN_RACHA, formatearMinutos, inicioDeSemana, minutosEnRango, minutosPorDia, minutosPorDiaYRamo, racha, resumirEstudio, serieDeRamo, semanasDeEstudio, sinDuplicados, validarMinutosManual, SEMANAS_GRAFICO, type FuenteRegistro, type RegistroEstudio, type ResumenEstudio, type SemanaEstudio, type TotalDeRamo } from "./estadisticas-tipos.ts";
 export { TEXTO_SIN_DATOS, textoEstudioAnotado, textoHorasEstudiadas, textoRacha } from "./estadisticas-frases.ts";
 export { interpretarEstadisticas, responderEstadisticas, type AccionEstadisticas } from "./estadisticas-motor.ts";
+export { armarResumenDelDia, saludoDelMomento, type EntradaResumen, type PlataDelDia, type ResumenDelDia } from "./resumen-dia.ts";
+export { HITOS_RACHA, celebracionesDeEstudio, claveDeSemana, leerAvisosEstudio, textoHitoRacha, textoMetaCumplida, type AvisosEstudio, type CelebracionEstudio } from "./estadisticas-metas.ts";
+export { META_MAX, META_MIN, progresoDeMeta, validarMeta, type ProgresoMeta } from "./estadisticas-tipos.ts";
+export { elegirTexto, leerAprobados, ramosPorCelebrar, textoBloqueHecho, textoRamoAprobado, textoTareaHecha } from "./celebraciones.ts";

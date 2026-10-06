@@ -69,6 +69,33 @@ export interface Descubrimiento {
   texto: string;
 }
 
+export interface MesPlata {
+  /** "2026-10". */
+  clave: string;
+  /** "oct". */
+  corto: string;
+  nombre: string;
+  total: number;
+  /** El mes en curso: todavía no termina. */
+  parcial: boolean;
+  /** Dónde más se gastó ese mes (nulo si no hubo gastos). */
+  mayor: { categoria: Categoria; emoji: string; total: number } | null;
+}
+
+export interface ProyeccionMes {
+  /** "pronto" = antes del día 5, con tan pocos datos no se proyecta. */
+  estado: "pronto" | "ok";
+  /** Gasto por día del ritmo (sin el gasto único dominante). */
+  ritmoDia: number;
+  /** Lo que habrás gastado al terminar el mes si sigues así. */
+  proyectado: number;
+  /** El gasto único que pesa más de la mitad del mes: se deja fuera del ritmo y se suma una sola vez. */
+  excluido: { monto: number; descripcion: string } | null;
+  /** Contra el presupuesto: positivo = te pasarías, negativo = te sobrarían. */
+  diferencia: number | null;
+  color: ColorPlata | null;
+}
+
 export interface EstadoPlata {
   mes: { total: number; cantidad: number; mesPasado: number; variacion: number | null; nombre: string };
   hoy: number;
@@ -78,14 +105,21 @@ export interface EstadoPlata {
   ultimos: MovimientoPlata[];
   frecuentes: FrecuentePlata[];
   descubrimiento: Descubrimiento | null;
+  /** Los últimos 6 meses (el último es el actual). */
+  meses: MesPlata[];
+  proyeccion: ProyeccionMes;
 }
 
 const DIA = 86_400_000;
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const LETRAS = ["D", "L", "M", "M", "J", "V", "S"];
 
-/** Cuántos días de gastos necesita `resumenPlata` (tres meses para notar lo que se repite cada mes). */
-export const DIAS_PLATA = 100;
+/** Cuántos días de gastos necesita `resumenPlata` (seis meses para la tendencia; de ellos solo tres los usa lo que se repite cada mes). */
+export const DIAS_PLATA = 190;
+/** Cuántos meses dibuja la tendencia y desde qué día del mes se proyecta. */
+export const MESES_TENDENCIA = 6;
+export const DIA_MINIMO_PROYECCION = 5;
 /** Cuántos movimientos y botones de un toque se muestran. */
 export const ULTIMOS_PLATA = 5;
 export const FRECUENTES_PLATA = 3;
@@ -282,7 +316,71 @@ export function resumenPlata(lista: readonly GastoPlano[], presupuesto: number |
     ultimos,
     frecuentes: gastosFrecuentes(lista, ahoraMs),
     descubrimiento: descubrir(lista, ahoraMs),
+    meses: tendenciaMeses(lista, ahoraMs),
+    proyeccion: proyectarMes(lista, presupuesto, ahoraMs),
   };
+}
+
+// ---------------------------------------------------------------- tendencia y proyección
+
+/** Lo gastado en cada uno de los últimos `cuantos` meses (el último es el actual, marcado parcial). */
+export function tendenciaMeses(lista: readonly GastoPlano[], ahoraMs: number, cuantos = MESES_TENDENCIA): MesPlata[] {
+  const meses: MesPlata[] = [];
+  for (let i = -(cuantos - 1); i <= 0; i++) {
+    const desde = inicioMes(ahoraMs, i);
+    const hasta = inicioMes(ahoraMs, i + 1);
+    const delMes = lista.filter((g) => g.fechaMs >= desde && g.fechaMs < hasta);
+    const mayor = CATEGORIAS.map((categoria) => ({ categoria, total: suma(delMes, desde, hasta, (g) => g.categoria === categoria) }))
+      .filter((c) => c.total > 0)
+      .sort((a, b) => b.total - a.total)[0];
+    const fecha = new Date(desde);
+    meses.push({
+      clave: claveMes(desde),
+      corto: MESES_CORTOS[fecha.getMonth()],
+      nombre: MESES[fecha.getMonth()],
+      total: delMes.reduce((t, g) => t + g.monto, 0),
+      parcial: i === 0,
+      mayor: mayor ? { categoria: mayor.categoria, emoji: EMOJI_CATEGORIA[mayor.categoria], total: mayor.total } : null,
+    });
+  }
+  return meses;
+}
+
+/**
+ * "A este ritmo terminas el mes en X": lo gastado ÷ los días que van (contando hoy) × los que faltan,
+ * más lo ya gastado. Antes del día 5 no proyecta (con tan pocos datos un solo gasto lo cambia todo). Si un
+ * solo gasto pasa de la mitad de lo gastado en el mes (una matrícula, el arriendo) no se repite todos los
+ * días: se deja fuera del ritmo y se suma una sola vez.
+ */
+export function proyectarMes(lista: readonly GastoPlano[], presupuesto: number | null, ahoraMs: number): ProyeccionMes {
+  const desde = inicioMes(ahoraMs);
+  const hasta = inicioMes(ahoraMs, 1);
+  const delMes = lista.filter((g) => g.fechaMs >= desde && g.fechaMs < hasta && g.fechaMs <= ahoraMs);
+  const total = delMes.reduce((t, g) => t + g.monto, 0);
+  const dia = new Date(ahoraMs).getDate();
+  if (dia < DIA_MINIMO_PROYECCION) return { estado: "pronto", ritmoDia: 0, proyectado: total, excluido: null, diferencia: null, color: null };
+  const mayor = delMes.reduce<GastoPlano | null>((m, g) => (!m || g.monto > m.monto ? g : m), null);
+  const excluido = mayor && mayor.monto * 2 > total ? { monto: mayor.monto, descripcion: mayor.descripcion ?? nombreCategoria(mayor.categoria) } : null;
+  const ritmoDia = (total - (excluido?.monto ?? 0)) / dia;
+  const proyectado = Math.round(total + ritmoDia * (diasDelMes(ahoraMs) - dia));
+  const diferencia = presupuesto ? proyectado - presupuesto : null;
+  const color: ColorPlata | null = !presupuesto ? null : proyectado > presupuesto ? "rojo" : proyectado > presupuesto * 0.9 ? "ambar" : "verde";
+  return { estado: "ok", ritmoDia: Math.round(ritmoDia), proyectado, excluido, diferencia, color };
+}
+
+/** La frase de la proyección (la usan el motor sin IA, el MCP y la isla). */
+export function describirProyeccion(p: ProyeccionMes, presupuesto: number | null): string {
+  if (p.estado === "pronto") return "Aún es pronto para proyectar el mes: con los primeros días anotados no se puede saber el ritmo. Pregúntame de nuevo desde el día 5 🌱";
+  const partes = [`A este ritmo (unos ${formatearMonto(p.ritmoDia)} al día) terminas el mes en ${formatearMonto(p.proyectado)}.`];
+  if (p.excluido) partes.push(`Sin contar tu gasto de ${formatearMonto(p.excluido.monto)} en ${p.excluido.descripcion}, que no se repite todos los días.`);
+  if (presupuesto && p.diferencia !== null) {
+    partes.push(
+      p.diferencia > 0
+        ? `Con tu presupuesto de ${formatearMonto(presupuesto)} te pasarías por ${formatearMonto(p.diferencia)} 👀`
+        : `Con tu presupuesto de ${formatearMonto(presupuesto)} te sobrarían ${formatearMonto(-p.diferencia)} 🌱`,
+    );
+  }
+  return partes.join(" ");
 }
 
 // ---------------------------------------------------------------- avisos del presupuesto

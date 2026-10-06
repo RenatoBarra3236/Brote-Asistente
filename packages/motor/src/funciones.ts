@@ -217,12 +217,25 @@ export function serializarFunciones(config: ConfigFunciones): string {
   return JSON.stringify({ version: 1, activas: config.activas, tarjetas: config.tarjetas });
 }
 
+/** Las funciones que alimentan la pestaña Agenda: con una prendida, la agenda existe. */
+export const FUNCIONES_DE_AGENDA: readonly IdFuncion[] = ["calendario", "aula", "temporizadores", "estudio", "grabaciones"];
+
+/** Con cualquiera de estas, el resumen del día tiene algo que decir (la agenda y los gastos). */
+export const FUNCIONES_DE_RESUMEN: readonly IdFuncion[] = [...FUNCIONES_DE_AGENDA, "gastos"];
+
+/** Las frases que sirven con cualquiera de las fuentes de la agenda (no dependen de una sola función). */
+export function esDeAgenda(intencion: string): boolean {
+  return intencion === "agenda-semana" || intencion === "resumen-dia";
+}
+
 /** La función de la que depende una intención del motor (`null`: siempre disponible, como "ver-memoria"). */
 export function funcionDeIntencion(intencion: string): IdFuncion | null {
-  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto)$/.test(intencion) || intencion.startsWith("presupuesto-")) return "gastos";
+  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto|plata-proyeccion)$/.test(intencion) || intencion.startsWith("presupuesto-")) return "gastos";
   if (/^(pomodoro|temporizador|cancelar-pomodoro|cancelar-temporizador|consultar-temporizador)$/.test(intencion)) return "temporizadores";
   if (intencion.startsWith("calendario-")) return "calendario";
   if (intencion.startsWith("aula-")) return "aula";
+  // «¿Cómo viene mi semana?» sirve con cualquiera de las fuentes de la Agenda (ver `FUNCIONES_DE_AGENDA`): aquí va la principal.
+  if (esDeAgenda(intencion)) return "calendario";
   if (intencion.startsWith("musica-")) return "musica";
   if (/^(ver-descargas|abrir-ultima-descarga|mostrar-ultima-descarga)$/.test(intencion)) return "descargas";
   if (intencion === "estado-equipo") return "equipo";

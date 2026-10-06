@@ -23,7 +23,7 @@ function cantidad(texto: string): number | null {
  * La duración en milisegundos, o `null` si el texto no es una duración. Un número solo se
  * entiende como minutos ("pomodoro de 30").
  */
-export function leerDuracion(entrada: string): number | null {
+export function leerDuracion(entrada: string, maximo: number = MAXIMO): number | null {
   const texto = entrada.trim().replace(/\s+/g, " ");
   const fijas: Record<string, number> = {
     "media hora": 30 * MINUTO,
@@ -35,14 +35,14 @@ export function leerDuracion(entrada: string): number | null {
     "un minuto": MINUTO,
     "una hora": HORA,
   };
-  if (texto in fijas) return validar(fijas[texto]);
+  if (texto in fijas) return validar(fijas[texto], maximo);
 
   // "2 horas y media", "1 hora y 15 minutos"
   const compuesta = texto.match(/^(\S+) horas? y (media|\S+ minutos?|\S+ min)$/);
   if (compuesta) {
     const horas = cantidad(compuesta[1]);
     const resto = compuesta[2] === "media" ? 30 * MINUTO : leerDuracion(compuesta[2]);
-    return horas === null || resto === null ? null : validar(horas * HORA + resto);
+    return horas === null || resto === null ? null : validar(horas * HORA + resto, maximo);
   }
 
   const simple = texto.match(/^(\S+)(?: (horas?|hrs?|h|minutos?|mins?|m|segundos?|segs?|s))?$/);
@@ -51,12 +51,12 @@ export function leerDuracion(entrada: string): number | null {
   if (valor === null) return null;
   const unidad = simple[2] ?? "min";
   const factor = /^h/.test(unidad) ? HORA : /^s/.test(unidad) ? SEGUNDO : MINUTO;
-  return validar(valor * factor);
+  return validar(valor * factor, maximo);
 }
 
-function validar(ms: number): number | null {
+function validar(ms: number, maximo: number): number | null {
   const redondeado = Math.round(ms);
-  return redondeado >= SEGUNDO && redondeado <= MAXIMO ? redondeado : null;
+  return redondeado >= SEGUNDO && redondeado <= maximo ? redondeado : null;
 }
 
 /** "25 minutos", "1 hora y 30 minutos", "45 segundos": para las respuestas. */

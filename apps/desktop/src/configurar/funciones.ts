@@ -5,6 +5,7 @@
 
 import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
 import { guardarNotificaciones, leerNotificaciones } from "../agente/notificaciones";
+import { CLAVE_CONCENTRACION, CLAVE_RESUMEN_MANANA, guardarInterruptor, leerInterruptor } from "../agente/preferencias";
 import { PERMISOS, type Paso } from "../agente/preparacion";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, mostrarAviso, paso, pintar } from "./comun";
@@ -199,4 +200,28 @@ export function vistaNotificaciones(): HTMLElement {
   etiqueta.append(casilla, document.createTextNode(" Avisarme también con notificaciones del sistema"));
   fila.append(etiqueta);
   return fila;
+}
+
+/** Un interruptor de la ventana (se guarda en `localStorage`; sin dato rige el valor de fábrica). */
+function interruptor(clave: string, deFabrica: boolean, texto: string, ayuda: string): HTMLElement {
+  const fila = crear("div", "fila-tarjeta");
+  const etiqueta = crear("label", "mostrar-tarjeta");
+  const casilla = crear("input");
+  casilla.type = "checkbox";
+  casilla.checked = leerInterruptor(localStorage, clave, deFabrica);
+  casilla.addEventListener("change", () => guardarInterruptor(localStorage, clave, casilla.checked));
+  etiqueta.append(casilla, document.createTextNode(` ${texto}`));
+  etiqueta.title = ayuda;
+  fila.append(etiqueta);
+  return fila;
+}
+
+/** Los dos interruptores de «Concentración y resumen» (E1 y E2 de docs/plan-estudio-y-mejoras.md). */
+export function vistaConcentracionYResumen(): HTMLElement {
+  const caja = crear("div", "");
+  caja.append(
+    interruptor(CLAVE_CONCENTRACION, true, "Modo concentración: callar los avisos que no importan mientras estudio", "Con un bloque de pomodoro corriendo, los avisos de descargas, plata, Claude Code, etc. no salen en la isla ni como notificación; quedan en Novedades. Pasan el temporizador, tu próxima clase, una entrega y el bloque del plan de estudio."),
+    interruptor(CLAVE_RESUMEN_MANANA, true, "Resumen de la mañana: un aviso con lo del día al abrir la isla (de 6 a 12)", "Una vez al día, sin abrir la isla. También puedes pedirlo cuando quieras: «dame el resumen del día»."),
+  );
+  return caja;
 }

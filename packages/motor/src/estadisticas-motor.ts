@@ -3,8 +3,8 @@
 // frase sigue al agente. Nunca adivina el ramo.
 
 import type { EstadisticasEstudio } from "./estadisticas.ts";
-import { minutosEnRango, racha, resumirEstudio } from "./estadisticas-tipos.ts";
-import { TEXTO_SIN_DATOS, textoEstudioAnotado, textoHorasEstudiadas, textoRacha } from "./estadisticas-frases.ts";
+import { minutosEnRango, progresoDeMeta, racha, resumirEstudio } from "./estadisticas-tipos.ts";
+import { TEXTO_META_QUITADA, TEXTO_NO_HABIA_META, TEXTO_SIN_DATOS, TEXTO_SIN_META, textoEstudioAnotado, textoHorasEstudiadas, textoMetaPuesta, textoProgresoMeta, textoRacha } from "./estadisticas-frases.ts";
 import { buscarRamo } from "./notas-motor.ts";
 import { FORMAS_DE_PERIODO, rangoDe } from "./periodos.ts";
 import type { Periodo } from "./periodos.ts";
@@ -14,6 +14,8 @@ import { leerDuracion } from "./tiempo.ts";
 export type AccionEstadisticas =
   | { intencion: "estudio-horas"; periodo: Periodo | null; ramo: string | null }
   | { intencion: "estudio-racha" }
+  | { intencion: "estudio-meta-poner"; minutos: number }
+  | { intencion: "estudio-meta-quitar" | "estudio-meta-como" }
   | { intencion: "estudio-anotar"; minutos: number; ramo: string | null; ayer: boolean };
 
 export interface ContextoEstadisticas {
@@ -32,6 +34,14 @@ export function interpretarEstadisticas(intencion: string, ranuras: Partial<Reco
     }
     case "estudio-racha":
       return { intencion };
+    case "estudio-meta-poner": {
+      // Una meta semanal puede pasar de las 12 horas que acepta un temporizador: aquí el tope lo pone `validarMeta`.
+      const ms = ranuras.tiempo === undefined ? null : leerDuracion(ranuras.tiempo, 1000 * 3_600_000);
+      return ms === null ? null : { intencion, minutos: Math.round(ms / 60_000) };
+    }
+    case "estudio-meta-quitar":
+    case "estudio-meta-como":
+      return { intencion };
     case "estudio-anotar": {
       const ms = ranuras.tiempo === undefined ? null : leerDuracion(ranuras.tiempo);
       if (ms === null) return null;
@@ -49,6 +59,23 @@ function noEncontreRamo(nombre: string): string {
 export function responderEstadisticas(accion: AccionEstadisticas, ctx: ContextoEstadisticas): string | null {
   const registros = ctx.estadisticas.registros();
   const ramos = ctx.ramos.listar();
+
+  // La meta semanal (E3): poner, quitar y cómo vas. No necesita que ya haya registros.
+  if (accion.intencion === "estudio-meta-poner" || accion.intencion === "estudio-meta-quitar" || accion.intencion === "estudio-meta-como") {
+    const totalSemana = () => resumirEstudio(registros, ctx.ahoraMs).totalMin;
+    if (accion.intencion === "estudio-meta-poner") {
+      const r = ctx.estadisticas.ponerMeta(accion.minutos);
+      if (!r.ok) return `${r.motivo}.`;
+      return textoMetaPuesta(r.minutos as number, progresoDeMeta(totalSemana(), r.minutos));
+    }
+    if (accion.intencion === "estudio-meta-quitar") {
+      if (ctx.estadisticas.meta() === null) return TEXTO_NO_HABIA_META;
+      ctx.estadisticas.ponerMeta(null);
+      return TEXTO_META_QUITADA;
+    }
+    const progreso = progresoDeMeta(totalSemana(), ctx.estadisticas.meta());
+    return progreso ? textoProgresoMeta(progreso) : TEXTO_SIN_META;
+  }
 
   if (accion.intencion === "estudio-anotar") {
     let ramoId: number | null = null;

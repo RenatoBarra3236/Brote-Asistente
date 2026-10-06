@@ -70,11 +70,33 @@ import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearN
 import { VistaRepaso } from "./repaso-vista";
 import { VistaPlanEstudio } from "./plan-estudio-vista";
 import { lineaEstadisticasDeRamo, tarjetaEstadisticas } from "./estadisticas-vista";
-import { RESUMEN_VACIO, type ResumenEstudio } from "./agente/estadisticas";
+import { tarjetaComparacionNotas } from "./comparacion-notas-vista";
+import { FRASE_PONER_META, RESUMEN_VACIO, type ResumenEstudio } from "./agente/estadisticas";
 import type { BloquePlan, PlanEstudio, PropuestaVista } from "./agente/plan-estudio";
 import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from "./agente/repaso";
-import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
-import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
+import {
+  DIAS_LISTA,
+  SEMANAS_ADELANTE,
+  cargaDeLaSemana,
+  descripcionDelDia,
+  desplazamientoValido,
+  diaDeInicio,
+  diasDeLaLista,
+  estadoDelItem,
+  explicarAgenda,
+  horaDelItem,
+  inicioDeSemana,
+  leerVista,
+  letraDelDia,
+  puntosVisibles,
+  textoDeLaSemana,
+  tituloDeSemana,
+  tituloDelDia,
+  type EstadoAgenda,
+  type ItemAgenda,
+  type VistaAgenda,
+} from "./agente/agenda";
+import { barrasMeses, barrasSemana, cuandoMovimiento, describirProyeccion, formatearMonto, montoCorto, resumenTendencia, textoFrecuente, textoMes, textoProyeccion, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
 import { copiarTexto } from "./copiar";
 import {
@@ -307,6 +329,8 @@ export class Panel {
   // Plata
   private readonly plata: HTMLDivElement;
   private estadoPlata: EstadoPlata | null = null;
+  /** El mes tocado en el gráfico de tendencia (su clave "2026-09"); se pierde al cambiar de mes. */
+  private mesElegido: string | null = null;
   // Grabar: el micrófono, los audios guardados y sus transcripciones
   private readonly grabar: HTMLDivElement;
   private datosGrabar: Grabaciones | null = null;
@@ -333,6 +357,10 @@ export class Panel {
   // Agenda
   private readonly agenda: HTMLDivElement;
   private estadoAgenda: EstadoAgenda | null = null;
+  /** Lista o semana (se recuerda entre sesiones), la semana que se mira (0 = esta) y el día tocado en ella. */
+  private vistaAgenda: VistaAgenda = leerVista(leerLocal("brote.agenda-vista"));
+  private semanaAgenda = 0;
+  private diaAgenda: number | null = null;
   private propuestasAgenda: PropuestaAgenda[] = [];
   /** La que se está editando (su título y fecha en campos), para que un repintado no la pierda. */
   private propuestaEditando: number | null = null;
@@ -1040,13 +1068,66 @@ export class Panel {
     return b;
   }
 
+  /** Una fila de la agenda (hora, barra de color, título; con check en tareas y bloques de estudio). */
+  private filaAgenda(item: ItemAgenda, ahora: number): HTMLElement {
+    const fila = crear("div", `agenda-fila ${item.tipo} ${estadoDelItem(item, ahora)}`);
+    const horaEl = crear("span", "agenda-hora");
+    horaEl.textContent = horaDelItem(item);
+    const barra = crear("span", "agenda-barra");
+    const texto = crear("span", "agenda-texto");
+    const tituloItem = crear("span", "agenda-item-titulo");
+    tituloItem.textContent = item.titulo;
+    texto.append(tituloItem);
+    if (item.detalle) {
+      const detalle = crear("span", "agenda-detalle");
+      detalle.textContent = item.detalle;
+      texto.append(detalle);
+    }
+    fila.title = [horaDelItem(item), item.titulo, item.detalle].filter(Boolean).join(" · ");
+    if (item.tipo === "tarea" && item.tareaId !== undefined) {
+      const id = item.tareaId;
+      const casilla = crear("input", "agenda-check") as HTMLInputElement;
+      casilla.type = "checkbox";
+      casilla.checked = item.hecha === true;
+      casilla.title = "Marcar como hecha";
+      if (casilla.checked) fila.classList.add("hecha");
+      casilla.addEventListener("change", () => {
+        fila.classList.toggle("hecha", casilla.checked);
+        this.opciones.alMarcarTarea?.(id, casilla.checked);
+      });
+      texto.prepend(casilla);
+    }
+    if (item.tipo === "estudio" && item.bloqueId !== undefined) {
+      const id = item.bloqueId;
+      const casilla = crear("input", "agenda-check") as HTMLInputElement;
+      casilla.type = "checkbox";
+      casilla.checked = item.hecha === true;
+      casilla.title = "Marcar como hecho";
+      if (casilla.checked) fila.classList.add("hecha");
+      casilla.addEventListener("change", () => {
+        fila.classList.toggle("hecha", casilla.checked);
+        void Promise.resolve(this.opciones.alMarcarBloque?.(id, casilla.checked ? "hecho" : "pendiente")).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, "")));
+      });
+      texto.prepend(casilla);
+      if (item.hecha !== true && item.ramoId !== undefined) {
+        const ramoId = item.ramoId;
+        const empezar = boton("pildora agenda-empezar", "Empezar");
+        empezar.title = "Empieza un pomodoro de este ramo";
+        empezar.addEventListener("click", () => void Promise.resolve(this.opciones.alEmpezarBloque?.(ramoId)).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, ""))));
+        texto.append(empezar);
+      }
+    }
+    fila.append(horaEl, barra, texto);
+    return fila;
+  }
+
   /** ¿Se está viendo la agenda? (main la refresca cuando cambia el calendario, el aula o los temporizadores). */
   get agendaAbierta(): boolean {
     return this.visible && this.pestana === "agenda";
   }
 
   /**
-   * La pestaña Agenda: los próximos 14 días por día, con una barra de color por tipo (evento, entrega,
+   * La pestaña Agenda: los próximos 35 días por día, con una barra de color por tipo (evento, entrega,
    * recordatorio); lo que ya pasó se atenúa y lo que pasa ahora se resalta. Sin nada, explica por qué
    * (sin calendario, sin permiso, modo desarrollo). Se repinta cada minuto.
    */
@@ -1057,8 +1138,20 @@ export class Panel {
     const partes: HTMLElement[] = [];
     const cabecera = crear("div", "agenda-cabecera");
     const titulo = crear("span", "agenda-titulo");
-    titulo.textContent = "Próximos 14 días";
-    cabecera.append(titulo);
+    titulo.textContent = this.vistaAgenda === "semana" ? "Tu semana" : `Próximos ${DIAS_LISTA} días`;
+    const selector = crear("div", "agenda-vistas");
+    for (const [vista, texto] of [["lista", "Lista"], ["semana", "Semana"]] as const) {
+      const b = boton(`agenda-vista${this.vistaAgenda === vista ? " activa" : ""}`, texto);
+      b.setAttribute("aria-pressed", String(this.vistaAgenda === vista));
+      b.addEventListener("click", () => {
+        if (this.vistaAgenda === vista) return;
+        this.vistaAgenda = vista;
+        guardarLocal("brote.agenda-vista", vista);
+        this.mostrarAgenda();
+      });
+      selector.append(b);
+    }
+    cabecera.append(titulo, selector);
     if (estado.fuentes.calendario) {
       const nuevo = boton("pildora", "+ Evento");
       nuevo.title = "Escribe «agenda …» en el campo";
@@ -1073,66 +1166,21 @@ export class Panel {
     const tarjetaPropuestas = this.tarjetaPropuestasAgenda();
     if (tarjetaPropuestas) partes.push(tarjetaPropuestas);
 
-    for (const dia of estado.dias) {
-      const bloque = crear("div", "agenda-dia");
-      const nombre = crear("div", "agenda-dia-titulo");
-      nombre.textContent = tituloDelDia(dia.diaMs, ahora);
-      bloque.append(nombre);
-      for (const item of dia.items) {
-        const fila = crear("div", `agenda-fila ${item.tipo} ${estadoDelItem(item, ahora)}`);
-        const horaEl = crear("span", "agenda-hora");
-        horaEl.textContent = horaDelItem(item);
-        const barra = crear("span", "agenda-barra");
-        const texto = crear("span", "agenda-texto");
-        const tituloItem = crear("span", "agenda-item-titulo");
-        tituloItem.textContent = item.titulo;
-        texto.append(tituloItem);
-        if (item.detalle) {
-          const detalle = crear("span", "agenda-detalle");
-          detalle.textContent = item.detalle;
-          texto.append(detalle);
-        }
-        fila.title = [horaDelItem(item), item.titulo, item.detalle].filter(Boolean).join(" · ");
-        if (item.tipo === "tarea" && item.tareaId !== undefined) {
-          const id = item.tareaId;
-          const casilla = crear("input", "agenda-check") as HTMLInputElement;
-          casilla.type = "checkbox";
-          casilla.checked = item.hecha === true;
-          casilla.title = "Marcar como hecha";
-          if (casilla.checked) fila.classList.add("hecha");
-          casilla.addEventListener("change", () => {
-            fila.classList.toggle("hecha", casilla.checked);
-            this.opciones.alMarcarTarea?.(id, casilla.checked);
-          });
-          texto.prepend(casilla);
-        }
-        if (item.tipo === "estudio" && item.bloqueId !== undefined) {
-          const id = item.bloqueId;
-          const casilla = crear("input", "agenda-check") as HTMLInputElement;
-          casilla.type = "checkbox";
-          casilla.checked = item.hecha === true;
-          casilla.title = "Marcar como hecho";
-          if (casilla.checked) fila.classList.add("hecha");
-          casilla.addEventListener("change", () => {
-            fila.classList.toggle("hecha", casilla.checked);
-            void Promise.resolve(this.opciones.alMarcarBloque?.(id, casilla.checked ? "hecho" : "pendiente")).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, "")));
-          });
-          texto.prepend(casilla);
-          if (item.hecha !== true && item.ramoId !== undefined) {
-            const ramoId = item.ramoId;
-            const empezar = boton("pildora agenda-empezar", "Empezar");
-            empezar.title = "Empieza un pomodoro de este ramo";
-            empezar.addEventListener("click", () => void Promise.resolve(this.opciones.alEmpezarBloque?.(ramoId)).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, ""))));
-            texto.append(empezar);
-          }
-        }
-        fila.append(horaEl, barra, texto);
-        bloque.append(fila);
+    const diasLista = diasDeLaLista(estado.dias, ahora);
+    if (this.vistaAgenda === "semana") {
+      partes.push(...this.semanaDeAgenda(estado, ahora));
+    } else {
+      for (const dia of diasLista) {
+        const bloque = crear("div", "agenda-dia");
+        const nombre = crear("div", "agenda-dia-titulo");
+        nombre.textContent = tituloDelDia(dia.diaMs, ahora);
+        bloque.append(nombre);
+        for (const item of dia.items) bloque.append(this.filaAgenda(item, ahora));
+        partes.push(bloque);
       }
-      partes.push(bloque);
     }
 
-    if (estado.dias.length === 0 && !tarjetaPropuestas) {
+    if (diasLista.length === 0 && estado.dias.length === 0 && !tarjetaPropuestas) {
       const e = explicarAgenda(estado, { desarrollo: this.opciones.desarrollo === true });
       const caja = crear("div", "tarjeta agenda-explicacion");
       const t = crear("div", "tarjeta-titulo");
@@ -1149,6 +1197,84 @@ export class Panel {
       partes.push(caja);
     }
     this.agenda.replaceChildren(...partes);
+  }
+
+  /**
+   * La vista semanal: siete columnas de lunes a domingo (hoy resaltado), cada una con su nivel de carga y
+   * puntos de color por cosa; tocar un día abre su lista debajo. La semana «pesada» (pruebas y entregas
+   * juntas) se marca con 🔥. Los días que ya pasaron salen apagados: la agenda solo lee desde hoy.
+   */
+  private semanaDeAgenda(estado: EstadoAgenda, ahora: number): HTMLElement[] {
+    this.semanaAgenda = desplazamientoValido(this.semanaAgenda);
+    const desde = inicioDeSemana(ahora, this.semanaAgenda);
+    const semana = cargaDeLaSemana(estado.dias, desde, ahora);
+    if (this.diaAgenda === null || !semana.dias.some((d) => d.diaMs === this.diaAgenda)) this.diaAgenda = diaDeInicio(semana);
+
+    const navegacion = crear("div", "agenda-semana-nav");
+    const atras = boton("pildora", "‹");
+    atras.title = "Semana anterior";
+    atras.disabled = this.semanaAgenda === 0;
+    const adelante = boton("pildora", "›");
+    adelante.title = "Semana siguiente";
+    adelante.disabled = this.semanaAgenda >= SEMANAS_ADELANTE;
+    const mover = (paso: number) => {
+      this.semanaAgenda = desplazamientoValido(this.semanaAgenda + paso);
+      this.diaAgenda = null;
+      this.mostrarAgenda();
+    };
+    atras.addEventListener("click", () => mover(-1));
+    adelante.addEventListener("click", () => mover(1));
+    const nombre = crear("span", "agenda-semana-titulo");
+    nombre.textContent = tituloDeSemana(desde, this.semanaAgenda);
+    navegacion.append(atras, nombre, adelante);
+
+    const grilla = crear("div", "agenda-grilla");
+    grilla.setAttribute("role", "group");
+    grilla.setAttribute("aria-label", nombre.textContent);
+    for (const dia of semana.dias) {
+      const columna = boton(`agenda-columna nivel-${dia.nivel}${dia.hoy ? " hoy" : ""}${dia.pasado ? " pasado" : ""}${dia.pesado ? " pesado" : ""}${dia.diaMs === this.diaAgenda ? " elegida" : ""}`, "");
+      columna.title = descripcionDelDia(dia);
+      columna.setAttribute("aria-label", descripcionDelDia(dia));
+      columna.setAttribute("aria-pressed", String(dia.diaMs === this.diaAgenda));
+      columna.disabled = dia.pasado;
+      const letra = crear("span", "agenda-columna-letra");
+      letra.textContent = letraDelDia(dia.diaMs);
+      const numero = crear("span", "agenda-columna-numero");
+      numero.textContent = String(new Date(dia.diaMs).getDate());
+      const puntos = crear("span", "agenda-puntos");
+      const { puntos: visibles, resto } = puntosVisibles(dia.puntos);
+      // El color sale de la clase por tipo (lista cerrada del motor), nunca de texto de afuera.
+      for (const punto of visibles) puntos.append(crear("i", `punto ${punto.tipo}${punto.fuerte ? " fuerte" : ""}`));
+      if (resto > 0) {
+        const mas = crear("span", "punto-mas");
+        mas.textContent = `+${resto}`;
+        puntos.append(mas);
+      }
+      columna.append(letra, numero, puntos);
+      columna.addEventListener("click", () => {
+        this.diaAgenda = dia.diaMs;
+        this.mostrarAgenda();
+      });
+      grilla.append(columna);
+    }
+
+    const resumen = textoDeLaSemana(semana);
+    const linea = crear("div", `agenda-semana-resumen${resumen.pesada ? " pesada" : ""}`);
+    linea.textContent = resumen.texto;
+    if (resumen.pesada && semana.diaPesado) linea.title = `El día más cargado: ${descripcionDelDia(semana.diaPesado)}`;
+
+    const detalle = crear("div", "agenda-dia");
+    const elegido = estado.dias.find((d) => d.diaMs === this.diaAgenda);
+    const encabezado = crear("div", "agenda-dia-titulo");
+    encabezado.textContent = this.diaAgenda === null ? "" : tituloDelDia(this.diaAgenda, ahora);
+    detalle.append(encabezado);
+    if (elegido) for (const item of elegido.items) detalle.append(this.filaAgenda(item, ahora));
+    else {
+      const nada = crear("p", "vacia-texto");
+      nada.textContent = this.diaAgenda !== null && this.diaAgenda < new Date(new Date(ahora).getFullYear(), new Date(ahora).getMonth(), new Date(ahora).getDate()).getTime() ? "Ya pasó." : "Nada agendado este día.";
+      detalle.append(nada);
+    }
+    return [navegacion, grilla, linea, detalle];
   }
 
   /** ¿Se está viendo Estudio? (main la refresca cuando cambian los ramos, el calendario o el aula). */
@@ -1185,12 +1311,25 @@ export class Panel {
     }
     partes.push(...arriba);
     partes.push(
-      tarjetaEstadisticas(this.resumenEstudio, estado.ramos, () => {
-        this.entrada.value = "estudié ";
-        this.actualizarBotonEnviar();
-        this.entrada.focus();
-      }),
+      tarjetaEstadisticas(
+        this.resumenEstudio,
+        estado.ramos,
+        () => {
+          this.entrada.value = "estudié ";
+          this.actualizarBotonEnviar();
+          this.entrada.focus();
+        },
+        () => {
+          this.entrada.value = FRASE_PONER_META;
+          this.actualizarBotonEnviar();
+          this.entrada.focus();
+        },
+      ),
     );
+
+    // Comparación de ramos por promedio (solo con ramos que ya tienen alguna nota).
+    const comparacion = tarjetaComparacionNotas(estado.notas ?? [], estado.ramos);
+    if (comparacion) partes.push(comparacion);
 
     if (estado.fichas.length === 0) {
       const vacia = crear("p", "vacia-texto");
@@ -2071,6 +2210,9 @@ export class Panel {
     graficos.append(semana, categorias);
     partes.push(graficos);
 
+    // Los últimos 6 meses y la proyección del mes (un toque en una barra dice ese mes).
+    if (estado.meses.some((m) => m.total > 0)) partes.push(this.tarjetaTendencia(estado));
+
     if (estado.descubrimiento) {
       const descubrimiento = crear("div", `tarjeta plata-descubrimiento ${estado.descubrimiento.tipo}`);
       const texto = crear("span", "");
@@ -2115,6 +2257,36 @@ export class Panel {
       partes.push(frecuentes);
     }
     this.plata.replaceChildren(...partes);
+  }
+
+  /** "Últimos 6 meses": barras tocables, la línea del presupuesto y "a este ritmo cierras el mes en X". */
+  private tarjetaTendencia(estado: EstadoPlata): HTMLElement {
+    const tarjeta = crear("div", "tarjeta plata-tendencia");
+    const presupuesto = estado.presupuesto?.monto ?? null;
+    const detalle = crear("div", "plata-mes-detalle");
+    const actual = estado.meses[estado.meses.length - 1];
+    const dibujar = (): void => {
+      const grafico = graficoMeses(estado, this.mesElegido, (clave) => {
+        this.mesElegido = this.mesElegido === clave ? null : clave;
+        dibujar();
+      });
+      const elegido = estado.meses.find((m) => m.clave === this.mesElegido) ?? actual;
+      detalle.textContent = textoMes(elegido);
+      tarjeta.replaceChildren(etiquetaTarjeta("Últimos 6 meses"), grafico, detalle, this.lineaProyeccion(estado, presupuesto));
+    };
+    if (!estado.meses.some((m) => m.clave === this.mesElegido)) this.mesElegido = null;
+    dibujar();
+    return tarjeta;
+  }
+
+  private lineaProyeccion(estado: EstadoPlata, presupuesto: number | null): HTMLElement {
+    const t = textoProyeccion(estado.proyeccion, presupuesto);
+    const linea = crear("div", `plata-proyeccion ${t.tono}`);
+    linea.title = describirProyeccion(estado.proyeccion, presupuesto);
+    const detalle = crear("span", "plata-proyeccion-detalle");
+    detalle.textContent = ` · ${t.detalle}`;
+    linea.append(document.createTextNode(t.titulo), detalle);
+    return linea;
   }
 
   mostrarUso(estado: EstadoUso | null): void {
@@ -2326,8 +2498,8 @@ export class Panel {
    * la isla. Va unos segundos en el ala izquierda (`avisoEnAla`), deja un punto en su pestaña y, al abrir
    * la isla, queda en la lista de novedades.
    */
-  notificar(tipo: TipoNovedad, texto: string): void {
-    const novedad = this.novedades.agregar(tipo, texto, Date.now());
+  notificar(tipo: TipoNovedad, texto: string, silenciada = false): void {
+    const novedad = this.novedades.agregar(tipo, texto, Date.now(), silenciada);
     if (this.visible) this.novedadesNuevas.add(novedad.id);
     this.pintarNovedades();
     this.actualizarPuntos();
@@ -2745,6 +2917,22 @@ export class Panel {
   }
 }
 
+/** `localStorage` puede faltar o lanzar (ventana privada, datos bloqueados): la isla funciona igual sin recordar. */
+function leerLocal(clave: string): string | null {
+  try {
+    return localStorage.getItem(clave);
+  } catch {
+    return null;
+  }
+}
+function guardarLocal(clave: string, valor: string): void {
+  try {
+    localStorage.setItem(clave, valor);
+  } catch {
+    // sin memoria del navegador: se olvida al cerrar
+  }
+}
+
 function crear<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase: string): HTMLElementTagNameMap[K] {
   const elemento = document.createElement(etiqueta);
   elemento.className = clase;
@@ -2798,6 +2986,62 @@ function graficoSemana(estado: EstadoPlata): SVGSVGElement {
     letra.setAttribute("class", b.hoy ? "letra-hoy" : "letra-dia");
     letra.textContent = b.letra;
     svg.append(rect, letra);
+  }
+  return svg;
+}
+
+/** Las barras de los últimos 6 meses (SVG armado con números): el mes en curso en verde con su tramo proyectado punteado, y la línea del presupuesto. */
+function graficoMeses(estado: EstadoPlata, elegido: string | null, alTocar: (clave: string) => void): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const ANCHO = 280;
+  const ALTO = 50;
+  const presupuesto = estado.presupuesto?.monto ?? null;
+  const g = barrasMeses(estado.meses, estado.proyeccion, presupuesto, ANCHO, ALTO);
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "plata-grafico");
+  svg.setAttribute("viewBox", `0 -4 ${ANCHO} ${ALTO + 16}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", resumenTendencia(estado.meses, estado.proyeccion, presupuesto));
+  if (g.linea !== null) {
+    const linea = document.createElementNS(NS, "line");
+    linea.setAttribute("x1", "0");
+    linea.setAttribute("x2", String(ANCHO));
+    linea.setAttribute("y1", g.linea.toFixed(1));
+    linea.setAttribute("y2", g.linea.toFixed(1));
+    linea.setAttribute("class", "linea-presupuesto");
+    const t = document.createElementNS(NS, "title");
+    t.textContent = `Tu presupuesto de hoy: ${formatearMonto(presupuesto ?? 0)}`;
+    linea.append(t);
+    svg.append(linea);
+  }
+  for (const b of g.barras) {
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", b.x.toFixed(1));
+    rect.setAttribute("y", b.y.toFixed(1));
+    rect.setAttribute("width", b.ancho.toFixed(1));
+    rect.setAttribute("height", b.alto.toFixed(1));
+    rect.setAttribute("rx", "2.5");
+    rect.setAttribute("class", `barra-mes${b.parcial ? " parcial" : ""}${b.clave === elegido ? " elegida" : ""}`);
+    const titulo = document.createElementNS(NS, "title");
+    titulo.textContent = b.titulo;
+    rect.append(titulo);
+    rect.addEventListener("click", () => alTocar(b.clave));
+    const letra = document.createElementNS(NS, "text");
+    letra.setAttribute("x", (b.x + b.ancho / 2).toFixed(1));
+    letra.setAttribute("y", String(ALTO + 10));
+    letra.setAttribute("class", b.parcial ? "letra-hoy" : "letra-dia");
+    letra.textContent = b.corto;
+    svg.append(rect, letra);
+  }
+  if (g.proyectado) {
+    const tramo = document.createElementNS(NS, "rect");
+    tramo.setAttribute("x", g.proyectado.x.toFixed(1));
+    tramo.setAttribute("y", g.proyectado.y.toFixed(1));
+    tramo.setAttribute("width", g.proyectado.ancho.toFixed(1));
+    tramo.setAttribute("height", g.proyectado.alto.toFixed(1));
+    tramo.setAttribute("rx", "2.5");
+    tramo.setAttribute("class", `tramo-proyectado ${estado.proyeccion.color ?? ""}`);
+    svg.append(tramo);
   }
   return svg;
 }

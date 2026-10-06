@@ -40,6 +40,9 @@ import type { Grabaciones } from "./agente/grabaciones-memoria";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
 import { debeNotificarAlSistema, leerNotificaciones } from "./agente/notificaciones";
+import { SeguidorDeConcentracion, hayBloqueDeEstudio } from "./agente/concentracion";
+import { CLAVE_CONCENTRACION, CLAVE_RESUMEN_MANANA, CLAVE_RESUMEN_MOSTRADO, guardarTexto, leerInterruptor, leerTexto } from "./agente/preferencias";
+import { claveDelDia, debeMostrarResumen } from "./agente/resumen-manana";
 import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
 import { Isla, type Ala } from "./isla";
 import { Mascotas } from "./mascotas";
@@ -254,14 +257,25 @@ async function iniciar(): Promise<void> {
       : {}),
   });
 
+  // Modo concentración (E1): con un bloque de estudio corriendo, lo que no importa queda en Novedades pero no sale
+  // en el ala ni como notificación del sistema. Las decisiones (permisos, propuestas) no pasan por `avisar`.
+  const concentracion = new SeguidorDeConcentracion();
+  const actualizarConcentracion = () => {
+    const { termino } = concentracion.actualizar(hayBloqueDeEstudio(temporizadores), leerInterruptor(localStorage, CLAVE_CONCENTRACION, true));
+    if (termino) panel.notificar("estudio", termino);
+  };
   // Un aviso que no abre la isla; y, si el usuario lo prendió, una notificación del sistema para lo importante.
-  const avisar = (tipo: TipoNovedad, texto: string) => {
-    panel.notificar(tipo, texto);
+  // Devuelve `true` si el modo concentración lo calló.
+  const avisar = (tipo: TipoNovedad, texto: string): boolean => {
+    const callado = concentracion.silenciar(tipo);
+    panel.notificar(tipo, texto, callado);
+    if (callado) return true;
     if (debeNotificarAlSistema(tipo, leerNotificaciones(localStorage), panel.abierta)) {
       void isPermissionGranted()
         .then((permitido) => permitido && sendNotification({ title: "Brote 🌱", body: texto }))
         .catch(() => {});
     }
+    return false;
   };
 
   cambiarGrabacion = (e) => {
@@ -310,7 +324,10 @@ async function iniciar(): Promise<void> {
   const mostrarTemporizadores = (lista: TemporizadorActivo[]) => {
     temporizadores = lista;
     panel.mostrarTemporizadores(lista);
+    actualizarConcentracion();
   };
+  // El interruptor de Configurar vive en otra ventana: se vuelve a mirar cada pocos segundos.
+  setInterval(actualizarConcentracion, 5000);
   if (puente) {
     // Qué funciones están prendidas y qué tarjetas se ven (Configurar Brote → Funciones).
     puente.alCambiarFunciones((config) => panel.mostrarFunciones(config));
@@ -322,6 +339,21 @@ async function iniciar(): Promise<void> {
       if (panel.estudioAbierto) pedirEstudio();
     });
     setInterval(() => (panel.estudioAbierto ? pedirEstudio() : undefined), 5 * 60_000);
+    // Resumen de la mañana (E2): una vez al día, entre las 6 y las 12, como una novedad (no abre la isla). Se marca como
+    // mostrado solo cuando el puente respondió; si aún no estaba listo, se reintenta en 10 minutos.
+    const revisarResumen = () => {
+      const ahora = Date.now();
+      if (!debeMostrarResumen(ahora, leerTexto(localStorage, CLAVE_RESUMEN_MOSTRADO), leerInterruptor(localStorage, CLAVE_RESUMEN_MANANA, true))) return;
+      void puente.consultar<{ texto: string; corto: string; hay: boolean }>({ tipo: "resumen-dia" }).then(
+        (r) => {
+          guardarTexto(localStorage, CLAVE_RESUMEN_MOSTRADO, claveDelDia(ahora));
+          if (r.hay) avisar("resumen", r.corto);
+        },
+        () => {},
+      );
+    };
+    setTimeout(revisarResumen, 5000);
+    setInterval(revisarResumen, 10 * 60_000);
     // Repaso (A3): propuestas del agente y tarjetas que vencen. Avisa sin abrir la isla: una propuesta nueva al llegar
     // y «tienes N tarjetas» una vez al día, solo con la isla cerrada.
     let repasoVisto: EstadoRepaso = REPASO_VACIO;
@@ -370,7 +402,12 @@ async function iniciar(): Promise<void> {
     });
     // Brote reacciona al computador: su ánimo (cansado, acalorado) y avisos con personalidad.
     puente.alAvisoEquipo(({ texto }) => {
-      avisar("computador", texto);
+      // En concentración el aviso se calla entero: tampoco mueve a Brote.
+      if (!avisar("computador", texto)) personaje.tocar();
+    });
+    // Brote celebra lo que logras (E3 y E4): un aviso con su texto y un saltito. Pasa aun en concentración.
+    puente.alCelebrar(({ texto }) => {
+      avisar("celebracion", texto);
       personaje.tocar();
     });
     puente.alCambiarAnimo((animo) => personaje.setAnimo(animo));

@@ -73,6 +73,20 @@ export function minutosPorDia(registros: readonly RegistroEstudio[], desdeMs: nu
   });
 }
 
+/** Lo estudiado en cada uno de `dias` días seguidos, por ramo (de más a menos; `null` = sin ramo). Sin duplicados. */
+export function minutosPorDiaYRamo(registros: readonly RegistroEstudio[], desdeMs: number, dias: number): { ramoId: number | null; min: number }[][] {
+  const validos = sinDuplicados(registros);
+  const ramos = [...new Set(validos.map((r) => r.ramoId))];
+  return Array.from({ length: dias }, (_, i) => {
+    const a = inicioDelDia(desdeMs, i);
+    const b = inicioDelDia(desdeMs, i + 1);
+    return ramos
+      .map((ramoId) => ({ ramoId, min: Math.round(validos.filter((r) => r.ramoId === ramoId).reduce((s, r) => s + minutosDentro(r, a, b), 0)) }))
+      .filter((x) => x.min > 0)
+      .sort((x, y) => y.min - x.min);
+  });
+}
+
 /**
  * Días seguidos con al menos `minimo` minutos. Si hoy todavía no llegas al mínimo, la racha de ayer sigue
  * viva hasta que termine el día (no se pierde a las 8 de la mañana).
@@ -95,6 +109,75 @@ export interface TotalDeRamo {
   semanaMin: number;
   totalMin: number;
 }
+/** Una semana (lunes a domingo) del gráfico de 8 semanas: lo estudiado y de qué ramo. */
+export interface SemanaEstudio {
+  /** Lunes 00:00 de esa semana. */
+  desdeMs: number;
+  totalMin: number;
+  /** De más a menos (los ramos sin nada no vienen); `null` = sin ramo. */
+  porRamo: { ramoId: number | null; min: number }[];
+  /** La semana en curso (todavía no termina). */
+  actual: boolean;
+}
+
+/** Cuántas semanas dibuja el gráfico (la actual y las 7 anteriores). */
+export const SEMANAS_GRAFICO = 8;
+
+/**
+ * Las últimas `cuantas` semanas de lunes a domingo, de la más vieja a la actual, con lo estudiado por ramo
+ * (ya sin duplicados). Un registro que cruza el domingo a la medianoche se reparte entre las dos semanas.
+ */
+export function semanasDeEstudio(registros: readonly RegistroEstudio[], ahoraMs: number, cuantas = SEMANAS_GRAFICO): SemanaEstudio[] {
+  const validos = sinDuplicados(registros);
+  const lunes = inicioDeSemana(ahoraMs);
+  const ramos = [...new Set(validos.map((r) => r.ramoId))];
+  const semanas: SemanaEstudio[] = [];
+  for (let i = -(cuantas - 1); i <= 0; i++) {
+    const desde = inicioDelDia(lunes, i * 7);
+    const hasta = inicioDelDia(desde, 7);
+    const porRamo = ramos
+      .map((ramoId) => ({ ramoId, min: Math.round(validos.filter((r) => r.ramoId === ramoId).reduce((s, r) => s + minutosDentro(r, desde, hasta), 0)) }))
+      .filter((x) => x.min > 0)
+      .sort((a, b) => b.min - a.min);
+    semanas.push({ desdeMs: desde, totalMin: porRamo.reduce((s, x) => s + x.min, 0), porRamo, actual: i === 0 });
+  }
+  return semanas;
+}
+
+/** Los minutos de un ramo en cada semana (la mini-línea de su ficha), de la más vieja a la actual. */
+export function serieDeRamo(semanas: readonly SemanaEstudio[], ramoId: number | null): number[] {
+  return semanas.map((s) => s.porRamo.find((x) => x.ramoId === ramoId)?.min ?? 0);
+}
+
+/** La meta semanal de estudio (E3): entre 1 y 100 horas. */
+export const META_MIN = 60;
+export const META_MAX = 100 * 60;
+
+export interface ProgresoMeta {
+  metaMin: number;
+  totalMin: number;
+  /** Entre 0 y 1 (no pasa de 1 aunque estudies más). */
+  fraccion: number;
+  /** Lo que falta para la meta (0 si ya la cumpliste). */
+  faltaMin: number;
+  cumplida: boolean;
+}
+
+/** Cuánto llevas de tu meta esta semana, o `null` si no hay meta. */
+export function progresoDeMeta(totalMin: number, metaMin: number | null): ProgresoMeta | null {
+  if (metaMin === null || !(metaMin > 0)) return null;
+  return { metaMin, totalMin, fraccion: Math.min(1, Math.max(0, totalMin / metaMin)), faltaMin: Math.max(0, metaMin - totalMin), cumplida: totalMin >= metaMin };
+}
+
+/** Una meta semanal de `minutos` (de 1 a 100 horas, entera), o por qué no. */
+export function validarMeta(minutos: unknown): { ok: true; minutos: number } | { ok: false; motivo: string } {
+  if (typeof minutos !== "number" || !Number.isFinite(minutos)) return { ok: false, motivo: "La meta debe ser un tiempo" };
+  const m = Math.round(minutos);
+  if (m < META_MIN) return { ok: false, motivo: "La meta semanal debe ser de al menos 1 hora" };
+  if (m > META_MAX) return { ok: false, motivo: "La meta semanal no puede pasar de 100 horas" };
+  return { ok: true, minutos: m };
+}
+
 export interface ResumenEstudio {
   /** Lunes 00:00 de esta semana. */
   desdeSemanaMs: number;
@@ -103,6 +186,8 @@ export interface ResumenEstudio {
   pasadaMin: number;
   /** Lunes a domingo; `hoy` es la posición de hoy (0 a 6). */
   porDia: number[];
+  /** Lo mismo, por ramo (para pintar cada barra con los colores de los ramos). Un puente más viejo no lo manda. */
+  porDiaRamo?: { ramoId: number | null; min: number }[][];
   hoy: number;
   hoyMin: number;
   /** Esta semana por ramo, de más a menos, con su fracción del total. */
@@ -114,9 +199,13 @@ export interface ResumenEstudio {
   /** Desde cuándo hay datos (el primer registro), o null. */
   desdeMs: number | null;
   hay: boolean;
+  /** Las últimas 8 semanas (B3). Un puente más viejo no la manda. */
+  semanas?: SemanaEstudio[];
+  /** Tu meta semanal y cuánto llevas (E3); `null` si no pusiste una. */
+  meta?: ProgresoMeta | null;
 }
 
-export function resumirEstudio(registros: readonly RegistroEstudio[], ahoraMs: number): ResumenEstudio {
+export function resumirEstudio(registros: readonly RegistroEstudio[], ahoraMs: number, metaMin: number | null = null): ResumenEstudio {
   const lunes = inicioDeSemana(ahoraMs);
   const siguiente = inicioDelDia(lunes, 7);
   const lunesPasado = inicioDelDia(lunes, -7);
@@ -141,6 +230,7 @@ export function resumirEstudio(registros: readonly RegistroEstudio[], ahoraMs: n
     totalMin,
     pasadaMin: minutosEnRango(registros, lunesPasado, alturaPasada),
     porDia,
+    porDiaRamo: minutosPorDiaYRamo(registros, lunes, 7),
     hoy,
     hoyMin: porDia[hoy] ?? 0,
     porRamo,
@@ -149,6 +239,8 @@ export function resumirEstudio(registros: readonly RegistroEstudio[], ahoraMs: n
     totalHistoricoMin: minutosEnRango(registros, 0, Number.MAX_SAFE_INTEGER),
     desdeMs: registros.length > 0 ? Math.min(...registros.map((r) => r.inicioMs)) : null,
     hay: registros.length > 0,
+    semanas: semanasDeEstudio(registros, ahoraMs),
+    meta: progresoDeMeta(totalMin, metaMin),
   };
 }
 

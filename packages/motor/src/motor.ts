@@ -16,7 +16,7 @@ import { describirEquipo, type LecturaEquipo } from "./sistema.ts";
 import { POMODORO, type Temporizadores } from "./temporizadores.ts";
 import { UNIDADES, describirDuracion, leerDuracion, leerHora, reloj } from "./tiempo.ts";
 import { capitalizar, formatearMonto, normalizar } from "./texto.ts";
-import { MENSAJE_APAGADA, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
+import { FUNCIONES_DE_AGENDA, FUNCIONES_DE_RESUMEN, MENSAJE_APAGADA, esDeAgenda, funcionDeIntencion, type IdFuncion } from "./funciones.ts";
 import { describirPlan, describirReinicio, type LecturaPlan } from "./plan.ts";
 import { describirUso, type ResumenUso } from "./uso.ts";
 import { TEXTO_GRABAR, describirGrabadoHoy, describirTranscripciones, type AccionGrabar } from "./grabaciones-frases.ts";
@@ -35,7 +35,11 @@ import { interpretarNotas, responderNotas } from "./notas-motor.ts";
 import type { AccionNotas } from "./notas-motor.ts";
 import { describirRamos, textoRamoArchivado, textoRamoCreado } from "./ramos-frases.ts";
 import { emparejarRamo, normalizarRamo, limpiarTexto, MAX_NOMBRE_RAMO } from "./ramos-tipos.ts";
-import { describirHoy, describirPresupuestoPuesto, describirQueda, presupuestoDelMes, type PresupuestoMes } from "./plata.ts";
+import type { DiaAgenda } from "./agenda.ts";
+import { describirSemana } from "./agenda-carga.ts";
+import { armarResumenDelDia, type PlataDelDia, type ResumenDelDia } from "./resumen-dia.ts";
+import { resumirRepaso } from "./repaso-tipos.ts";
+import { describirHoy, describirPresupuestoPuesto, describirProyeccion, describirQueda, presupuestoDelMes, proyectarMes, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
 
 export interface Resultado {
   intencion: Intencion;
@@ -75,7 +79,7 @@ export type Accion =
   | { intencion: "aula-entregas" | "aula-semana" }
   | { intencion: "plan-uso" | "plan-reinicio" | "plan-tokens" }
   | { intencion: "presupuesto-poner"; monto: number }
-  | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" }
+  | { intencion: "presupuesto-quitar" | "presupuesto-queda" | "presupuesto-hoy" | "plata-proyeccion" | "agenda-semana" | "resumen-dia" }
   | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" }
   | { intencion: "ramos-agregar" | "ramos-archivar"; nombre: string }
   | { intencion: "ramos-ver" }
@@ -138,6 +142,9 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "presupuesto-quitar":
     case "presupuesto-queda":
     case "presupuesto-hoy":
+    case "plata-proyeccion":
+    case "agenda-semana":
+    case "resumen-dia":
     case "grabar-iniciar":
     case "grabar-detener":
     case "grabar-estado":
@@ -156,6 +163,9 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "estudio-horas":
     case "estudio-racha":
     case "estudio-anotar":
+    case "estudio-meta-poner":
+    case "estudio-meta-quitar":
+    case "estudio-meta-como":
       return interpretarEstadisticas(intencion, ranuras, originales);
     case "estudio-fecha":
     case "estudio-plan":
@@ -214,6 +224,7 @@ export class Motor {
   private readonly sesionesClaude: (() => SesionClaude[]) | null;
   private readonly crearEvento: ((evento: NuevoEvento) => ResultadoCreacion) | null;
   private readonly aula: (() => Entrega[] | null) | null;
+  private readonly dias: (() => DiaAgenda[] | null) | null;
   private readonly activa: (funcion: IdFuncion) => boolean;
   private readonly uso: (() => UsoClaude) | null;
   private readonly transcripciones: (() => CabeceraTranscripcion[]) | null;
@@ -244,6 +255,8 @@ export class Motor {
       crearEvento?: (evento: NuevoEvento) => ResultadoCreacion;
       /** Las entregas del aula (Canvas o Moodle; `null` si no está configurada). */
       aula?: () => Entrega[] | null;
+      /** La agenda ya armada (eventos, entregas, pruebas…) para «¿cómo viene mi semana?»; `null` = nada conectado. */
+      agenda?: () => DiaAgenda[] | null;
       /** Si una función está prendida (Configurar Brote → Funciones). Sin esto, todas lo están. */
       activa?: (funcion: IdFuncion) => boolean;
       /** El plan de Claude y el uso por tokens (lo mantiene el puente). */
@@ -271,6 +284,7 @@ export class Motor {
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
     this.aula = opciones.aula ?? null;
+    this.dias = opciones.agenda ?? null;
     this.crearEvento = opciones.crearEvento ?? null;
     this.sesionesClaude = opciones.sesionesClaude ?? null;
     this.calendario = opciones.calendario ?? null;
@@ -298,7 +312,8 @@ export class Motor {
     if (!entendido) return null;
     // Una frase de una función apagada no va al agente: se le dice al usuario dónde prenderla.
     const funcion = funcionDeIntencion(entendido.accion.intencion);
-    if (funcion && !this.activa(funcion)) {
+    const apagada = esDeAgenda(entendido.accion.intencion) ? !(entendido.accion.intencion === "resumen-dia" ? FUNCIONES_DE_RESUMEN : FUNCIONES_DE_AGENDA).some((f) => this.activa(f)) : funcion !== null && !this.activa(funcion);
+    if (apagada) {
       return { intencion: entendido.accion.intencion, plantilla: entendido.plantilla.id, texto: MENSAJE_APAGADA };
     }
     // Sin temporizadores conectados (por ejemplo, en el servidor MCP), esas frases van al agente.
@@ -356,7 +371,7 @@ export class Motor {
       const { texto, hay } = textoEmpezarRepaso(lista, nombreRamo, ramoId, ahora);
       return { intencion: accion.intencion, plantilla: plantilla.id, texto, ...(hay ? { datos: { repaso: { ramoId } } } : {}) };
     }
-    if (accion.intencion === "estudio-horas" || accion.intencion === "estudio-racha" || accion.intencion === "estudio-anotar") {
+    if (accion.intencion === "estudio-horas" || accion.intencion === "estudio-racha" || accion.intencion === "estudio-anotar" || accion.intencion.startsWith("estudio-meta-")) {
       if (!this.ramos || !this.estadisticas) return null;
       const texto = responderEstadisticas(accion, { ramos: this.ramos, estadisticas: this.estadisticas, ahoraMs: this.reloj().getTime() });
       return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
@@ -370,6 +385,14 @@ export class Motor {
       if (!this.ramos || !this.notas) return null;
       const texto = responderNotas(accion as AccionNotas, { ramos: this.ramos, notas: this.notas, ahoraMs: this.reloj().getTime() });
       return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
+    }
+    if (accion.intencion === "resumen-dia") {
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.resumenDelDia().texto };
+    }
+    if (accion.intencion === "agenda-semana") {
+      const dias = this.dias?.();
+      if (!dias) return { intencion: accion.intencion, plantilla: plantilla.id, texto: "📅 Todavía no tengo nada conectado para ver tu semana: conecta tu calendario o tu aula en 🌱 → Configurar Brote." };
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSemana(dias, this.reloj().getTime()) };
     }
     if (accion.intencion === "aula-entregas" || accion.intencion === "aula-semana") {
       if (!this.aula) return null;
@@ -502,6 +525,10 @@ export class Motor {
         return describirQueda(this.estadoPresupuesto());
       case "presupuesto-hoy":
         return describirHoy(this.estadoPresupuesto());
+      case "plata-proyeccion": {
+        const ahora = this.reloj();
+        return describirProyeccion(this.proyeccionDelMes(ahora), this.gastos.presupuesto());
+      }
       default:
         throw new Error(`El motor no ejecuta «${accion.intencion}» aquí`);
     }
@@ -550,6 +577,30 @@ export class Motor {
     if (monto === null) return null;
     const ahora = this.reloj();
     return presupuestoDelMes(monto, this.gastos.total(rangoDe("este mes", ahora)).total, this.gastos.total(rangoDe("hoy", ahora)).total, ahora.getTime());
+  }
+
+  /**
+   * El resumen del día (E2): lo de hoy con lo que esté prendido (calendario, aula, pruebas, tareas, bloques,
+   * tarjetas de repaso y plata). Lo usan la frase, el aviso automático de la mañana y la isla.
+   */
+  resumenDelDia(): ResumenDelDia {
+    const ahora = this.reloj();
+    const plata = this.activa("gastos") ? this.plataDelDia(ahora) : null;
+    const tarjetasHoy = this.activa("estudio") && this.repaso ? resumirRepaso(this.repaso.tarjetas(), ahora.getTime()).hoy : null;
+    return armarResumenDelDia({ ahoraMs: ahora.getTime(), dias: this.dias?.() ?? null, tarjetasHoy, plata });
+  }
+
+  private plataDelDia(ahora: Date): PlataDelDia {
+    const p = this.estadoPresupuesto();
+    return { mesGastado: p ? p.gastado : this.gastos.total(rangoDe("este mes", ahora)).total, presupuesto: p ? p.monto : null, puedesHoy: p ? p.puedesHoy : null };
+  }
+
+  /** "A este ritmo terminas el mes en X" con los gastos de este mes (hasta ahora). */
+  proyeccionDelMes(ahora: Date = this.reloj()): ProyeccionMes {
+    const lista = this.gastos
+      .entre({ desde: new Date(ahora.getFullYear(), ahora.getMonth(), 1), hasta: new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1) })
+      .map((g) => ({ id: g.id, monto: g.monto, categoria: g.categoria, descripcion: g.descripcion, fechaMs: g.fecha.getTime() }));
+    return proyectarMes(lista, this.gastos.presupuesto(), ahora.getTime());
   }
 
   /** Anota un gasto como lo haría la frase "gasté {monto} en {descripcion}" (los botones de un toque de la pestaña Plata). */

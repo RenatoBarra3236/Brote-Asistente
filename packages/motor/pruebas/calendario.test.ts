@@ -152,10 +152,10 @@ describe("calendario: fuentes", () => {
     for (const mala of ["http://ejemplo.cl/a.ics", "file:///etc/passwd", "ftp://x/y", "no es url", "https://a b.cl"]) assert.equal(normalizarUrlIcal(mala), null, mala);
   });
 
-  it("lee la ventana de hoy a 14 días del iCal", () => {
+  it("lee la ventana de hoy a 35 días del iCal", () => {
     const eventos = eventosDeIcal(ICS, new Date(2026, 9, 5, 8).getTime());
     assert.ok(eventos.some((e) => e.titulo === "Cálculo I"));
-    assert.ok(eventos.every((e) => e.finMs > new Date(2026, 9, 5).getTime() && e.inicioMs < new Date(2026, 9, 19).getTime()));
+    assert.ok(eventos.every((e) => e.finMs > new Date(2026, 9, 5).getTime() && e.inicioMs < new Date(2026, 10, 9).getTime()));
   });
 
   it("interpreta la salida de EventKit y arma el JXA sin datos del usuario", () => {

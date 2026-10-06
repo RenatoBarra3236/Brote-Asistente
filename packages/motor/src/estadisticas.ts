@@ -5,9 +5,15 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import type { Gastos } from "./gastos.ts";
+import { leerAvisosEstudio, type AvisosEstudio } from "./estadisticas-metas.ts";
+import { validarMeta } from "./estadisticas-tipos.ts";
 import type { Ramos } from "./ramos.ts";
 import { AVISO_DIA_MIN, minutosPorDia, validarMinutosManual } from "./estadisticas-tipos.ts";
 import type { FuenteRegistro, RegistroEstudio } from "./estadisticas-tipos.ts";
+
+const CLAVE_META = "meta-estudio-min";
+const CLAVE_AVISOS = "avisos-estudio";
+const META_MIN_MIN = 60;
 
 /** Crea la tabla (la usan también `Temporizadores` y `PlanesEstudio`, que pueden construirse antes). */
 export function asegurarTablaEstudio(db: DatabaseSync): void {
@@ -47,9 +53,11 @@ export type ResultadoAnotar = { ok: true; registro: RegistroEstudio; avisoDia: b
 
 export class EstadisticasEstudio {
   private readonly db: DatabaseSync;
+  private readonly gastos: Gastos;
 
   /** Recibe `Ramos` para asegurar que su tabla existe (el trigger de borrado la necesita). */
   constructor(gastos: Gastos, _ramos: Ramos) {
+    this.gastos = gastos;
     this.db = gastos.baseDeDatos();
     asegurarTablaEstudio(this.db);
     this.db.exec(`
@@ -58,6 +66,33 @@ export class EstadisticasEstudio {
         update estudio_registro set ramo_id = null where ramo_id = old.id;
       end;
     `);
+  }
+
+  /** La meta semanal de estudio en minutos, o `null` si no hay (tabla `ajustes`, como el presupuesto). */
+  meta(): number | null {
+    const v = Number(this.gastos.ajuste(CLAVE_META));
+    return Number.isFinite(v) && v >= META_MIN_MIN ? Math.round(v) : null;
+  }
+
+  /** Pone la meta semanal (o la quita con `null`). */
+  ponerMeta(minutos: unknown): { ok: true; minutos: number | null } | { ok: false; motivo: string } {
+    if (minutos === null) {
+      this.db.prepare("delete from ajustes where clave = ?").run(CLAVE_META);
+      return { ok: true, minutos: null };
+    }
+    const v = validarMeta(minutos);
+    if (!v.ok) return v;
+    this.gastos.guardarAjuste(CLAVE_META, String(v.minutos));
+    return { ok: true, minutos: v.minutos };
+  }
+
+  /** Lo ya celebrado (meta de una semana y hitos de racha), para no repetirlo. */
+  avisos(): AvisosEstudio | null {
+    return leerAvisosEstudio(this.gastos.ajuste(CLAVE_AVISOS));
+  }
+
+  guardarAvisos(avisos: AvisosEstudio): void {
+    this.gastos.guardarAjuste(CLAVE_AVISOS, JSON.stringify(avisos));
   }
 
   registros(): RegistroEstudio[] {
@@ -102,6 +137,6 @@ export class EstadisticasEstudio {
   /** Cambia con cualquier alta o baja: el puente la mira para avisar a la isla (también lo que hace el pomodoro o el MCP). */
   marca(): string {
     const r = this.db.prepare("select count(*) as n, coalesce(max(id), 0) as u, coalesce(sum((fin_ms - inicio_ms) / 1000), 0) as s, coalesce(sum(coalesce(ramo_id, 0)), 0) as r from estudio_registro").get() as { n: number; u: number; s: number; r: number };
-    return `${r.n}:${r.u}:${r.s}:${r.r}`;
+    return `${r.n}:${r.u}:${r.s}:${r.r}:${this.gastos.ajuste(CLAVE_META) ?? ""}`;
   }
 }

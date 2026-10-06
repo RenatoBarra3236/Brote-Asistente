@@ -103,3 +103,36 @@ export function avisoNotasBorradas(ramo: string | null, n: number): string {
   const que = n === 1 ? "1 evaluación" : `${n} evaluaciones`;
   return ramo === null ? `Borré todas tus notas (${que}).` : `Borré las notas de ${ramo} (${que}).`;
 }
+
+// ---- La comparación de ramos (B3 de docs/plan-estudio-y-mejoras.md) ----------------------------------------------
+
+export interface BarraNota {
+  ramoId: number;
+  /** Del ancho de la caja, entre 0 y 100: la escala 1,0–7,0 completa. */
+  pct: number;
+  /** Dónde está la nota de aprobación de ese ramo en la misma escala. */
+  aprobacionPct: number;
+  promedio: number;
+  semaforo: Semaforo;
+  texto: string;
+}
+
+/** La nota en la escala 1,0–7,0 como porcentaje del ancho. */
+export function pctDeNota(nota: number): number {
+  return Math.min(100, Math.max(0, ((nota - 1) / 6) * 100));
+}
+
+/**
+ * Los ramos con promedio, el más en riesgo primero (menor holgura contra su aprobación). Solo entran los que
+ * ya tienen alguna nota rendida; un ramo sin notas no se compara.
+ */
+export function barrasDeNotas(fichas: readonly FichaNotas[], activos: ReadonlySet<number>): BarraNota[] {
+  return fichas
+    .filter((f) => activos.has(f.ramoId) && f.calculo.promedio !== null)
+    .map((f) => {
+      const promedio = f.calculo.promedio as number;
+      return { ramoId: f.ramoId, pct: pctDeNota(promedio), aprobacionPct: pctDeNota(f.ajustes.aprobacion), promedio, semaforo: semaforoDe(f), texto: resumenNotas(f), holgura: promedio - f.ajustes.aprobacion };
+    })
+    .sort((a, b) => a.holgura - b.holgura || a.ramoId - b.ramoId)
+    .map(({ holgura: _h, ...barra }) => barra);
+}

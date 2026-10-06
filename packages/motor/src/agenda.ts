@@ -3,7 +3,7 @@
 // para probarlo y para usarlo desde la ventana. Las tareas vienen de lo que el usuario aceptó de una
 // grabación (`tareas-agenda.ts`); Todoist sigue sin ser fuente.
 
-export type TipoItemAgenda = "evento" | "entrega" | "recordatorio" | "tarea" | "estudio";
+export type TipoItemAgenda = "evento" | "entrega" | "recordatorio" | "tarea" | "estudio" | "prueba";
 
 export interface ItemAgenda {
   tipo: TipoItemAgenda;
@@ -21,6 +21,7 @@ export interface ItemAgenda {
   hecha?: boolean;
   /** Solo los bloques de estudio (A4): su id, su ramo y si se saltó (no sale) o ya se hizo (`hecha`). */
   bloqueId?: number;
+  /** Los bloques de estudio y las pruebas: el ramo al que pertenecen. */
   ramoId?: number;
 }
 
@@ -59,6 +60,15 @@ interface BloqueEntrada {
   finMs: number;
   hecho: boolean;
 }
+/** Una evaluación con fecha y sin nota todavía (A2/A4): sale como prueba en la agenda. */
+interface PruebaEntrada {
+  id: number;
+  ramoId: number;
+  /** "Certamen 2 · Cálculo". */
+  titulo: string;
+  inicioMs: number;
+  conHora: boolean;
+}
 interface TemporizadorEntrada {
   tipo: "temporizador" | "pomodoro";
   etiqueta: string | null;
@@ -75,8 +85,9 @@ function inicioDelDia(ms: number, dias = 0): number {
  * día completo van primero; lo que ya terminó hoy sigue a la vista, atenuado por la isla. Un evento
  * de varios días aparece en cada día que toca.
  */
+export type { PruebaEntrada };
 export function armarAgenda(
-  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[]; tareas?: TareaEntrada[]; bloques?: BloqueEntrada[] },
+  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[]; tareas?: TareaEntrada[]; bloques?: BloqueEntrada[]; pruebas?: PruebaEntrada[] },
   ahoraMs: number,
   dias = 14,
 ): DiaAgenda[] {
@@ -106,6 +117,11 @@ export function armarAgenda(
 
   for (const b of fuentes.bloques ?? []) {
     items.push({ tipo: "estudio", titulo: b.titulo, detalle: null, inicioMs: b.inicioMs, finMs: b.finMs, todoElDia: false, url: null, bloqueId: b.id, ramoId: b.ramoId, hecha: b.hecho });
+  }
+
+  for (const p of fuentes.pruebas ?? []) {
+    // Sin hora, la prueba se muestra "todo el día" (no se inventa una hora que el usuario no dijo).
+    items.push({ tipo: "prueba", titulo: p.titulo, detalle: null, inicioMs: p.inicioMs, finMs: p.inicioMs, todoElDia: !p.conHora, url: null, ramoId: p.ramoId });
   }
 
   const resultado: DiaAgenda[] = [];

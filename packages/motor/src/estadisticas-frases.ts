@@ -1,6 +1,7 @@
 // Textos de las frases sin IA sobre el tiempo estudiado (A5). Puro.
 
 import { MIN_RACHA, formatearMinutos } from "./estadisticas-tipos.ts";
+import type { ProgresoMeta } from "./estadisticas-tipos.ts";
 import type { Periodo } from "./periodos.ts";
 
 export const TEXTO_SIN_DATOS = "Todavía no tengo registros de estudio. Empieza un pomodoro, marca un bloque de tu plan o dime «estudié 1 hora de cálculo» 🌱";
@@ -34,3 +35,20 @@ export function textoEstudioAnotado(minutos: number, ramo: string | null, ayer: 
   const base = `Listo, anoté ${formatearMinutos(minutos)} de estudio${ramo ? ` de ${ramo}` : ""} (${ayer ? "ayer" : "hoy"}).`;
   return avisoDia ? `${base} Ojo: ese día ya suma más de 16 horas; si fue un error, bórralo en «Lo que sé de ti».` : base;
 }
+
+export const TEXTO_SIN_META = "No tienes una meta de estudio. Dime «mi meta es estudiar 10 horas a la semana» y la sigo contigo 🌱";
+
+/** «Esta semana llevas 6 h 20 min de tu meta de 10 h (63 %).» / «¡Ya cumpliste tu meta de 10 h!» */
+export function textoProgresoMeta(p: ProgresoMeta): string {
+  const pct = Math.round(p.fraccion * 100);
+  if (p.cumplida) return `¡Ya cumpliste tu meta de ${formatearMinutos(p.metaMin)}! 🎉 Llevas ${formatearMinutos(p.totalMin)} esta semana.`;
+  return `Esta semana llevas ${formatearMinutos(p.totalMin)} de tu meta de ${formatearMinutos(p.metaMin)} (${pct} %): te faltan ${formatearMinutos(p.faltaMin)}.`;
+}
+
+export function textoMetaPuesta(metaMin: number, p: ProgresoMeta | null): string {
+  const base = `Listo, tu meta es estudiar ${formatearMinutos(metaMin)} a la semana.`;
+  return p ? `${base} ${p.cumplida ? "¡Esta semana ya la cumpliste!" : `Esta semana llevas ${formatearMinutos(p.totalMin)} (${Math.round(p.fraccion * 100)} %).`}` : base;
+}
+
+export const TEXTO_META_QUITADA = "Listo, quité tu meta de estudio. Sigo contando tu tiempo igual 🌱";
+export const TEXTO_NO_HABIA_META = "No tenías una meta de estudio puesta.";

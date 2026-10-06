@@ -365,9 +365,186 @@ No hay datos retroactivos: los pomodoros anteriores no tienen fecha, así que la
 - [ ] Apagar `estudio`: las frases dicen «Eso está apagado» y lo guardado se ve y se borra en «Lo que sé de ti → Estadísticas de estudio».
 - [ ] El aspecto de la tarjeta en el notch real y en el modo flotante.
 
+## Diseño de B: Gráficos (aprobado el 6-10-2026 con las ocho recomendaciones; B1 Plata, B2 Agenda y B3 Estudio HECHAS el 6-10-2026: el bloque B está completo)
+
+**Qué es.** Que las tres pestañas con datos (Plata, Estudio, Agenda) muestren *tendencias* y no solo el momento actual. Todo con SVG y barras propios, armados solo con números (como `graficoSemana` de Plata); sin librerías de gráficos. **No hay tablas nuevas**: los datos ya existen (`gastos` con fecha, `estudio_registro`, eventos y entregas de Agenda). Lo que falta son cálculos puros que los agrupen.
+
+**Lo que ya hay y condiciona el diseño.**
+- El panel de la isla es la mitad derecha de 560 px (unos 330 px útiles): los gráficos tienen que leerse chicos. Nada de ejes con muchos números; etiquetas de una letra o dos y el valor solo en el elemento resaltado.
+- **No existe el concepto de semestre** en ningún dato (los ramos no tienen periodo; archivar no guarda fecha). «Promedio de notas por semestre» exigiría inventarlo; ver decisión 4.
+- Estudio solo tiene datos desde que se instaló A5 (sin retroactivos): los gráficos largos de estudio parten casi vacíos y lo dicen. Plata sí tiene historia (todos los gastos tienen fecha).
+
+**Pieza común.** `packages/motor/src/graficos-tipos.ts` (puro, sin Node): escalas (`escalaLineal`), barras (`barras`, `barrasApiladas`) y línea (`linea`, con punto de proyección en trazo punteado) que devuelven *geometría en números* (x, y, ancho, alto, color), y `src/graficos.ts` en desktop que solo convierte esa geometría a SVG. Así todo lo difícil se prueba con `node --test` y la ventana no calcula nada. Accesibilidad: cada gráfico lleva `role="img"` y un `aria-label`/texto con el resumen en palabras («Gastaste $412.000 este mes; a este ritmo terminas en $560.000»).
+
+**B1 · Plata (la más valiosa; pilar de plata).**
+- **Tendencia de 6 meses:** barras mensuales (mes actual resaltado y marcado «parcial»), con una línea horizontal fina del presupuesto de hoy si existe (se avisa que es el de hoy, no el de cada mes). Toque en una barra = ese mes con su total y su categoría más grande.
+- **Proyección «a este ritmo terminas el mes en X»:** gasto del mes ÷ días transcurridos × días del mes, **solo desde el día 5** (antes dice «aún es pronto»); si hay presupuesto, «te pasarías por $X» / «te sobrarían $X» con el semáforo de siempre. Un gasto único grande distorsiona: se calcula sobre el gasto *sin* el mayor gasto único del mes cuando este supera la mitad del total, y se muestra «sin contar tu gasto de $X en Y». Se dibuja como la barra del mes con su tramo proyectado punteado.
+- **Sin IA:** «¿cómo voy este mes?» / «¿a qué ritmo gasto?» / «¿cuánto voy a gastar este mes?» (intención `plata-proyeccion`, antes que los gastos, con frases de control). **MCP:** `gastos_presupuesto` suma `proyeccion` al resultado (sigue de solo lectura y sin preguntar).
+- **Puente:** `plata-estado` agrega `meses` (6) y `proyeccion`; sin pedido nuevo.
+
+**B2 · Agenda (vista semanal; «que se note la semana de certámenes»).**
+- Selector **Lista | Semana** arriba de la pestaña (recuerda la última en `localStorage`). La vista semanal es una grilla de 7 columnas (lun–dom, hoy resaltado) con una **franja por día** (no por hora: no cabe una grilla horaria en 330 px): puntos de color por cosa (evento azul, entrega ámbar/roja, recordatorio verde, bloque de estudio con el color del ramo, prueba con 📝) y el número de cosas. Tocar un día abre su lista debajo (la lista de siempre, filtrada).
+- **Carga de la semana:** cada día recibe un nivel (0–3) según cuántas horas ocupa lo agendado + entregas y pruebas (las pruebas pesan doble); la semana con 2 o más pruebas/entregas fuertes se marca «Semana pesada 🔥» con las fechas. Puro en `packages/motor/src/agenda-carga.ts` (`cargaDeLaSemana`, probado, hora de pared). Navegación ‹ semana › (hasta 4 semanas hacia adelante y 1 hacia atrás; la ventana leída hoy es de 14 días, así que se ensancha a 35 solo cuando se abre la vista semanal).
+- **Sin IA:** «¿cómo viene mi semana?» → «Jueves es el día pesado: certamen 2 de Cálculo y entrega de Física» (intención `agenda-semana`). **MCP:** `calendario_proximos`/`aula_entregas` no cambian; no hace falta herramienta nueva.
+- **Puente:** `agenda-estado` acepta `dias` mayor (tope 35) y devuelve también las pruebas de `evaluaciones` con fecha.
+
+**B3 · Estudio.**
+- **Carga semanal de estudio:** las últimas 8 semanas como barras apiladas por ramo (color del ramo; semana actual resaltada), con el total de cada una al tocar. Debajo de la tarjeta «Esta semana» de A5, plegable («Ver 8 semanas»).
+- **Por ramo:** en la ficha, una mini-línea (sparkline) de las últimas 8 semanas de ese ramo y la nota actual al lado.
+- **Notas:** en vez del «promedio por semestre» (no hay semestre), una **comparación de ramos**: barras horizontales con el promedio actual de cada ramo activo contra la línea de la aprobación (4,0), en el color del semáforo de A2. Es lo que de verdad sirve para ver qué ramo está en riesgo.
+- **Sin IA y MCP:** nada nuevo (`estudio_estadisticas` ya devuelve semana por día; se le agrega `semanas` de 8, solo lectura).
+- **Puente:** `estadisticas-estado` agrega `semanas`; `ramos-estado` ya trae las fichas de notas.
+
+**Orden recomendado (una sesión cada una):** B1 Plata → B2 Agenda → B3 Estudio. Plata tiene datos reales desde el primer día y es el otro pilar; Estudio es lo que más tarda en tener historia.
+
+**Privacidad.** Nada sale de la isla ni se registra: los gráficos se arman en la ventana a partir de lo que el puente ya manda. La skill `delegar` ya prohíbe pasar gastos, notas, horas y agenda a planes gratuitos; las series nuevas son derivados de esos mismos datos, así que se agregan sus nombres a la prueba.
+
+**Fuera de B:** exportar gráficos como imagen, comparar con otros estudiantes (nunca), metas y líneas objetivo de horas (E), gráficos de más de 6 meses o de años, categorías por mes apiladas (queda la categoría principal al tocar), vistas por hora en Agenda.
+
+**Pruebas previstas:** `pruebas/graficos.test.ts` (escalas, barras, apiladas, línea con tramo proyectado, series vacías, un solo dato, valores enormes), `pruebas/plata-tendencia.test.ts` (6 meses con meses vacíos, mes parcial, proyección antes del día 5, con un gasto único dominante, febrero/bisiesto, cambio de hora), `pruebas/agenda-carga.test.ts` (niveles, semana pesada, cruce de medianoche, cambio de hora), `semanas` de estudio (8 semanas con huecos), frases con controles, puente real de punta a punta en carpeta temporal, textos e isla en `src/agente/` (con pruebas) y vistas previas `?pestana=plata&tendencia=sin|seis|proyeccion`, `?pestana=agenda&vista=semana&carga=pesada|ligera`, `?pestana=estudio&semanas=sin|ocho`. Capturas a 800×520 y a 560 de isla.
+
+**Decisiones que necesito de ti antes de programar:**
+1. **Alcance de esta sesión:** ¿solo B1 Plata (recomiendo, y B2 y B3 en sesiones aparte), B1 + B2, o los tres juntos?
+2. **Plata, tendencia:** ¿6 meses de barras con la línea del presupuesto de hoy (recomiendo), o 12 meses (se ve apretado en 330 px)?
+3. **Plata, proyección:** ¿simple desde el día 5, descontando un gasto único que sea más de la mitad del mes y diciéndolo (recomiendo), o el promedio simple siempre?
+4. **Notas por semestre:** ¿reemplazarlo por la comparación de ramos activos contra la aprobación (recomiendo, no inventa un dato que no existe), o agregar un concepto de «semestre» a los ramos (más trabajo: migrar A1, A2 y la ficha)?
+5. **Agenda semanal:** ¿franja por día con puntos y nivel de carga, tocar un día abre su lista (recomiendo), o intentar una grilla por hora (no cabe bien en la isla)?
+6. **Semana de certámenes:** ¿«semana pesada» cuando hay 2 o más pruebas/entregas fuertes, con las pruebas pesando doble (recomiendo; el umbral se puede cambiar después), u otra regla?
+7. **Estudio, 8 semanas:** ¿barras apiladas por ramo plegadas bajo «Esta semana», más una mini-línea en cada ficha (recomiendo), o solo la apilada?
+8. **Frases sin IA nuevas:** ¿«¿cómo voy este mes?» y «¿cómo viene mi semana?» (recomiendo, con frases de control), o dejar los gráficos solo visuales por ahora?
+
+## Lo que quedó hecho en B1 Plata (6-10-2026)
+
+- **Decisiones tomadas** (las ocho recomendadas): esta sesión solo B1; 6 meses de barras con la línea del presupuesto de hoy; proyección simple desde el día 5 descontando un gasto único dominante; notas por semestre reemplazadas por la comparación de ramos (B3); Agenda semanal por franja de día (B2); «semana pesada» con 2 o más pruebas/entregas fuertes y las pruebas pesando doble (B2); 8 semanas apiladas más mini-línea por ramo (B3); frases sin IA nuevas.
+- **Motor** (`packages/motor/src/plata.ts`, puro): `tendenciaMeses` (6 meses, el último parcial, con la categoría que más pesó cada mes), `proyectarMes` (gastado ÷ días que van × días del mes; antes del día 5 `estado: "pronto"`; si un gasto pasa de la mitad del mes se deja fuera del ritmo y se suma una vez; semáforo contra el presupuesto: verde hasta 90 %, ámbar hasta 100 %, rojo si se pasa) y `describirProyeccion`. `resumenPlata` suma `meses` y `proyeccion`; `DIAS_PLATA` sube de 100 a 190 para cubrir 6 meses. Sin tablas nuevas.
+- **Sin IA** (intención `plata-proyeccion`, función `gastos`): «¿cómo voy este mes?», «cómo voy con la plata», «¿cuánto voy a gastar este mes?», «a qué ritmo gasto». Con controles: «¿cómo voy en cálculo?» (notas), «cómo voy con el presupuesto» (sigue siendo `presupuesto-queda`) y «cuánto gasté este mes» (consulta de gastos) no cambian. **MCP:** `gastos_presupuesto` suma `proyeccion` (con o sin presupuesto; antes del día 5 `disponible: false`). Tras cambiar `mcp.ts` hay que reiniciar los procesos MCP.
+- **Puente:** sin pedidos nuevos: `plata` y `plata-estado` ya traen `meses` y `proyeccion`. Prueba de punta a punta en `plata-puente.test.ts`.
+- **Isla:** tarjeta «Últimos 6 meses» en la pestaña Plata (`tarjetaTendencia` y `graficoMeses` en `panel.ts`; geometría y textos puros en `src/agente/plata.ts`: `barrasMeses`, `textoMes`, `textoProyeccion`, `resumenTendencia`, con pruebas). Barras tocables (el mes elegido dice su total y su categoría más grande; un segundo toque vuelve al mes en curso), mes en curso en verde con su tramo proyectado punteado (color del semáforo), línea punteada del presupuesto de hoy (solo entra a la escala si no pasa del doble de lo gastado: si no, se omite) y la línea «A este ritmo cierras el mes en $X · te pasarías por $Y · sin contar $Z en matrícula». `role="img"` con `aria-label` en palabras. Vista previa `?pestana=plata&tendencia=sin|seis|proyeccion` (los datos de ejemplo ahora cubren 6 meses).
+- **Cambió respecto del diseño:** la geometría de las barras vive en `src/agente/plata.ts` (como `barrasSemana`) y no en un `graficos-tipos.ts` del motor: con un solo gráfico no justifica un módulo aparte; se crea cuando B2 y B3 necesiten compartir escalas. Las pruebas están en `pruebas/plata-tendencia.test.ts` (motor) y `pruebas/plata.test.ts` (desktop). La skill `delegar` ya prohíbe pasar «cualquier cifra de su plata», así que cubre las series nuevas sin cambios.
+
+### Pruebas pendientes de B1 (para un Mac)
+
+- [ ] Con gastos reales de varios meses (o anotados de prueba con fechas antiguas en una base aparte): que las 6 barras y la categoría de cada mes calcen con lo que esperas.
+- [ ] Tocar una barra y tocarla otra vez; que la isla no se cierre sola ni la selección se pierda cuando llega un aviso `plata` (al anotar un gasto).
+- [ ] Antes del día 5 del mes: «Aún es pronto para proyectar» y sin tramo punteado; el 5, que aparezca.
+- [ ] Una matrícula o un arriendo grande: que diga «sin contar…» y que la cifra tenga sentido.
+- [ ] Reiniciar los procesos MCP, sesión nueva con el TUI y preguntar «¿cuánto voy a gastar este mes?» al agente (si la frase no calza): que `gastos_presupuesto` traiga `proyeccion`.
+- [ ] Frases reales desde el teclado del Mac: «¿cómo voy este mes?», «a qué ritmo gasto».
+- [ ] El aspecto de la tarjeta en el notch real y en el modo flotante (el gráfico mide 280 de ancho y se estira al panel).
+- [ ] Con presupuesto muy grande o muy chico frente a lo gastado: la línea aparece o se omite sin aplastar las barras.
+
+## Lo que quedó hecho en B2 Agenda semanal (6-10-2026)
+
+- **Decisiones tomadas** (las recomendadas: franja por día con puntos y nivel de carga, tocar un día abre su lista, «semana pesada» con las pruebas pesando doble, frase «¿cómo viene mi semana?»).
+- **Motor** (`packages/motor/src/agenda-carga.ts`, puro): `cargaDeLaSemana` (siete días desde un lunes o desde hoy: nivel 0–3 por «puntos de carga» —horas de eventos y bloques, 1,5 por entrega, 3 por prueba, 0,5 por tarea; lo hecho no pesa; lo que cruza la medianoche se reparte—, puntos por cosa y las pruebas/entregas de cada día), `describirSemana` y `lunesDe`. **Regla de «pesado»:** puntaje = 2 × pruebas + entregas; un día o una semana con puntaje ≥ 3 (`UMBRAL_PESADO`) es pesado: una prueba y una entrega, dos pruebas o tres entregas (dos entregas solas no). Se cambia en una constante. `armarAgenda` suma el tipo `prueba` (evaluaciones con fecha y sin nota de ramos activos; sin hora salen «todo el día»; solo con Estudio prendido). `DIAS_VENTANA` pasa de 14 a 35 (lo que se lee del calendario, las tareas y los bloques); la lista también muestra 35 (`DIAS_LISTA`; primero quedó en 14 y el usuario pidió igualarla).
+- **Sin IA** (intención `agenda-semana`, proveedor `agenda` del `Motor`): «¿cómo viene mi semana?», «como se ve la semana», «¿viene pesada la semana?», «mi semana viene pesada/complicada». Mira los próximos 7 días desde hoy (no lunes a domingo). Disponible con cualquiera de las fuentes de la Agenda prendida (`FUNCIONES_DE_AGENDA`: calendario, aula, temporizadores, estudio, grabaciones); sin ninguna dice que está apagado. Sin MCP nuevo: `calendario_proximos` y `aula_entregas` no cambian.
+- **Puente:** `estadoAgenda` se parte en `agendaDeAhora` (sin leer de nuevo) y la lectura; `agenda-estado` ya trae 35 días y las pruebas. Prueba de punta a punta en `agenda-puente.test.ts`.
+- **Isla:** selector Lista | Semana en la cabecera de Agenda (se recuerda en `localStorage` `brote.agenda-vista`), ‹ › para navegar, grilla de 7 columnas con nivel de carga (azul más fuerte = más carga), puntos por tipo (prueba violeta, entrega ámbar, evento azul, tarea/recordatorio verde, estudio blanco; lo fuerte con aro), borde ámbar en el día pesado y la línea «🔥 Semana pesada: 2 pruebas y 3 entregas». Tocar un día abre su lista debajo. Las pruebas salen también en la lista con 📝. Lógica y textos puros en `src/agente/agenda.ts` (con pruebas), vista en `semanaDeAgenda` de `panel.ts`. Vista previa `?pestana=agenda&vista=semana&carga=pesada|ligera`.
+- **Cambió respecto del diseño:** (1) no hay navegación hacia atrás: la agenda solo lee desde hoy, así que los días ya pasados de esta semana salen apagados y sin tocar; se puede ir hasta 3 semanas adelante (`SEMANAS_ADELANTE`). (2) La ventana se ensanchó a 35 días siempre, no solo al abrir la vista semanal (más simple: la lectura es chica). (3) `agenda-estado` no recibe `dias`. (4) No hay herramienta MCP ni pedido nuevo.
+
+### Pruebas pendientes de B2 (para un Mac)
+
+- [ ] Con el calendario real (EventKit o iCal) y 35 días de ventana: que la lectura siga siendo rápida y las clases repetidas de las 5 semanas aparezcan bien (incluso a través de un cambio de hora).
+- [ ] Un ramo con una evaluación con fecha (A4): que salga como 📝 en la lista y como punto violeta en la semana, y que desaparezca al ponerle nota o archivar el ramo.
+- [ ] La semana de certámenes real: que «Semana pesada» salga cuando corresponde y que el umbral (≥ 3 puntos) te parezca bien; si no, cambiarlo en `UMBRAL_PESADO`.
+- [ ] Alternar Lista/Semana, navegar ‹ ›, tocar días; que la isla no se cierre sola ni la selección se pierda cuando llega un aviso (calendario, aula, recordatorio).
+- [ ] «¿Cómo viene mi semana?» desde el teclado del Mac, con y sin calendario conectado.
+- [ ] El aspecto de la grilla en el notch real y en el modo flotante (columnas de unos 44 px) y con 5 pestañas en la fila del notch.
+- [ ] Reiniciar Brote (el puente carga código nuevo solo al partir).
+
+## Lo que quedó hecho en B3 Estudio (6-10-2026)
+
+- **Decisiones tomadas** (las recomendadas): 8 semanas apiladas por ramo plegadas bajo «Esta semana», mini-línea en cada ficha y, en vez del «promedio por semestre» (no existe el semestre), la comparación de ramos contra la aprobación.
+- **Motor** (`estadisticas-tipos.ts`, puro): `semanasDeEstudio` (8 semanas de lunes a domingo, de la más vieja a la actual, con los minutos por ramo; sin duplicados bloque/pomodoro; lo que cruza el domingo se reparte; sale dentro de `resumirEstudio` como `semanas`) y `serieDeRamo`. Sin tablas ni pedidos nuevos: viaja en el aviso `estadisticas-estudio` y en `estadisticas-estado`. **MCP:** `estudio_estadisticas` suma `ultimasSemanas` (lunes, minutos y ramos por nombre). Tras cambiar `mcp.ts` hay que reiniciar los procesos MCP.
+- **Isla:** (1) «Ver 8 semanas» bajo las barras por ramo de «Esta semana»: columnas apiladas con el color de cada ramo (la actual con borde punteado), título al pasar el cursor («5–11 oct (esta semana, va a medias): 3 h · Cálculo 2 h, Física 1 h»), y «Promedio: 3 h 6 min por semana» contando solo semanas completas desde que hay datos. (2) Mini-línea de 8 semanas a la derecha de «Esta semana: … · en total: …» en la ficha de cada ramo. (3) Tarjeta «Notas por ramo» (`comparacion-notas-vista.ts`): barras 1,0–7,0 con el color del semáforo de A2 y una raya en la nota de aprobación de cada ramo, el ramo en más riesgo primero; solo ramos con alguna nota rendida. Reglas puras en `agente/estadisticas.ts` (`columnasSemanas`, `promedioSemanal`, `lineaMini`) y `agente/notas.ts` (`barrasDeNotas`), con pruebas. Vista previa `?pestana=estudio&estadisticas=semana&historia=ocho&notas=con|imposible|sin` (`&abrir=1` abre la ficha).
+- **Pedido del usuario después de verlo (6-10-2026):** las 7 barras diarias de «Esta semana» (de A5) dejan de ser moradas y pasan a ser pilas con los colores de los ramos (`minutosPorDiaYRamo` → `ResumenEstudio.porDiaRamo`, `columnasDias`): la altura sigue al día más estudiado y cada color ocupa lo estudiado de ese ramo; el título de cada barra dice los ramos del día. Un puente más viejo sin el desglose da barras lisas.
+- **Cambió respecto del diseño:** no puse «la nota actual al lado» de la mini-línea: la ficha ya la muestra en la píldora «promedio 4,2 · necesitas 4,0» de su cabecera, y repetirla apretaba la fila. La comparación quedó sin toque (no abre la ficha del ramo).
+
+### Pruebas pendientes de B3 (para un Mac)
+
+- [ ] Con un par de semanas de estudio reales (o de prueba): que «Ver 8 semanas» muestre las semanas correctas y que el desplegable no se cierre cuando llega un aviso (un pomodoro que termina).
+- [ ] Un pomodoro o un «estudié 1 hora de cálculo» que cae un domingo tarde o un lunes temprano: que cuente en la semana correcta; y un registro que cruza la medianoche del domingo.
+- [ ] La mini-línea en las fichas de varios ramos (uno sin estudio no debe mostrar nada) y el «Promedio» al cumplir su primera semana completa.
+- [ ] «Notas por ramo» con ramos reales de prueba (no tus notas): el orden por riesgo, el color y la raya de aprobación cuando el ramo tiene una aprobación distinta de 4,0.
+- [ ] El aspecto en el notch real y en el modo flotante (8 columnas de ~30 px).
+- [ ] Reiniciar los procesos MCP, sesión nueva con el TUI y preguntar «¿cómo ha ido mi estudio las últimas semanas?»: que use `estudio_estadisticas` y traiga `ultimasSemanas`.
+
+## Diseño de E: Cosas chicas de mucho valor (aprobado el 6-10-2026 con las nueve recomendaciones; E1, E2, E3 y E4 HECHAS el 6-10-2026; metas de ahorro y gastos compartidos quedan afuera)
+
+**Qué es.** Cuatro piezas chicas que usan lo que ya existe (sin tablas pesadas, sin IA, sin conectores nuevos): que Brote no te interrumpa mientras estudias, que te resuma el día, que te ponga una meta de estudio y celebre tus rachas, y que celebre lo que de verdad cuesta. Las dos restantes del bloque (metas de ahorro y gastos compartidos) se dejan para después; ver «Fuera de E».
+
+**Lo que ya hay y condiciona el diseño.**
+- `Novedades` (`src/agente/novedades.ts`) ya decide qué aviso va al ala izquierda, deja un punto en la pestaña y lo guarda 10 minutos en la lista; solo las decisiones (permisos, «¿Aprendo esto?») abren la isla y no pasan por ahí. El modo concentración se cuelga de ese único punto.
+- El pomodoro ya sabe cuándo estás en un bloque de estudio y cuándo en descanso (`temporizadores.ts`); la isla ya recibe el aviso `temporizadores`.
+- Brote ya «celebra» (estado del personaje) al terminar un temporizador, al enchufar el computador y al terminar un especialista. Falta enganchar lo escolar.
+- Las estadísticas de A5 ya calculan la racha y el total de la semana: la meta y las celebraciones solo agregan un número y avisos «una vez».
+- Todo lo del día ya se puede pedir: `armarAgenda` (clases, entregas, pruebas, bloques), el presupuesto de hoy, las tarjetas de repaso que vencen. Falta juntarlo en una frase.
+
+**E1 · Modo concentración.**
+- Mientras corre un bloque de estudio de un pomodoro, Brote **no muestra en el ala ni notifica al sistema** los avisos que no importan: descargas, plata, computador, equipo, Claude Code terminó, uso del plan, transcripción lista, repaso. Siguen quedando en la lista de «Novedades» y con su punto (nada se pierde); al empezar el descanso aparece una sola línea «Mientras estudiabas llegaron 3 avisos».
+- **Pasan igual:** el aviso del propio temporizador, la clase que empieza en 10 minutos, una entrega a 2 horas y el aviso de un bloque del plan de estudio. **Las decisiones** (permisos de Brote o de Claude Code, «¿Aprendo esto?») **siguen abriendo la isla**: no pasan por `Novedades` y dejar a un agente esperando 25 minutos es peor que una interrupción.
+- Interruptor en Configurar Brote → Funciones («Modo concentración», encendido de fábrica, guardado en `localStorage` como el de las notificaciones del sistema). Solo la ventana lo decide: ni el puente ni el motor cambian. Lógica pura en `Novedades` (`silenciadasEnConcentracion`, con pruebas) y `src/agente/concentracion.ts`.
+
+**E2 · Resumen de la mañana.**
+- Sin IA: «dame el resumen del día», «resumen de hoy», «buenos días», «¿cómo viene mi día?». Una frase armada con lo que existe: «Hoy tienes 2 clases (la primera a las 8:30), 1 entrega que vence a las 23:59 y un certamen de Cálculo en 3 días. Tienes 4 tarjetas para repasar y puedes gastar $6.500; llevas $84.000 de tu presupuesto». Solo dice lo que está prendido y lo que existe (sin ceros ni líneas vacías); sin nada, «Hoy no veo nada agendado 🌱».
+- **Automático (una vez al día):** la primera vez que abres la isla entre las 6 y las 12, llega como una novedad «☀️ Buenos días: …» (no abre la isla; el recordatorio de que ya se mostró va en `localStorage` como el de las tarjetas de repaso). Interruptor en Configurar → Funciones («Resumen de la mañana», encendido de fábrica). Pura en `packages/motor/src/resumen-dia.ts` (`armarResumenDelDia`, con pruebas) y el motor la usa para la frase; la ventana pide el mismo texto al puente por `resumen-dia` para el automático.
+- **MCP:** ninguno (el agente ya tiene las herramientas de calendario, aula, plata y estudio).
+
+**E3 · Metas de estudio y celebraciones de racha** (lo que quedó anotado en A5).
+- **Meta semanal de horas**, una sola para todo (no por ramo): «mi meta es estudiar 10 horas a la semana», «quita mi meta de estudio», «¿cómo voy con mi meta?». Se guarda en la tabla `ajustes` (como el presupuesto). En «Esta semana» aparece «6 h 20 min de 10 h» con una barra fina; **nada de reproches**: si no llegas, la barra solo está a medias. Al cumplirla, Brote celebra y deja una novedad, una vez por semana.
+- **Racha:** celebración (novedad + Brote celebra) al llegar a 3, 7, 14 y 30 días seguidos, una vez por racha y por hito (`avisos-estudio` en `ajustes`). Sin mensajes cuando se pierde.
+- Sin IA: intenciones `estudio-meta` (poner, quitar, cómo voy; prefijo `estudio-` por la trampa de `plan-*`). MCP: `estudio_estadisticas` suma `metaSemanalMin`. Puente: aviso `estadisticas-estudio` ya existente trae la meta; aviso `estudio-celebracion`. Pura en `estadisticas-tipos.ts` (`progresoDeMeta`, `hitoDeRacha`).
+
+**E4 · Más personalidad (celebrar lo escolar).**
+- Brote celebra, con una línea corta en su estilo (chileno, motivador, breve), cuando: marcas una tarea o un bloque de estudio como hecho, rindes una nota y quedas con el ramo **aprobado** («¡Aprobaste Cálculo! 🎉»), o cumples la meta o un hito de racha (E3). Una celebración por evento, nunca repetida.
+- **No** se celebra «entregaste algo» a partir de que una entrega desaparece del aula: puede desaparecer porque venció, no porque la entregaste (falso positivo y mala sensación). Solo cuenta lo que tú marcas.
+- Textos puros en `src/agente/celebraciones.ts` (con pruebas); el personaje usa el estado de celebración que ya existe.
+
+**Fuera de E (decisiones aparte).**
+- **Metas de ahorro** («quiero juntar 150 lucas para marzo»): merece su propio diseño (de dónde sale el ahorro si Brote solo ve gastos, no ingresos; cómo se une al presupuesto y a los gastos hormiga). Recomiendo hacerla en la siguiente sesión.
+- **Gastos compartidos** («le debo 5 lucas a Juan»): guarda nombres de terceros. Recomiendo no hacerla ahora; si se hace, solo en el computador, el nombre tal como lo escribes, nunca a planes gratuitos (regla de `delegar`) y con borrado desde «Lo que sé de ti».
+
+**Privacidad.** Nada sale del computador ni va a registros. La meta de estudio y las rachas son datos de estudio (ya cubiertos por la regla de `delegar` para planes gratuitos; se agrega «meta de estudio» a su lista y a su prueba). El resumen del día junta datos de varias áreas: solo se muestra en la isla y lo calcula Brote sin IA.
+
+**Pruebas previstas:** `pruebas/resumen-dia.test.ts` (armado con cada fuente presente y ausente, sin ceros, hora de pared, un día sin nada), `pruebas/estadisticas-meta.test.ts` (progreso, hitos 3/7/14/30 una sola vez, semana nueva), frases con controles («buenos días» a secas, «mi meta es 10 horas» sin «estudiar», «quiero ahorrar» no se confunde), `concentracion.test.ts` (qué pasa y qué se silencia, el resumen de «llegaron N avisos»), celebraciones, puente real de punta a punta en carpeta temporal y vistas previas `?concentracion=1`, `?pestana=estudio&meta=sin|media|cumplida`, `?resumen=1`.
+
+**Decisiones que necesito de ti antes de programar:**
+1. **Alcance de esta sesión:** ¿E1 + E2 + E3 + E4 juntas (recomiendo: son chicas y se apoyan entre sí), o solo algunas?
+2. **Concentración, qué pasa:** ¿pasan la clase en 10 min, una entrega a 2 h, el bloque del plan y el propio temporizador, y el resto se silencia con el resumen «llegaron N avisos» al descanso (recomiendo), o se silencia todo salvo el temporizador?
+3. **Concentración y decisiones:** ¿los permisos y «¿Aprendo esto?» siguen abriendo la isla (recomiendo), o también esperan al descanso?
+4. **Concentración, de fábrica:** ¿encendido con interruptor en Configurar (recomiendo) o apagado hasta que lo prendas?
+5. **Resumen de la mañana:** ¿por pedido y además una novedad automática una vez al día entre las 6 y las 12 (recomiendo), o solo por pedido?
+6. **Meta de estudio:** ¿una meta semanal global en horas, con barra suave y sin reproches (recomiendo), o por ramo?
+7. **Racha:** ¿celebrar a los 3, 7, 14 y 30 días, una vez por racha (recomiendo)? ¿Otros hitos?
+8. **Celebrar lo escolar:** ¿solo lo que tú marcas (tarea o bloque hecho, ramo aprobado, meta, racha) (recomiendo), o también cuando una entrega del aula desaparece?
+9. **Lo que queda afuera:** ¿metas de ahorro en la sesión siguiente y gastos compartidos pospuestos (recomiendo), o prefieres cambiar el orden?
+
+## Lo que quedó hecho en E (6-10-2026)
+
+- **Decisiones tomadas** (las nueve recomendadas): E1 a E4 juntas; en concentración pasan el temporizador, la clase, la entrega, el bloque del plan (y las celebraciones) y el resto se calla con un resumen al descanso; las decisiones (permisos, «¿Aprendo esto?») siguen abriendo la isla; concentración y resumen de la mañana encendidos de fábrica con interruptor; una sola meta semanal global; hitos de racha 3/7/14/30; solo se celebra lo que el usuario marca; metas de ahorro en la sesión siguiente y gastos compartidos pospuestos.
+- **E1 Modo concentración** (`src/agente/concentracion.ts`, puro, con pruebas): `SeguidorDeConcentracion` mira si hay un pomodoro en su bloque de estudio (el descanso no cuenta) y cuenta lo que calla; `Novedades.agregar(…, silenciada)` deja el aviso en la lista y con punto pero no en el ala, y `avisar` de `main.ts` tampoco manda la notificación del sistema ni mueve a Brote (aviso del computador). Al empezar el descanso (o al apagar el interruptor) sale una sola novedad «Mientras estudiabas llegaron 3 avisos: 2 de Claude Code y 1 de plata. Los dejé en Novedades.». Interruptor en Configurar Brote → Funciones → «Concentración y resumen» (`localStorage` `brote.modo-concentracion`, `src/agente/preferencias.ts`). Ni el puente ni el motor cambian.
+- **E2 Resumen de la mañana** (`packages/motor/src/resumen-dia.ts`, puro): `armarResumenDelDia` junta eventos de hoy (lo que ya pasó no cuenta), todo el día, entregas de hoy y mañana, la próxima prueba de los próximos 7 días, tareas y bloques de estudio de hoy, tarjetas de repaso que vencen y la plata (puedes gastar hoy / llevas X de Y; sin presupuesto, lo gastado del mes). Solo dice lo que existe; sin nada, «Hoy no veo nada agendado 🌱». `Motor.resumenDelDia()` respeta las funciones prendidas. Sin IA: «dame el resumen del día», «resumen de hoy», «mi resumen de la mañana», «¿cómo viene mi día?», «buenos días» y «buen día» (solo si es el saludo suelto: «buenos días, explícame…» va al agente). Pedido del puente `resumen-dia` → `{ texto, corto, hay }`. Automático: una novedad `☀️ Hoy: 2 eventos · 1 entrega · 4 tarjetas · $6.500 libres` una vez al día entre las 6 y las 12 (`src/agente/resumen-manana.ts`; `localStorage` `brote.resumen-mostrado`; interruptor `brote.resumen-manana`). Sin MCP.
+- **E3 Meta semanal y racha** (`estadisticas-tipos.ts`, `estadisticas-metas.ts`, `estadisticas.ts`): una meta global en minutos (1 a 100 h) guardada en `ajustes` (`meta-estudio-min`); `ResumenEstudio.meta` trae el progreso. Sin IA (intenciones `estudio-meta-poner|quitar|como`): «mi meta es estudiar 10 horas a la semana», «mi meta de estudio es 8 horas», «mi meta semanal es 6 horas», «pon mi meta de estudio en 5 horas», «quita mi meta de estudio», «¿cómo voy con mi meta de estudio?»; siempre con «semana/semanal» o «de estudio» para no chocar con otras metas, y `leerDuracion` ahora acepta un tope propio (una meta puede pasar de las 12 h de un temporizador). Isla: bajo el total de «Esta semana», una barra fina «7 h 25 min de 10 h · meta semanal» (tocarla escribe la frase en el campo para cambiarla; sin meta, «Poner una meta semanal»); cumplida, «🎯 ¡Meta cumplida!» en verde. Celebraciones (`celebracionesDeEstudio`): la meta, una vez por semana; la racha a los 3, 7, 14 y 30 días, una vez por racha (si se corta y vuelves a partir, vuelven a contar); nada cuando se pierde. Lo ya celebrado en `ajustes` (`avisos-estudio`). MCP `estudio_estadisticas` suma `metaSemanal`.
+- **E4 Celebrar lo escolar** (`packages/motor/src/celebraciones.ts`): aviso del puente `celebracion { motivo, texto }` (motivos meta, racha, tarea, bloque, aprobado) → novedad + saltito de Brote en la isla. Tarea o bloque marcados «hecho» (una vez por tarea/bloque y por sesión), ramo que pasa a «aprobado» (veredicto `aprobado` de A2: ya no hace falta nota; `ramos-aprobados` en `ajustes`; al partir lo que ya estaba aprobado se da por celebrado en silencio). Textos cortos para caber en el ala (≤ 38 letras, con prueba). Nunca se celebra algo que Brote dedujo (una entrega que desaparece del aula).
+- **Privacidad:** la skill `delegar` ahora también prohíbe la meta semanal y el resumen del día a planes gratuitos (con prueba). En los registros del puente solo queda el motivo de cada celebración, nunca el texto.
+- **Cambió respecto del diseño:** (1) el aviso de la **entrega** pasa entero en concentración (el aviso del aula no distingue 24 h de 2 h); las celebraciones también pasan. (2) El resumen de la mañana sale **la primera vez que la app está abierta entre las 6 y las 12** (a los 5 s de abrir y cada 10 min), no «al abrir la isla», porque no abre la isla; y el aviso del ala trae la versión corta, el texto completo se pide con «dame el resumen del día». (3) La celebración de una tarea o un bloque no se recuerda entre sesiones de Brote (marcar y desmarcar de nuevo después de reiniciar celebra otra vez). (4) Pruebas de punta a punta con el puente real para la meta, la racha y el ramo aprobado; la tarea y el bloque se probaron solo en la lógica pura (necesitan una grabación o un plan armados).
+
+### Pruebas pendientes de E (para un Mac)
+
+- [ ] Reiniciar Brote (el puente carga código nuevo solo al partir) y los procesos MCP (`pkill -f packages/motor/src/mcp.ts`).
+- [ ] Empezar un pomodoro real y, durante el bloque, hacer que llegue un aviso de otro tipo (soltar una descarga, que Claude Code termine una tarea): que no salga en el ala ni como notificación, que quede en Novedades con su punto y que al empezar el descanso salga «Mientras estudiabas llegaron N avisos». Que sí suenen el aviso del temporizador y la clase en 10 minutos.
+- [ ] Apagar el interruptor de concentración en Configurar a mitad de un bloque: que lo callado se resuma y de ahí en adelante suene todo.
+- [ ] Un permiso de Claude Code durante el bloque: que siga abriendo la isla.
+- [ ] «dame el resumen del día» con calendario, aula, un presupuesto y alguna tarjeta de repaso; y con todo apagado.
+- [ ] El aviso automático por la mañana (entre 6 y 12, una sola vez; probar cambiando el día de `brote.resumen-mostrado` o esperando a mañana) y que con el interruptor apagado no salga.
+- [ ] «mi meta es estudiar 10 horas a la semana»: ver la barra en «Esta semana», anotar horas hasta llegar y comprobar la celebración (una sola vez); cambiar la meta tocando la barra; «quita mi meta de estudio».
+- [ ] Una racha real de 3 días (o anotar horas a mano en 3 días): que celebre al llegar a 3 y no antes.
+- [ ] Marcar una tarea (de una grabación) y un bloque del plan como hechos: que Brote celebre; anotar la nota de un ramo hasta que quede «aprobado»: que celebre una vez, y que al reiniciar Brote no vuelva a festejar lo ya aprobado.
+- [ ] El aspecto de la barra de meta y de los avisos de celebración en el notch real y en el modo flotante.
+
 ## Pendientes previos que no son de este plan
 Probar en un Mac las fases 2 a 5 de grabar y transcribir (`docs/demo/pauta-pruebas-mac-grabaciones.md`); Agenda: diseño estilo Notion y mensaje cuando falla `agenda-estado`; ideas de la sección 9 de `plan-rediseno.md` (no se empiezan sin pedirlo).
 
 ## Progreso
 - [x] A1 Ramos (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A1») · [x] A2 Calculadora de notas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A2») · [x] A3 Resumen y tarjetas (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A3») · [x] A4 Plan de estudio (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A4») · [x] A5 Estadísticas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A5»)
-- [ ] B Gráficos · [ ] C Organizar temas · [ ] D Conectores · [ ] E Cosas chicas · [ ] F Adopción
+- [x] B Gráficos (B1, B2 y B3 hechos el 6-10-2026) · [ ] C Organizar temas · [ ] D Conectores · [x] E Cosas chicas (E1–E4 hechas el 6-10-2026; faltan metas de ahorro y gastos compartidos; ver «Pruebas pendientes de E») · [ ] F Adopción · [x] B1 Gráficos de Plata (hecho el 6-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de B1»; el bloque B queda completo con B3) · [x] B2 Agenda semanal (hecha el 6-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de B2») · [x] B3 Gráficos de Estudio (hecho el 6-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de B3»)

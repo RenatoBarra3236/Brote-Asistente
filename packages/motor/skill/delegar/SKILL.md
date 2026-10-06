@@ -47,7 +47,8 @@ especialista **nunca** le pases datos personales del estudiante:
 - sus tarjetas de repaso, resúmenes de clase, glosarios y preguntas de práctica (salen de sus transcripciones),
   ni qué tarjetas sabe o le fallan.
 - sus planes de estudio, las fechas de sus pruebas y sus horarios de estudio (cuándo rinde, cuándo estudia, qué bloques tiene).
-- cuánto y cuándo estudia (horas por ramo, su racha, sus hábitos de estudio).
+- cuánto y cuándo estudia (horas por ramo, su racha, su meta semanal de estudio, sus hábitos de estudio).
+- el resumen de su día (qué clases, entregas y pruebas tiene hoy, sus tarjetas de repaso y lo que gasta): es todo lo anterior junto.
 
 Pásale solo el tema de estudio, escrito en general ("explica la derivada de funciones
 compuestas para primer año", no "Ana tiene prueba el jueves en la UC"). Si el estudiante

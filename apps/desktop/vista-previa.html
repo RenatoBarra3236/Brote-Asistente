@@ -18,7 +18,7 @@
   con &cerrada=1 se ve el punto rojo en el ala) ·
   ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo) · &todos=1 (abre
   "Ver a todos") · &conversacion=1 (abre la conversación del Investigador) ·
-  ?pestana=plata (la pestaña Plata con tres meses de gastos de ejemplo) y ?plata=sin|pasado|nuevo (sin
+  ?pestana=agenda&vista=semana (la vista semanal de Agenda; &carga=pesada|ligera: la semana de certámenes o una liviana; se recuerda en localStorage) · ?pestana=plata (la pestaña Plata con seis meses de gastos de ejemplo), &tendencia=sin|seis|proyeccion (el gráfico de meses) y ?plata=sin|pasado|nuevo (sin
   presupuesto, pasado del presupuesto con el aviso del 100 %, o sin ningún gasto todavía). Los botones de un
   toque y "mi presupuesto es…" funcionan.
   ?pestana=estudio (la pestaña Estudio con tres ramos de ejemplo: tocar uno abre su ficha; Agregar, Editar y
@@ -534,6 +534,13 @@
         }
       }
       // Pasado del presupuesto: el aviso del 100 %, como lo mandaría el puente.
+      // ?celebrar=meta|racha|aprobado|tarea: a los 3 s llega una celebración (Brote hace su saltito y deja la novedad).
+      const celebrarModo = parametros.get("celebrar");
+      if (celebrarModo) {
+        const textos = { meta: "🎯 ¡Meta semanal cumplida! 10 h 🌱", racha: "🔥 ¡7 días seguidos estudiando!", aprobado: "🎉 ¡Aprobaste Cálculo II! 🌱", tarea: "✅ ¡Tarea lista! Una menos 🌱" };
+        window.__celebracion = textos[celebrarModo] ?? textos.meta;
+      }
+      if (window.__celebracion) setTimeout(() => emitir({ tipo: "celebracion", motivo: "meta", texto: window.__celebracion }), 3000);
       if (parametros.get("plata") === "pasado") setTimeout(() => emitir({ tipo: "plata-aviso", texto: "🚨 Te pasaste del presupuesto del mes: llevas $412.000 de $250.000. Nada de dramas: desde mañana vamos con calma 🌱" }), 2200);
       // El freno por plan, como lo avisaría el puente.
       if (parametros.has("freno")) setTimeout(() => emitir({ tipo: "especialistas-aviso", texto: "Tu plan semanal de Claude va alto (87 %): no le paso tareas a los especialistas con Claude hasta que baje. Los de otras IA siguen." }), 2000);
@@ -563,6 +570,10 @@
             ]
           : [];
       }
+      // ?vista=semana|lista deja elegida la vista de la Agenda (en la app se recuerda en localStorage).
+      try {
+        if (parametros.get("vista")) localStorage.setItem("brote.agenda-vista", parametros.get("vista"));
+      } catch {}
       // Agenda de ejemplo: ?agenda=sin|permiso|negado|dev|ical|apagada (sin parámetro: con datos).
       window.__agenda = () => {
         const modo = parametros.get("agenda");
@@ -576,7 +587,7 @@
         if (modo === "ical") return { dias: [], fuentes: { ...sinNada.fuentes, mac: false, permisoMac: null } };
         if (modo === "apagada") return { dias: [], fuentes: { ...sinNada.fuentes, calendario: false } };
         const ev = (titulo, lugar, a, b, todoElDia = false) => ({ tipo: "evento", titulo, detalle: lugar, inicioMs: a, finMs: b, todoElDia, url: null });
-        return {
+        const resultado = {
           fuentes: base,
           dias: [
             {
@@ -599,6 +610,25 @@
             { diaMs: en(9), items: [ev("Prueba solemne de Cálculo", "Auditorio", en(9, 9), en(9, 11))] },
           ],
         };
+        // ?carga=pesada (la semana de certámenes: dos pruebas y una entrega en tres días seguidos) | ligera (solo clases).
+        const prueba = (titulo, ramoId, ms) => ({ tipo: "prueba", titulo, detalle: null, inicioMs: ms, finMs: ms, todoElDia: false, url: null, ramoId });
+        const agrega = (r, dia, item) => {
+          let d = r.dias.find((x) => x.diaMs === en(dia));
+          if (!d) { d = { diaMs: en(dia), items: [] }; r.dias.push(d); }
+          d.items.push(item);
+        };
+        const r = resultado;
+        if (parametros.get("carga") !== "ligera") agrega(r, 6, prueba("Certamen 2 · Cálculo II", 1, en(6, 15)));
+        if (parametros.get("carga") === "pesada") {
+          agrega(r, 2, prueba("Quiz 3 · Física I", 2, en(2, 8)));
+          agrega(r, 3, { tipo: "entrega", titulo: "Informe 5", detalle: "Química general", inicioMs: en(3, 23, 59), finMs: en(3, 23, 59), todoElDia: false, url: null });
+          agrega(r, 3, prueba("Examen parcial · Química", 3, en(3, 10)));
+          agrega(r, 12, prueba("Examen · Álgebra", 4, en(12, 9)));
+          agrega(r, 13, { tipo: "entrega", titulo: "Proyecto final", detalle: "Programación", inicioMs: en(13, 23, 59), finMs: en(13, 23, 59), todoElDia: false, url: null });
+        }
+        r.dias.sort((a, b) => a.diaMs - b.diaMs);
+        for (const x of r.dias) x.items.sort((a, b) => a.inicioMs - b.inicioMs);
+        return r;
       };
 
       // Lo guardado en la pestaña Grabar (inventado; con ?grabaciones=sin no hay nada).
@@ -883,7 +913,7 @@
       };
     </script>
     <script type="module">
-      // Estadísticas de estudio (A5): el resumen es el cálculo real del motor. ?estadisticas=sin | semana | racha
+      // Estadísticas de estudio (A5): el resumen es el cálculo real del motor. ?estadisticas=sin | semana | racha (&historia=ocho llena las 8 semanas; &meta=media|cumplida pone la meta semanal) · ?cerrada=1&celebrar=meta|racha|aprobado|tarea (una celebración a los 3 s)
       import { resumirEstudio } from "/../../packages/motor/src/estadisticas-tipos.ts";
       const modo = new URLSearchParams(location.search).get("estadisticas") ?? "sin";
       const MIN = 60000;
@@ -904,29 +934,43 @@
           if (k === 1) registros.push(reg(dia(d, 20), 60, 3, "manual"), reg(dia(d, 21, 10), 40, null, "bloque"));
         }
         registros.push(reg(dia(lunes + 3, 12), 30, 1));
+        // Las semanas de antes (con el modo «semana» largo: &historia=ocho llena las 8 semanas; sin él, solo hasta hace 2).
+        const atras = new URLSearchParams(location.search).get("historia") === "ocho" ? 7 : 2;
+        for (let w = 2; w <= atras; w++) {
+          const base = lunes - 7 * w;
+          registros.push(reg(dia(base + 1, 10), 40 + 30 * ((w * 3) % 5), 1), reg(dia(base + 3, 16), 20 + 20 * (w % 4), 2));
+          if (w % 2 === 0) registros.push(reg(dia(base + 4, 11), 45, 3, "manual"));
+          if (w % 3 === 0) registros.push(reg(dia(base + 5, 19), 30, null, "manual"));
+        }
       }
       if (modo === "racha") for (let d = lunes - 4; d < lunes; d++) registros.push(reg(dia(d, 11), 40, 1));
-      window.__estadisticas = () => resumirEstudio(registros, ahoraFalso);
+      // ?meta=sin|media|cumplida: la meta semanal de estudio (10 h; «media» deja ~7 h 25 min de 10 h; «cumplida» pone 6 h).
+      const metaModo = new URLSearchParams(location.search).get("meta");
+      const metaMin = metaModo === "media" ? 600 : metaModo === "cumplida" ? 360 : null;
+      window.__estadisticas = () => resumirEstudio(registros, ahoraFalso, metaMin);
     </script>
     <script type="module">
       // La pestaña Plata con el cálculo de verdad (motor/plata.ts) sobre gastos de ejemplo.
       import { resumenPlata } from "/src/agente/plata.ts";
       const modo = new URLSearchParams(location.search).get("plata");
+      // ?tendencia=sin (solo este mes) | seis (por defecto, seis meses) | proyeccion (un gasto único enorme este mes)
+      const tendencia = new URLSearchParams(location.search).get("tendencia");
       const hoy = new Date();
       const en = (dias, hora, monto, categoria, descripcion) => ({ monto, categoria, descripcion, fechaMs: new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dias, hora, 10).getTime() });
       const lista = [];
       if (modo !== "nuevo") {
-        for (let d = 95; d >= 0; d--) {
+        for (let d = tendencia === "sin" ? hoy.getDate() - 1 : 185; d >= 0; d--) {
           if (d % 2 === 0) lista.push(en(d, 9, 1500, "comida", "café"));
           if (d % 7 !== 5 && d % 7 !== 6) lista.push(en(d, 8, 800, "transporte", "micro"));
           if (d % 3 === 1) lista.push(en(d, 13, 4500, "comida", "almuerzo"));
           if (d % 11 === 3) lista.push(en(d, 21, 12000, "salidas", "carrete"));
         }
-        for (const meses of [1, 2, 3]) lista.push({ monto: 8990, categoria: "salidas", descripcion: "Netflix", fechaMs: new Date(hoy.getFullYear(), hoy.getMonth() - meses, 12, 10).getTime() });
+        for (const meses of tendencia === "sin" ? [] : [1, 2, 3, 4, 5]) lista.push({ monto: 8990, categoria: "salidas", descripcion: "Netflix", fechaMs: new Date(hoy.getFullYear(), hoy.getMonth() - meses, 12, 10).getTime() });
         lista.push(en(1, 19, 9000, "transporte", "uber"), en(3, 23, 7000, "transporte", "uber"), en(0, 0, 6500, "transporte", "uber"));
         lista.push(en(9, 15, 3000, "transporte", "uber"));
         lista.push(en(2, 11, 18000, "estudio", "libro de cálculo"), en(0, 12, 3500, "salud", "farmacia"));
         if (modo === "pasado") lista.push(en(0, 10, 150000, "cuentas", "arriendo"));
+        if (tendencia === "proyeccion" && hoy.getDate() >= 5) lista.push(en(hoy.getDate() - 2, 10, 300000, "estudio", "matrícula"));
       }
       const datos = { lista: lista.filter((g) => g.fechaMs <= Date.now()).map((g, i) => ({ id: i + 1, ...g })), presupuesto: modo === "sin" || modo === "nuevo" ? null : 250000 };
       window.__plata = {

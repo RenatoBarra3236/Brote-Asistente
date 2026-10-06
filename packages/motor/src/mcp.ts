@@ -111,7 +111,7 @@ const HERRAMIENTAS = [
     name: "gastos_presupuesto",
     description:
       "El presupuesto mensual del usuario (si puso uno) y cómo va: lo gastado este mes, cuánto le queda, los días que " +
-      "faltan y cuánto puede gastar hoy. Solo lectura: el presupuesto lo pone el usuario en Brote (Configurar Brote o " +
+      "faltan, cuánto puede gastar hoy y la proyección «a este ritmo termina el mes en X» (desde el día 5; sin presupuesto igual la da). Solo lectura: el presupuesto lo pone el usuario en Brote (Configurar Brote o " +
       "diciendo «mi presupuesto es 200 lucas»).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Presupuesto del mes", readOnlyHint: true },
@@ -474,7 +474,7 @@ const HERRAMIENTAS = [
     description:
       "Cuánto ha estudiado el usuario (pomodoros, bloques de su plan de estudio hechos y lo que anotó a mano), en minutos reales: " +
       "total de un periodo (hoy, ayer, esta semana, la semana pasada, este mes), por ramo, su racha de días seguidos (al menos " +
-      "25 minutos por día) y la semana día por día. Solo lectura. Son datos personales del usuario: úsalos solo para responderle.",
+      "25 minutos por día), la semana día por día y las últimas 8 semanas. Solo lectura. Son datos personales del usuario: úsalos solo para responderle.",
     inputSchema: {
       type: "object",
       properties: {
@@ -868,8 +868,14 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       });
     }
     case "gastos_presupuesto": {
-      const p = new Motor(gastos).estadoPresupuesto();
-      if (!p) return JSON.stringify({ moneda: "CLP", presupuesto: null, nota: "El usuario no tiene presupuesto mensual puesto." });
+      const motor = new Motor(gastos);
+      const p = motor.estadoPresupuesto();
+      const proy = motor.proyeccionDelMes();
+      const proyeccion =
+        proy.estado === "pronto"
+          ? { disponible: false, nota: "Aún es pronto: se proyecta desde el día 5 del mes." }
+          : { disponible: true, gastoPorDia: proy.ritmoDia, terminaElMesEn: proy.proyectado, sinContar: proy.excluido, diferenciaConPresupuesto: proy.diferencia };
+      if (!p) return JSON.stringify({ moneda: "CLP", presupuesto: null, nota: "El usuario no tiene presupuesto mensual puesto.", proyeccion });
       return JSON.stringify({
         moneda: "CLP",
         presupuestoMensual: p.monto,
@@ -879,6 +885,7 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         diasQueFaltan: p.diasQuedan,
         porDia: p.porDia,
         puedeGastarHoy: p.puedesHoy,
+        proyeccion,
       });
     }
     case "temporizador_crear": {
@@ -985,7 +992,8 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
       if (typeof args.ramo === "string" && args.ramo.trim() !== "") ramo = ramoPorNombre(gastos, args.ramo).ramo;
       const rango = rangoDe(periodo, new Date(ahora));
       const minutos = minutosEnRango(registros, rango.desde.getTime(), rango.hasta.getTime(), ramo ? ramo.id : undefined);
-      const resumen = resumirEstudio(registros, ahora);
+      const estadisticasEstudio = new EstadisticasEstudio(gastos, ramos);
+      const resumen = resumirEstudio(registros, ahora, estadisticasEstudio.meta());
       const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
       return JSON.stringify({
         periodo,
@@ -993,8 +1001,16 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         minutos,
         texto: formatearMinutos(minutos),
         rachaDias: racha(registros, ahora),
+        // La meta semanal de estudio y cuánto lleva (null si no puso una).
+        metaSemanal: resumen.meta ? { minutos: resumen.meta.metaMin, llevaMin: resumen.meta.totalMin, cumplida: resumen.meta.cumplida } : null,
         esteSemana: { minutos: resumen.totalMin, semanaPasadaALaMismaAltura: resumen.pasadaMin, lunesADomingo: resumen.porDia },
         porRamoEstaSemana: resumen.porRamo.map((x) => ({ ramo: x.ramoId === null ? "sin ramo" : (nombres.get(x.ramoId) ?? "sin ramo"), minutos: x.min })),
+        // Las últimas 8 semanas (de lunes a domingo, la última es la actual y está a medias), de la más vieja a la más nueva.
+        ultimasSemanas: (resumen.semanas ?? []).map((s) => ({
+          lunes: fechaIso(new Date(s.desdeMs)),
+          minutos: s.totalMin,
+          porRamo: s.porRamo.map((x) => ({ ramo: x.ramoId === null ? "sin ramo" : (nombres.get(x.ramoId) ?? "sin ramo"), minutos: x.min })),
+        })),
         hayRegistros: registros.length > 0,
         desde: resumen.desdeMs === null ? null : fechaIso(new Date(resumen.desdeMs)),
       });

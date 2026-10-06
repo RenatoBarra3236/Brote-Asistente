@@ -224,7 +224,8 @@ describe("privacidad con planes gratuitos", () => {
   it("la skill delegar prohíbe pasar cuánto y cuándo estudia a planes gratuitos", () => {
     const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
     const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));
-    assert.match(seccion, /cuánto y cuándo estudia \(horas por ramo, su racha/);
+    assert.match(seccion, /cuánto y cuándo estudia \(horas por ramo, su racha, su meta semanal/);
+    assert.match(seccion, /el resumen de su día/);
   });
 
   it("la skill delegar prohíbe pasar transcripciones a planes gratuitos", () => {

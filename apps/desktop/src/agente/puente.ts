@@ -133,6 +133,7 @@ type Aviso =
   | { tipo: "temporizadores"; lista: TemporizadorActivo[] }
   | { tipo: "temporizador-aviso"; texto: string }
   | { tipo: "equipo-aviso"; texto: string; celebrar: boolean }
+  | { tipo: "celebracion"; motivo: string; texto: string }
   | { tipo: "animo"; animo: Animo }
   | { tipo: "descargas"; enCurso: DescargaEnCurso[] }
   | { tipo: "descarga-lista"; descarga: Descarga }
@@ -184,6 +185,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesTemporizadores = new Set<(lista: TemporizadorActivo[]) => void>();
   private readonly oyentesAvisoTemporizador = new Set<(texto: string) => void>();
   private readonly oyentesEquipo = new Set<(aviso: { texto: string; celebrar: boolean }) => void>();
+  private readonly oyentesCelebracion = new Set<(aviso: { motivo: string; texto: string }) => void>();
   private readonly oyentesAnimo = new Set<(animo: Animo) => void>();
   private readonly oyentesDescargas = new Set<(enCurso: DescargaEnCurso[]) => void>();
   private readonly oyentesDescargaLista = new Set<(descarga: Descarga) => void>();
@@ -256,6 +258,12 @@ export class TransportePuente implements Transporte {
   }
 
   /** Avisos sobre el computador (batería baja, CPU alta, disco lleno…). */
+  /** Brote celebra algo que lograste y marcaste tú: la meta de la semana, una racha, una tarea o un ramo aprobado. */
+  alCelebrar(oyente: (aviso: { motivo: string; texto: string }) => void): () => void {
+    this.oyentesCelebracion.add(oyente);
+    return () => this.oyentesCelebracion.delete(oyente);
+  }
+
   alAvisoEquipo(oyente: (aviso: { texto: string; celebrar: boolean }) => void): () => void {
     this.oyentesEquipo.add(oyente);
     return () => this.oyentesEquipo.delete(oyente);
@@ -584,6 +592,9 @@ export class TransportePuente implements Transporte {
         return;
       case "equipo-aviso":
         for (const oyente of this.oyentesEquipo) oyente({ texto: aviso.texto, celebrar: aviso.celebrar });
+        return;
+      case "celebracion":
+        for (const oyente of this.oyentesCelebracion) oyente({ motivo: aviso.motivo, texto: aviso.texto });
         return;
       case "animo":
         for (const oyente of this.oyentesAnimo) oyente(aviso.animo);

@@ -20,7 +20,7 @@ import { revisarConectores, vistaConectores } from "./configurar/conectores";
 import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, leerPresupuesto, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso, usarPuente } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
 import { leerGrabaciones } from "./configurar/grabaciones";
-import { vistaFunciones, vistaNotificaciones, vistaTarjetasInicio } from "./configurar/funciones";
+import { vistaConcentracionYResumen, vistaFunciones, vistaNotificaciones, vistaTarjetasInicio } from "./configurar/funciones";
 import { revisarEquipo, vistaCuentas, vistaEquipo } from "./configurar/equipo";
 
 type Seccion = "estado" | "funciones" | "cuentas" | "equipo" | "conectores" | "aula" | "permisos" | "memoria";
@@ -206,6 +206,8 @@ function seccionFunciones(): HTMLElement[] {
     vistaTarjetasInicio(),
     cabecera("Notificaciones del sistema", "Con la isla cerrada, Brote avisa también por el Centro de notificaciones: calendario, entregas, temporizadores, el plan de Claude y cuando Claude Code termina."),
     vistaNotificaciones(),
+    cabecera("Concentración y resumen", "Dos comodidades de la isla; se pueden apagar."),
+    vistaConcentracionYResumen(),
   ];
 }
 

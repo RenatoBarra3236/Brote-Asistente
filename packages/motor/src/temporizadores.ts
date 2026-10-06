@@ -6,6 +6,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Gastos } from "./gastos.ts";
 import { UNIDADES, describirDuracion } from "./tiempo.ts";
+import { asegurarTablaEstudio, registrarEstudio } from "./estadisticas.ts";
+import { MIN_PARCIAL } from "./estadisticas-tipos.ts";
 
 export type TipoTemporizador = "temporizador" | "pomodoro";
 export type Fase = "estudio" | "descanso";
@@ -78,6 +80,28 @@ export class Temporizadores {
         estado text not null default 'activo' check (estado in ('activo', 'terminado', 'cancelado'))
       );
     `);
+    // El tiempo estudiado se anota aquí mismo, así cuentan también los pomodoros que cancele el agente por MCP.
+    asegurarTablaEstudio(this.db);
+  }
+
+  /** El ramo de un pomodoro, si se lo asignaron (la tabla puede no existir si nadie creó ramos). */
+  private ramoDe(pomodoroId: number): number | null {
+    try {
+      const f = this.db.prepare("select ramo_id from ramo_de where tipo = 'pomodoro' and ref = ?").get(String(pomodoroId)) as { ramo_id: number } | undefined;
+      return f ? f.ramo_id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Un bloque de estudio que se cancela a mitad cuenta lo transcurrido, si pasó de 10 minutos. */
+  private registrarParcial(filas: { id: number; fase: string | null; fin_ms: number; duracion_ms: number }[], ahoraMs: number): void {
+    for (const f of filas) {
+      if (f.fase !== "estudio") continue;
+      const inicio = f.fin_ms - f.duracion_ms;
+      const transcurrido = Math.min(ahoraMs, f.fin_ms) - inicio;
+      if (transcurrido > MIN_PARCIAL * UNIDADES.MINUTO) registrarEstudio(this.db, "pomodoro", f.id, inicio, inicio + transcurrido, this.ramoDe(f.id));
+    }
   }
 
   /** Un temporizador (o recordatorio, si tiene etiqueta). */
@@ -93,6 +117,7 @@ export class Temporizadores {
 
   /** Empieza un pomodoro (solo hay uno a la vez: el anterior se cancela). */
   iniciarPomodoro(estudioMs: number, etiqueta: string | null, ahora: Date): Temporizador {
+    this.registrarParcial(this.db.prepare("select id, fase, fin_ms, duracion_ms from temporizadores where tipo = 'pomodoro' and estado = 'activo'").all() as never, ahora.getTime());
     this.db.prepare("update temporizadores set estado = 'cancelado' where tipo = 'pomodoro' and estado = 'activo'").run();
     const fila = this.db
       .prepare(
@@ -112,7 +137,13 @@ export class Temporizadores {
   }
 
   /** Cancela uno (por id), o todos los de un tipo, o todos. Devuelve cuántos. */
-  cancelar(cual?: { id?: number; tipo?: TipoTemporizador }): number {
+  cancelar(cual?: { id?: number; tipo?: TipoTemporizador }, ahora: Date = new Date()): number {
+    this.registrarParcial(
+      this.db
+        .prepare("select id, fase, fin_ms, duracion_ms from temporizadores where tipo = 'pomodoro' and estado = 'activo' and (? is null or id = ?) and (? is null or tipo = ?)")
+        .all(cual?.id ?? null, cual?.id ?? null, cual?.tipo ?? null, cual?.tipo ?? null) as never,
+      ahora.getTime(),
+    );
     const resultado = this.db
       .prepare(
         `update temporizadores set estado = 'cancelado'
@@ -140,6 +171,8 @@ export class Temporizadores {
       // Pomodoro: estudio → descanso (largo cada 4) → estudio…
       const ciclos = fila.fase === "estudio" ? fila.ciclos + 1 : fila.ciclos;
       const aDescansar = fila.fase === "estudio";
+      // Un bloque de estudio completo: queda registrado con su horario programado (aunque Brote lo note tarde).
+      if (aDescansar) registrarEstudio(this.db, "pomodoro", fila.id, fila.fin_ms - fila.duracion_ms, fila.fin_ms, this.ramoDe(fila.id));
       const largo = aDescansar && ciclos % POMODORO.bloquesHastaElLargo === 0;
       const duracion = aDescansar
         ? largo

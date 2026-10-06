@@ -2192,3 +2192,174 @@ button.tarjeta:hover {
   padding-left: 16px;
   opacity: 0.8;
 }
+
+/* ---------- Plan de estudio (A4): fecha de la prueba, propuesta de bloques y planes agendados ---------- */
+
+.plan-prueba {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 4px;
+  font-size: 11.5px;
+}
+.plan-prueba-texto {
+  margin-right: auto;
+  opacity: 0.7;
+}
+.plan-fecha-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.plan-propuesta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #a78bfa 55%, transparent);
+}
+.plan-horas {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.plan-horas-texto {
+  flex: 1;
+}
+.plan-aviso {
+  margin: 2px 0;
+  font-size: 12px;
+  color: #e8b04a;
+}
+.plan-calendario {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.plan-agendar:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.plan-ramo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-titulo {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.plan-bloque {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.plan-bloque .estudio-item-texto {
+  flex: 1;
+  text-align: left;
+}
+.plan-bloque .pildora {
+  flex: none;
+}
+.plan-bloque.hecha .estudio-item-texto {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+.agenda-fila.estudio .agenda-barra {
+  background: #a78bfa;
+}
+.agenda-empezar {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ---------- Estadísticas de estudio (A5): la tarjeta «Esta semana» ---------- */
+
+.estadisticas {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.estadisticas-cabeza {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.estadisticas-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.estadisticas-numero {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.estadisticas-racha {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e8b04a;
+}
+.estadisticas-dias {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  height: 54px;
+  margin: 4px 0;
+}
+.estadisticas-dia {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+.estadisticas-barra {
+  min-height: 0;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, #a78bfa 70%, transparent);
+}
+.estadisticas-dia.hoy .estadisticas-barra {
+  background: #a78bfa;
+}
+.estadisticas-letra {
+  text-align: center;
+  font-size: 10px;
+  opacity: 0.55;
+}
+.estadisticas-dia.hoy .estadisticas-letra {
+  opacity: 1;
+  font-weight: 700;
+}
+.estadisticas-ramo {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5em) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.estadisticas-ramo-nombre {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.estadisticas-ramo-pista {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.estadisticas-ramo-relleno {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ramo);
+}
+.estadisticas-ramo-min {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}

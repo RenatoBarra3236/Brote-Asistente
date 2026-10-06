@@ -236,7 +236,7 @@ Aviso de Novedades (tipo nuevo `repaso`) una vez al día si hay tarjetas que ven
 
 **Sin hacer de A3:** exportar a Anki (D5), ajustar intervalos por tarjeta, tope de sesión configurable (hoy 15), «Poner ramo» a una propuesta ya aceptada, y el gráfico/racha de repaso (A5/B).
 
-## Diseño de A4: Plan de estudio antes de una prueba (PROPUESTO el 5-10-2026, SIN aprobar: no hay código)
+## Diseño de A4: Plan de estudio antes de una prueba (aprobado y HECHO el 5-10-2026, con las ocho recomendaciones de abajo)
 
 **Qué es.** Dada una prueba con fecha («Certamen 2 de Cálculo, viernes 9 a las 15:00»), Brote reparte bloques de estudio en los días que faltan, esquivando lo que ya tienes en el calendario, y te lo muestra para que lo confirmes. Todo lo calcula el motor sin IA (determinista, probado); la IA no interviene salvo que el agente lo pida por MCP.
 
@@ -274,9 +274,100 @@ Aviso de Novedades (tipo nuevo `repaso`) una vez al día si hay tarjetas que ven
 7. **Reprogramar**: ¿manual con «Rehacer plan» (recomiendo) o automático al saltarte un bloque?
 8. **Borrar un plan**: ¿te parece bien que no pueda borrar los eventos que ya creó en tu calendario (se hace a mano, y la isla lo avisa antes) o prefieres que A4 parta solo con Agenda de Brote, sin calendario, hasta guardar el id de EventKit?
 
+## Lo que quedó hecho en A4 (5-10-2026)
+
+- **Decisiones tomadas** (las ocho recomendadas): fecha por frase, campo en la isla y (ver «Sin hacer») sugerencia desde el calendario; los bloques viven en la Agenda de Brote con casilla opcional para el calendario (apagada de partida); horario 16:00–21:30 entre semana y 10:00–19:00 el fin de semana, bloques de 50 min, 2 por día; horas por fórmula con − / +; «Empezar» arranca un pomodoro del ramo; aviso 10 min antes y nada la noche anterior; «Rehacer plan» manual; los eventos ya creados en el calendario se borran a mano (la isla lo avisa).
+- **Motor (sin IA, determinista):** `fechas.ts` (`leerDia`: «hoy», «mañana», «el viernes», «viernes 9», «el 14 de octubre», «14 de octubre de 2026», «el 14»; fechas pasadas o imposibles dan null y «viernes 10» no adivina si ningún viernes cae 10 en dos meses), `plan-estudio-tipos.ts` (puro, sin Node: `horasObjetivo` = (2 h + 0,2 h por 1 % de peso) × dificultad 1 / 1,3 / 1,6 según la nota que hace falta, de 1 a 12 h; `armarPlan` reparte con más peso hacia la prueba, nunca deja un día vacío mientras otro tiene dos, respeta ventanas, la hora previa a cada evento y las 22:00, termina 3 h antes de la prueba; `validarBloques`; `bloquesPorAvisar`), `plan-estudio-ficha.ts` (`proponerPlan`: usa la ficha de notas de A2; sin plan si la evaluación ya tiene nota, si ya apruebas el ramo o si ni con 7,0 alcanzas), `plan-estudio.ts` (tablas `planes_estudio` y `bloques_estudio`; un plan por evaluación; rehacerlo conserva los bloques hechos; triggers al borrar ramo o evaluación; tope 4 planes activos; se van solos 7 días después de la prueba), `plan-estudio-frases.ts` y `plan-estudio-motor.ts`. La evaluación (`fecha` de A2) ahora admite hora: «AAAA-MM-DD HH:MM» (sin hora se asume las 8:00).
+- **Sin IA:** «el certamen 2 de cálculo es el viernes 9 a las 15:00» (también «será», «cae»; nunca adivina ramo ni evaluación: sin uno conocido va al agente), «plan de estudio para el certamen 2 de cálculo» (el motor NO agenda: devuelve `datos: { planEstudio }` y la isla arma la propuesta), «¿qué tengo que estudiar hoy?». Con controles que no deben calzar.
+- **MCP:** `estudio_plan` (solo lectura: calcula sin guardar; mira el calendario a través de Brote y si no puede lo dice) y `estudio_hoy`. Agendar solo se hace con un toque en la isla.
+- **Puente:** aviso `plan-estudio` (marca cada 2 s) y `plan-estudio-aviso` (10 min antes, sin abrir la isla), pedidos `plan-estudio-estado|todo|proponer|agendar|bloque|borrar` y `pomodoro-iniciar`; `agenda-estado` suma los bloques (tipo `estudio`, con check). Proponer esquiva el calendario (14 días) y los bloques de otros planes. Agendar con la casilla copia los bloques al Calendario del Mac (`crearEventoMacAhora`, uno por uno y de forma síncrona: con 20 bloques puede tardar unos segundos). Prueba de punta a punta con el puente real (`plan-estudio-puente.test.ts`).
+- **Isla:** en cada evaluación sin nota de la ficha del ramo, «Prueba: en 6 días · 15:00» con «Cambiar fecha» (campo de fecha y hora) y «Planear estudio» / «Rehacer plan»; la propuesta (`plan-estudio-vista.ts`, `agente/plan-estudio.ts` con pruebas) con las horas − / +, los bloques con casilla, la casilla del calendario con su advertencia y «Agendar N bloques»; los planes agendados con check, «Empezar», «Saltar» y «Borrar plan» con segundo toque. La Agenda muestra los bloques (también visible con solo Estudio prendido). Novedades tipo `estudio`. **Lo que sé de ti → Plan de estudio** (por plan, por ramo y todo, con segundo toque; se ve y se borra aunque la función esté apagada). Vistas previas `?pestana=estudio&abrir=1&plan=sin|propuesta|poco|agendado` y `vista-previa-memoria.html`.
+- **Privacidad:** la skill `delegar` prohíbe pasar planes de estudio, fechas de pruebas y horarios a planes gratuitos (con prueba). Los títulos de los bloques son genéricos («Estudiar Cálculo»). Nada del contenido va a registros.
+
+**Dos detalles que conviene saber:** el «Repaso final» es el último espacio libre antes de la prueba, así que si la prueba es en la tarde puede caer esa misma mañana (y no necesariamente «el día anterior» como decía el diseño); y las tarjetas de repaso (A3) del ramo solo se mencionan en la propuesta, todavía no se enlazan a un bloque.
+
+**Sin hacer de A4 (abierto, anotado para no perderlo):**
+- **Editar el horario de estudio** en Configurar Brote (hoy fijo en `HORARIO_POR_DEFECTO` del motor).
+- **Sugerir la fecha** cuando un evento del calendario o una propuesta de Agenda calza con una evaluación pendiente (el diseño la preveía; hoy la fecha se pone por frase o con el campo).
+- Que el aviso previo de un bloque ofrezca «Empezar» directamente, y que el bloque «Repaso final» abra la sesión de tarjetas del ramo.
+- Borrar los eventos del calendario que Brote creó (hace falta guardar el id de EventKit).
+
+### Pruebas pendientes de A4 (para un Mac)
+
+- [ ] Reiniciar Brote (el puente carga código nuevo solo al partir) y los procesos MCP (`pkill -f packages/motor/src/mcp.ts`), abrir sesión nueva con el TUI y pedir «explícame el plan de estudio del certamen 2 de cálculo»: que use `estudio_plan` (sin permiso), diga que no queda nada guardado y mencione el calendario.
+- [ ] Con un ramo y evaluaciones de prueba (nunca notas reales): «el certamen 2 de cálculo es el viernes 9 a las 15:00», después «plan de estudio para el certamen 2 de cálculo»: que la propuesta se abra en la ficha, que − / + recalculen y que «Agendar» deje los bloques en la Agenda.
+- [ ] Con la casilla «Agregar también a mi calendario» en `Brote.app` (no en `tauri dev`): que los eventos aparezcan en el Calendario del Mac con título genérico y que Brote avise que se borran a mano.
+- [ ] Que los bloques esquiven de verdad tus clases del calendario real (una hora antes de cada evento).
+- [ ] El aviso 10 minutos antes de un bloque: no abre la isla, sale en el ala izquierda y la próxima apertura lo lista.
+- [ ] «Empezar»: que arranque el pomodoro con el nombre del ramo y quede enlazado a él.
+- [ ] Marcar hechos, «Saltar», «Rehacer plan» (conserva lo hecho) y «Borrar plan» con segundo toque; borrar el ramo o la evaluación se lleva el plan.
+- [ ] Apagar `estudio`: las frases dicen «Eso está apagado», la pestaña desaparece y el plan guardado se ve y se borra en «Lo que sé de ti → Plan de estudio».
+- [ ] Un cambio de hora (primer fin de semana de abril/septiembre en Chile) con una prueba justo después.
+- [ ] El aspecto de la propuesta (lista larga con scroll) y de la fecha en el notch real y en el modo flotante.
+
+## Diseño de A5: Estadísticas de estudio (aprobado y HECHO el 5-10-2026, con las siete recomendaciones de abajo)
+
+**Qué es.** Responder «¿cuánto he estudiado esta semana?», «¿de qué ramo?» y «¿llevo racha?» con datos reales, sin IA, en la pestaña Estudio, en las frases del motor y para el agente por MCP.
+
+**Hallazgo que condiciona todo.** Hoy un pomodoro es **una sola fila** en `temporizadores` (`ciclos` cuenta los bloques completos, pero no guarda *cuándo* terminó cada uno) y el pomodoro nuevo cancela al anterior. Con eso se sabe cuánto duró una sesión, no en qué día: no alcanza para «horas por semana» ni para una racha. Además, los bloques de A4 se marcan «hecho» a mano y la mayoría de los estudiantes estudia **sin pomodoro**. Hace falta un registro propio.
+
+**Datos** (`asistente.db`, 600; puro en `packages/motor/src/estadisticas-tipos.ts`, tabla en `estadisticas.ts`): tabla `estudio_registro` con `id`, `inicio_ms`, `fin_ms`, `ramo_id` (nulo = sin ramo), `fuente` (`pomodoro` | `bloque` | `manual`), `ref` (id del temporizador o del bloque; nulo si es manual) y una clave única (`fuente`, `ref`, `inicio_ms`) para que nunca se cuente dos veces. Un trigger deja los registros «sin ramo» al borrar el ramo (como en A1); archivarlo no cambia nada. Solo tiempos y ramos: nunca texto de clases.
+
+**Qué cuenta como estudio** (todo se mide en minutos reales):
+1. **Pomodoro:** cada bloque de estudio que termina deja su registro (inicio = fin − duración). Si cancelas a mitad (■ o al iniciar otro pomodoro), cuenta lo transcurrido **si pasó de 10 minutos**; menos que eso es un toque accidental y no cuenta. El descanso nunca cuenta.
+2. **Bloque de A4 marcado «hecho»:** cuenta con el horario del bloque (no con la hora en que lo marcaste); al desmarcarlo se quita. Si hubo un pomodoro que se solapa con ese horario, el bloque **no se suma** (sería contar dos veces lo mismo).
+3. **Anotado a mano:** «estudié 2 horas de cálculo» (también «ayer», «hoy», «1 hora y media»; tope 12 h por anotación y aviso si el día pasa de 16 h). Quedan como `manual`, a las 12:00 del día si no se dice hora.
+No hay datos retroactivos: los pomodoros anteriores no tienen fecha, así que las estadísticas **parten de cero el día que se instale** (la isla lo dice).
+
+**Cálculos puros** (`estadisticas-tipos.ts`, probados): minutos por día (un registro que cruza la medianoche se reparte entre los dos días), total de la semana (de lunes a domingo, hora de pared: respeta el cambio de hora) frente a la semana pasada **a la misma altura**, minutos por ramo con su porcentaje, y **racha**: días seguidos con **al menos 25 minutos** estudiados. Si hoy todavía no estudias, la racha de ayer sigue viva hasta que termine el día (no se pierde a las 8 de la mañana).
+
+**Isla** (pestaña Estudio, arriba de la lista de ramos, solo cuando hay datos): una tarjeta «Esta semana» con el total grande («6 h 20 min»), la diferencia con la semana pasada, la racha («🔥 4 días»), siete barritas de lunes a domingo (hoy resaltado) y barras horizontales por ramo con su color (los 5 que más, el resto agrupado). Sin datos: una línea que invita a empezar un pomodoro o a decir «estudié 1 hora de cálculo». En la ficha de cada ramo: «Esta semana: 2 h 10 min · en total: 14 h». Un botón «+ Anotar horas» que escribe «estudié » en el campo, como «+ Evento» en la Agenda. Meses y semestres no entran (van en B, Gráficos).
+
+**Sin IA** (función `estudio`, intenciones `estudio-horas` y `estudio-racha`): «¿cuánto he estudiado esta semana?» (con la ranura de periodo que ya existe: hoy, ayer, esta semana, la semana pasada, este mes), «¿cuánto estudié de cálculo?», «¿cuál es mi racha?» y «estudié 2 horas de cálculo [ayer]» (anotar). Nunca adivina el ramo; con frases de control («estudié para el certamen» sin tiempo, «pagué 2 horas de estacionamiento»). **MCP:** `estudio_estadisticas` (solo lectura, por periodo y ramo). Tras cambiarlo hay que reiniciar los procesos MCP.
+
+**Puente:** aviso `estadisticas-estudio` (marca cada 2 s), pedidos `estadisticas-estado`, `estadisticas-anotar`, `estadisticas-todo` (no depende de la función: «Lo que sé de ti») y `estadisticas-borrar` (`todo | ramo | registro`). El registro de pomodoros lo hace `Temporizadores` mismo al terminar o cancelar, así cuentan también los que cancele el agente por MCP.
+
+**Privacidad.** Cuánto y cuándo estudias es dato personal: queda solo en `asistente.db` (600), nunca en registros del puente; la skill `delegar` lo prohíbe para planes gratuitos (con prueba). «Lo que sé de ti → Estadísticas de estudio» muestra el total por ramo y deja borrar un ramo o todo, con segundo toque (borrado de verdad, no hay Papelera), aunque la función esté apagada.
+
+**Fuera de A5:** gráficos por mes o semestre y tendencias largas (B), metas semanales de horas, celebraciones de racha y mensajes de ánimo (E), comparar con otros estudiantes (nunca), horas «recomendadas» por IA.
+
+**Pruebas previstas:** `pruebas/estadisticas.test.ts` (minutos por día, medianoche, cambio de hora, semana a la misma altura, racha con ayer viva, dedupe bloque/pomodoro, cancelar ≥/< 10 min, tope de 12 h, borrar ramo), `Temporizadores` registrando al terminar y cancelar, frases con controles, MCP, puente real de punta a punta en carpeta temporal, textos e isla (`src/agente/estadisticas.ts`), vista previa `?pestana=estudio&estadisticas=sin|semana|racha`.
+
+**Decisiones que necesito de ti antes de programar:**
+1. **Qué cuenta como estudio:** ¿pomodoros (completos y cancelados con más de 10 min), bloques de A4 hechos sin duplicar y lo anotado a mano (recomiendo), o solo pomodoros?
+2. **Racha:** ¿al menos 25 minutos por día, con la racha de ayer viva hasta que termine hoy (recomiendo), u otro mínimo?
+3. **Anotar a mano por frase** («estudié 2 horas de cálculo»): ¿sí (recomiendo; la mayoría no usa pomodoro) o solo medir?
+4. **Datos anteriores:** ¿partir de cero el día que se instale y decirlo (recomiendo), o intentar estimar con los pomodoros viejos (sin fechas, quedaría inventado)?
+5. **Qué muestra la isla:** ¿tarjeta «Esta semana» con total, diferencia, racha, barras de 7 días y barras por ramo, más una línea en cada ficha (recomiendo)? Meses y semestres quedan para B.
+6. **Metas y celebraciones de racha:** ¿dejarlas para el bloque E (recomiendo) o incluir una meta semanal ahora?
+7. **Borrado y privacidad:** ¿«Lo que sé de ti → Estadísticas de estudio» con borrar por ramo y todo, y la regla en `delegar` (recomiendo)?
+
+## Lo que quedó hecho en A5 (5-10-2026)
+
+- **Decisiones tomadas** (las siete recomendadas): cuenta pomodoros completos y cancelados con más de 10 min, bloques de A4 hechos (sin duplicar) y lo anotado a mano; racha desde 25 min por día con ayer viva hasta que termine hoy; anotar por frase; sin datos retroactivos (parten el día que se instale); tarjeta «Esta semana» en Estudio y una línea en cada ficha; metas y celebraciones para el bloque E; borrado y regla en `delegar`.
+- **Motor:** `estadisticas-tipos.ts` (puro, sin Node: `minutosEnRango`, `minutosPorDia` —un registro que cruza la medianoche se reparte—, `sinDuplicados` —un bloque hecho no se suma si un pomodoro se solapa—, `racha`, `resumirEstudio` —lunes a domingo en hora de pared, semana pasada a la misma altura, totales por ramo—, `formatearMinutos`), `estadisticas.ts` (tabla `estudio_registro` con clave única `fuente + ref + inicio`: nunca cuenta dos veces; un trigger deja el tiempo «sin ramo» al borrar el ramo; anotar a mano: hoy termina ahora y se mueve para que quepa en el día, otro día parte a las 12:00, tope 12 h y aviso si el día pasa de 16 h) y `estadisticas-frases.ts` / `estadisticas-motor.ts`. **`Temporizadores` registra él mismo** (así también cuentan los pomodoros que cancela el agente por MCP): al terminar un bloque de estudio (con su horario programado), al cancelar a mitad (solo si pasaron más de 10 min) y al empezar otro pomodoro encima; el descanso no cuenta. **`PlanesEstudio.marcar`** suma el horario del bloque al marcarlo «hecho» y lo quita al desmarcarlo o saltarlo.
+- **Sin IA** (intenciones `estudio-horas`, `estudio-racha`, `estudio-anotar`): «¿cuánto he estudiado esta semana / hoy / ayer / este mes?», «¿cuánto estudié de cálculo?», «¿cuál es mi racha?» / «mi racha» y «estudié 2 horas de cálculo [ayer]» (también «hora y media», «45 minutos», sin ramo). Nunca adivina el ramo: uno desconocido se dice y no guarda; más de 12 h no se anota. Con frases de control. La semana de «esta semana» se compara con la pasada a la misma altura.
+- **MCP:** `estudio_estadisticas` (solo lectura: periodo, ramo opcional, racha, semana día por día y por ramo). La skill `delegar` prohíbe pasar cuánto y cuándo estudia a planes gratuitos (con prueba).
+- **Puente:** aviso `estadisticas-estudio` (marca cada 2 s y al cambiar el día; lo que suma el pomodoro, un bloque o el MCP aparece solo), pedidos `estadisticas-estado`, `estadisticas-todo` (no depende de la función) y `estadisticas-borrar` (`registro | ramo | todo`). Nada del contenido va a registros del puente. Prueba de punta a punta con el puente real (`estadisticas-puente.test.ts`).
+- **Isla:** `estadisticas-vista.ts` + `agente/estadisticas.ts` (con pruebas): arriba de «Tus ramos», la tarjeta «Esta semana» con el total, la diferencia con la semana pasada, la racha 🔥, siete barras de lunes a domingo (hoy resaltado) y barras por ramo con su color (los 5 que más y «Otros»), «+ Anotar horas» (escribe «estudié » en el campo) y, sin datos, la explicación de que parten desde la instalación. En la ficha de cada ramo: «Esta semana: 2 h 10 min · en total: 14 h». **Lo que sé de ti → Estadísticas de estudio:** por ramo, «Borrar el tiempo de X», «Borrar el tiempo sin ramo» y «Borrar todo», con segundo toque (aunque la función esté apagada). Vistas previas `?pestana=estudio&estadisticas=sin|semana|racha` (finge que hoy es jueves para que la semana se vea armada) y `vista-previa-memoria.html`.
+- **Cambió respecto del diseño:** el pedido `estadisticas-anotar` no existe; anotar horas se hace siempre por la frase (el botón «+ Anotar horas» la escribe), así hay una sola puerta con las mismas reglas.
+
+**Sin hacer de A5 (anotado para no perderlo):** gráficos por mes o semestre y tendencias largas (B), metas semanales y celebraciones de racha (E), editar o borrar un solo registro desde la isla (hoy: por ramo o todo), y que el aviso de bloque muestre el tiempo de hoy.
+
+### Pruebas pendientes de A5 (para un Mac)
+
+- [ ] Reiniciar Brote y los procesos MCP (`pkill -f packages/motor/src/mcp.ts`), abrir sesión nueva con el TUI y preguntar «¿cuánto he estudiado esta semana?» al agente (cuando la frase no calce): que use `estudio_estadisticas` sin pedir permiso.
+- [ ] Un pomodoro real hasta el final de un bloque (25 min): que aparezca en la tarjeta «Esta semana» sin recargar y con el ramo correcto («pomodoro de 25 para cálculo»).
+- [ ] Cancelar un pomodoro con ■ a los 5 min (no cuenta) y a los 15 (cuenta 15), y empezar otro encima.
+- [ ] Marcar un bloque del plan de estudio «hecho» y desmarcarlo; comprobar que no se duplica con un pomodoro del mismo horario.
+- [ ] «Estudié 1 hora de cálculo», «estudié media hora ayer», un ramo inexistente y 20 horas: el motor responde y la tarjeta cambia.
+- [ ] La racha entre dos días reales (estudiar 25 min hoy y mañana en la mañana ver que sigue viva) y a través de un cambio de hora.
+- [ ] Apagar `estudio`: las frases dicen «Eso está apagado» y lo guardado se ve y se borra en «Lo que sé de ti → Estadísticas de estudio».
+- [ ] El aspecto de la tarjeta en el notch real y en el modo flotante.
+
 ## Pendientes previos que no son de este plan
 Probar en un Mac las fases 2 a 5 de grabar y transcribir (`docs/demo/pauta-pruebas-mac-grabaciones.md`); Agenda: diseño estilo Notion y mensaje cuando falla `agenda-estado`; ideas de la sección 9 de `plan-rediseno.md` (no se empiezan sin pedirlo).
 
 ## Progreso
-- [x] A1 Ramos (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A1») · [x] A2 Calculadora de notas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A2») · [x] A3 Resumen y tarjetas (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A3») · [ ] A4 Plan de estudio (diseño propuesto, esperando aprobación) · [ ] A5 Estadísticas
+- [x] A1 Ramos (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A1») · [x] A2 Calculadora de notas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A2») · [x] A3 Resumen y tarjetas (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A3») · [x] A4 Plan de estudio (hecho el 5-10-2026; probado con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A4») · [x] A5 Estadísticas (hecha el 5-10-2026; probada con pruebas y en la vista previa, falta un Mac: ver «Pruebas pendientes de A5»)
 - [ ] B Gráficos · [ ] C Organizar temas · [ ] D Conectores · [ ] E Cosas chicas · [ ] F Adopción

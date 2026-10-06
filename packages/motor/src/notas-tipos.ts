@@ -1,6 +1,8 @@
 // Tipos y cálculos puros de las notas (A2 de docs/plan-estudio-y-mejoras.md). Sin Node: también los
 // usa la ventana. Escala chilena 1,0–7,0; la nota de aprobación es configurable por ramo.
 
+import { leerFechaPrueba } from "./plan-estudio-tipos.ts";
+
 export const NOTA_MIN = 1;
 export const NOTA_MAX = 7;
 export const APROBACION_POR_DEFECTO = 4;
@@ -74,8 +76,8 @@ export function validarEvaluacion(entrada: unknown): ResultadoEvaluacion {
   }
   let fecha: string | null = null;
   if (e.fecha !== undefined && e.fecha !== null) {
-    if (typeof e.fecha !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(e.fecha) || Number.isNaN(Date.parse(e.fecha))) return { ok: false, motivo: "La «fecha» debe ser AAAA-MM-DD" };
-    fecha = e.fecha;
+    if (leerFechaPrueba(e.fecha) === null) return { ok: false, motivo: "La «fecha» debe ser AAAA-MM-DD o AAAA-MM-DD HH:MM y existir" };
+    fecha = (e.fecha as string).trim();
   }
   return { ok: true, nombre, peso, nota, fecha };
 }

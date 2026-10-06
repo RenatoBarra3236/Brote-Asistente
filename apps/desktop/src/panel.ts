@@ -68,6 +68,10 @@ import {
 } from "./agente/estudio";
 import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearNota, resumenNotas, semaforoDe, textoExamenFicha, textoMeta, textoNecesaria } from "./agente/notas";
 import { VistaRepaso } from "./repaso-vista";
+import { VistaPlanEstudio } from "./plan-estudio-vista";
+import { lineaEstadisticasDeRamo, tarjetaEstadisticas } from "./estadisticas-vista";
+import { RESUMEN_VACIO, type ResumenEstudio } from "./agente/estadisticas";
+import type { BloquePlan, PlanEstudio, PropuestaVista } from "./agente/plan-estudio";
 import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from "./agente/repaso";
 import { estadoDelItem, explicarAgenda, horaDelItem, tituloDelDia, type EstadoAgenda } from "./agente/agenda";
 import { barrasSemana, cuandoMovimiento, formatearMonto, montoCorto, textoFrecuente, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
@@ -144,9 +148,15 @@ interface Opciones {
   alEditarRamo?: (ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }) => Promise<void>;
   alArchivarRamo?: (ramo: number) => Promise<void>;
   /** Notas (A2): crear o editar una evaluación, borrarla y cambiar los ajustes de un ramo. */
-  alGuardarEvaluacion?: (datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null }) => Promise<void>;
+  alGuardarEvaluacion?: (datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null; fecha?: string | null }) => Promise<void>;
   alBorrarEvaluacion?: (evaluacion: number) => Promise<void>;
   alCambiarAjustesNotas?: (ramo: number, ajustes: { aprobacion?: number; examenPeso?: number | null }) => Promise<void>;
+  /** Plan de estudio (A4): proponer (sin guardar), agendar, marcar un bloque, empezar un pomodoro y borrar. */
+  alProponerPlan?: (ramo: number, evaluacion: number, horas?: number) => Promise<PropuestaVista>;
+  alAgendarPlan?: (ramo: number, evaluacion: number, horas: number, bloques: BloquePlan[], calendario: boolean) => Promise<{ plan: PlanEstudio | null; calendario: { pedido: boolean; creados: number; fallidos: number } }>;
+  alMarcarBloque?: (bloque: number, estado: "pendiente" | "hecho" | "saltado") => Promise<void>;
+  alEmpezarBloque?: (ramo: number) => Promise<void>;
+  alBorrarPlan?: (plan: number) => Promise<void>;
   /** Repaso (A3): aceptar lo marcado de una propuesta, descartarla y contestar una tarjeta. */
   alAceptarRepaso?: (grabacion: string, decision: DecisionRepaso) => Promise<{ tarjetas: number; repetidas: number; temas: number }>;
   alDescartarRepaso?: (grabacion: string) => Promise<void>;
@@ -308,6 +318,10 @@ export class Panel {
   private estadoEstudio: EstadoEstudio | null = null;
   /** Propuestas de repaso por revisar, la tarjeta «Repasar» y la sesión (A3). */
   private readonly repaso: VistaRepaso;
+  /** La fecha de cada prueba, su propuesta de bloques y los planes agendados (A4). */
+  private readonly planEstudio: VistaPlanEstudio;
+  /** El tiempo estudiado (A5): la tarjeta «Esta semana» y la línea de cada ficha. */
+  private resumenEstudio: ResumenEstudio = RESUMEN_VACIO;
   /** Qué ramo tiene la ficha abierta, cuál se está editando y el mensaje de error del último intento. */
   private ramoAbierto: number | null = null;
   private ramoEditando: number | null = null;
@@ -362,6 +376,17 @@ export class Panel {
         aceptar: (g, d) => (opciones.alAceptarRepaso ? opciones.alAceptarRepaso(g, d) : Promise.reject(new Error("Brote no está conectado"))),
         descartar: (g) => (opciones.alDescartarRepaso ? opciones.alDescartarRepaso(g) : Promise.reject(new Error("Brote no está conectado"))),
         responder: (t, r) => (opciones.alResponderRepaso ? opciones.alResponderRepaso(t, r) : Promise.reject(new Error("Brote no está conectado"))),
+      },
+      () => this.mostrarEstudio(),
+    );
+    this.planEstudio = new VistaPlanEstudio(
+      {
+        proponer: (r, e, h) => (opciones.alProponerPlan ? opciones.alProponerPlan(r, e, h) : Promise.reject(new Error("Brote no está conectado"))),
+        agendar: (r, e, h, b, c) => (opciones.alAgendarPlan ? opciones.alAgendarPlan(r, e, h, b, c) : Promise.reject(new Error("Brote no está conectado"))),
+        marcar: (b, estado) => (opciones.alMarcarBloque ? opciones.alMarcarBloque(b, estado) : Promise.reject(new Error("Brote no está conectado"))),
+        empezar: (r) => (opciones.alEmpezarBloque ? opciones.alEmpezarBloque(r) : Promise.reject(new Error("Brote no está conectado"))),
+        borrar: (p) => (opciones.alBorrarPlan ? opciones.alBorrarPlan(p) : Promise.reject(new Error("Brote no está conectado"))),
+        guardarFecha: (evaluacion, fecha) => (opciones.alGuardarEvaluacion ? opciones.alGuardarEvaluacion({ evaluacion, fecha }) : Promise.reject(new Error("Brote no está conectado"))),
       },
       () => this.mostrarEstudio(),
     );
@@ -672,6 +697,25 @@ export class Panel {
     if (this.estadoEstudio) this.mostrarEstudio();
   }
 
+  /** El tiempo estudiado (A5): se repinta Estudio si ya se había cargado. */
+  ponerEstadisticas(resumen: ResumenEstudio): void {
+    this.resumenEstudio = resumen;
+    if (this.estadoEstudio) this.mostrarEstudio();
+  }
+
+  /** Los planes de estudio (A4): se repinta Estudio y Agenda si ya se habían cargado. */
+  ponerPlanEstudio(planes: PlanEstudio[]): void {
+    this.planEstudio.poner(planes);
+    if (this.estadoEstudio) this.mostrarEstudio();
+  }
+
+  /** «Plan de estudio para el certamen 2…»: abre la ficha del ramo y arma la propuesta (el usuario confirma). */
+  iniciarPlanEstudio(ramoId: number, evaluacionId: number): void {
+    this.elegir("estudio");
+    this.ramoAbierto = ramoId;
+    void this.planEstudio.abrirPropuesta(ramoId, evaluacionId);
+  }
+
   /** «Repasemos»: abre Estudio y empieza la sesión (de un ramo o de todos). */
   iniciarRepaso(ramoId: number | null): void {
     this.elegir("estudio");
@@ -688,6 +732,7 @@ export class Panel {
       c.propuesta !== null ||
       // Repasando o revisando una propuesta: la isla no se cierra a mitad de una tarjeta.
       this.repaso.ocupada ||
+      this.planEstudio.ocupada ||
       // La pregunta a los presentes y los errores del micrófono son decisiones: la isla no se cierra sola.
       (["pregunta", "iniciando", "error"] as const).some((f) => f === this.estadoGrabacion.fase) ||
       this.verTodosActivo ||
@@ -1061,6 +1106,26 @@ export class Panel {
           });
           texto.prepend(casilla);
         }
+        if (item.tipo === "estudio" && item.bloqueId !== undefined) {
+          const id = item.bloqueId;
+          const casilla = crear("input", "agenda-check") as HTMLInputElement;
+          casilla.type = "checkbox";
+          casilla.checked = item.hecha === true;
+          casilla.title = "Marcar como hecho";
+          if (casilla.checked) fila.classList.add("hecha");
+          casilla.addEventListener("change", () => {
+            fila.classList.toggle("hecha", casilla.checked);
+            void Promise.resolve(this.opciones.alMarcarBloque?.(id, casilla.checked ? "hecho" : "pendiente")).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, "")));
+          });
+          texto.prepend(casilla);
+          if (item.hecha !== true && item.ramoId !== undefined) {
+            const ramoId = item.ramoId;
+            const empezar = boton("pildora agenda-empezar", "Empezar");
+            empezar.title = "Empieza un pomodoro de este ramo";
+            empezar.addEventListener("click", () => void Promise.resolve(this.opciones.alEmpezarBloque?.(ramoId)).catch((e) => this.mostrarAviso(String(e).replace(/^Error: /, ""))));
+            texto.append(empezar);
+          }
+        }
         fila.append(horaEl, barra, texto);
         bloque.append(fila);
       }
@@ -1119,6 +1184,13 @@ export class Panel {
       return;
     }
     partes.push(...arriba);
+    partes.push(
+      tarjetaEstadisticas(this.resumenEstudio, estado.ramos, () => {
+        this.entrada.value = "estudié ";
+        this.actualizarBotonEnviar();
+        this.entrada.focus();
+      }),
+    );
 
     if (estado.fichas.length === 0) {
       const vacia = crear("p", "vacia-texto");
@@ -1202,7 +1274,13 @@ export class Panel {
     if (!abierto) return caja;
 
     const cuerpo = crear("div", "estudio-ramo-cuerpo");
+    const lineaTiempo = lineaEstadisticasDeRamo(this.resumenEstudio, ramo.id);
+    if (lineaTiempo) cuerpo.append(lineaTiempo);
+    const propuestaPlan = this.planEstudio.propuestaDe(ramo.id);
+    if (propuestaPlan) cuerpo.append(propuestaPlan);
     cuerpo.append(this.bloqueNotas(ramo.id, estado));
+    const planesDelRamo = this.planEstudio.planesDeRamo(ramo.id, (id) => estado.notas?.flatMap((f) => f.evaluaciones).find((e) => e.id === id)?.nombre ?? "Prueba");
+    if (planesDelRamo) cuerpo.append(planesDelRamo);
     const repasoDelRamo = this.repaso.deRamo(ramo.id);
     if (repasoDelRamo) cuerpo.append(repasoDelRamo);
     const lista = (titulo: string, items: { texto: string; cuando: string }[]) => {
@@ -1348,7 +1426,12 @@ export class Panel {
       linea.title = `Se aprueba con ${formatearNota(ficha.ajustes.aprobacion)}`;
       barra.append(linea);
       caja.append(barra);
-      for (const e of ficha.evaluaciones) caja.append(this.filaEvaluacion(e, textoNecesaria(ficha.necesarias[e.id]), fallo, hecho));
+      for (const e of ficha.evaluaciones) {
+        caja.append(this.filaEvaluacion(e, textoNecesaria(ficha.necesarias[e.id]), fallo, hecho));
+        // Cuándo es la prueba y «Planear estudio» (A4): solo para lo que todavía no tiene nota.
+        const prueba = this.planEstudio.lineaPrueba(e, ramoId);
+        if (prueba) caja.append(prueba);
+      }
       const examen = textoExamenFicha(ficha);
       if (examen) {
         const f = crear("div", "estudio-item");
@@ -2475,7 +2558,7 @@ export class Panel {
     this.botonesPestana.get("plata")!.hidden = !this.funciones.activas.gastos;
     const { calendario, aula, temporizadores, grabaciones } = this.funciones.activas;
     // Con Grabar prendida también hay Agenda: ahí esperan las tareas y fechas que Brote saca de una grabación.
-    this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores && !grabaciones;
+    this.botonesPestana.get("agenda")!.hidden = !calendario && !aula && !temporizadores && !grabaciones && !this.funciones.activas.estudio;
     this.botonesPestana.get("estudio")!.hidden = !this.funciones.activas.estudio;
     this.botonesPestana.get("grabar")!.hidden = !this.funciones.activas.grabaciones;
     if (this.botonesPestana.get(this.pestana)!.hidden) this.elegir("brote");

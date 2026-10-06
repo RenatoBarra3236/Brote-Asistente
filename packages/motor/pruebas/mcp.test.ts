@@ -48,7 +48,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "estudio_plan", "estudio_hoy", "estudio_estadisticas", "motor_proponer_plantilla"],
     );
   });
 
@@ -305,6 +305,56 @@ describe("servidor MCP de gastos", () => {
       await new Promise((listo) => setTimeout(listo, 15));
       writeFileSync(ruta, original);
     }
+  });
+
+  it("estudio_plan: calcula sin guardar, con títulos genéricos, y dice que no miró el calendario si Brote está cerrado", async () => {
+    llamar("ramos_crear", { nombre: "Cálculo" });
+    llamar("notas_anotar", { ramo: "Cálculo", evaluacion: "Certamen 1", peso: 100 });
+    const ramos = new Ramos(gastos);
+    const notas = new (await import("../src/notas.ts")).Notas(gastos, ramos);
+    const ev = notas.listar(ramos.listar()[0].id)[0];
+    const dentroDe5 = new Date(Date.now() + 5 * 86_400_000);
+    const fecha = `${dentroDe5.getFullYear()}-${String(dentroDe5.getMonth() + 1).padStart(2, "0")}-${String(dentroDe5.getDate()).padStart(2, "0")} 15:00`;
+    notas.editar(ev.id, { fecha });
+    const r = await llamarEsperando("estudio_plan", { ramo: "cálculo", evaluacion: "certamen 1", horas: 4 });
+    assert.equal(r.error, false, r.texto);
+    const datos = JSON.parse(r.texto);
+    assert.equal(datos.ramo, "Cálculo");
+    assert.equal(datos.horasQueSugiereBrote, 12);
+    assert.ok(datos.bloques.length >= 3);
+    assert.ok(datos.bloques.every((b: any) => /^(Estudiar|Practicar ejercicios de|Repaso final de) Cálculo$/.test(b.titulo)));
+    assert.match(datos.calendario, /no pude mirarlo/);
+    assert.match(datos.nota, /NO está guardado/);
+    assert.equal(llamar("estudio_hoy", {}).texto, "No tienes bloques de estudio para hoy.");
+  });
+
+  it("estudio_plan: sin fecha, con ramo o evaluación desconocidos o sin argumentos falla con un motivo", async () => {
+    llamar("ramos_crear", { nombre: "Cálculo" });
+    llamar("notas_anotar", { ramo: "Cálculo", evaluacion: "Certamen 1", peso: 100 });
+    const sinFecha = await llamarEsperando("estudio_plan", { ramo: "cálculo", evaluacion: "certamen 1" });
+    assert.equal(sinFecha.error, true);
+    assert.match(sinFecha.texto, /Falta la fecha/);
+    assert.equal((await llamarEsperando("estudio_plan", { ramo: "física", evaluacion: "certamen 1" })).error, true);
+    assert.equal((await llamarEsperando("estudio_plan", { ramo: "cálculo", evaluacion: "certamen 9" })).error, true);
+    assert.equal((await llamarEsperando("estudio_plan", { ramo: "cálculo" })).error, true);
+  });
+
+  it("estudio_estadisticas: lee el tiempo estudiado por periodo y ramo, sin escribir nada", async () => {
+    llamar("ramos_crear", { nombre: "Cálculo" });
+    const ramos = new Ramos(gastos);
+    const { EstadisticasEstudio } = await import("../src/estadisticas.ts");
+    const e = new EstadisticasEstudio(gastos, ramos);
+    e.anotarManual(90, ramos.listar()[0].id, Date.now(), Date.now());
+    const r = llamar("estudio_estadisticas", { periodo: "hoy", ramo: "cálculo" });
+    assert.equal(r.error, false, r.texto);
+    const datos = JSON.parse(r.texto);
+    assert.equal(datos.minutos, 90);
+    assert.equal(datos.texto, "1 h 30 min");
+    assert.equal(datos.hayRegistros, true);
+    assert.equal(e.registros().length, 1);
+    assert.equal(llamar("estudio_estadisticas", { periodo: "el siglo pasado" }).error, true);
+    assert.equal(llamar("estudio_estadisticas", { ramo: "física" }).error, true);
+    assert.equal(JSON.parse(llamar("estudio_estadisticas", {}).texto).periodo, "esta semana");
   });
 
   it("ramos: crea con alias, lista y rechaza lo inválido o repetido", () => {

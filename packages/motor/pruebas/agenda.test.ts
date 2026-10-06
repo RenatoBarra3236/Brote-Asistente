@@ -72,3 +72,25 @@ describe("armarAgenda: una tarea también creada en el calendario", () => {
     assert.deepEqual(dias[0].items.map((i) => [i.tipo, i.inicioMs]), [["evento", en(2, 9)], ["tarea", en(2, 23, 59)]]);
   });
 });
+
+describe("armarAgenda con bloques de estudio", () => {
+  const AHORA_E = new Date(2026, 9, 5, 12, 0).getTime();
+  const en = (h: number, m = 0) => new Date(2026, 9, 6, h, m).getTime();
+  const bloque = { id: 7, ramoId: 2, titulo: "Estudiar Cálculo", inicioMs: en(16), finMs: en(16, 50), hecho: false };
+
+  it("muestra el bloque con su id, su ramo y su check", () => {
+    const dias = armarAgenda({ bloques: [bloque, { ...bloque, id: 8, inicioMs: en(18), finMs: en(18, 50), hecho: true }] }, AHORA_E);
+    assert.equal(dias.length, 1);
+    const [a, b] = dias[0].items;
+    assert.deepEqual([a.tipo, a.bloqueId, a.ramoId, a.hecha], ["estudio", 7, 2, false]);
+    assert.equal(b.hecha, true);
+  });
+
+  it("si el bloque también está en el calendario, no se repite", () => {
+    const evento = { titulo: "Estudiar Cálculo", lugar: null, inicioMs: en(16), finMs: en(16, 50), todoElDia: false };
+    const otro = { titulo: "Almuerzo", lugar: null, inicioMs: en(13), finMs: en(14), todoElDia: false };
+    const dias = armarAgenda({ bloques: [bloque], eventos: [evento, otro] }, AHORA_E);
+    assert.deepEqual(dias[0].items.map((i) => i.titulo), ["Almuerzo", "Estudiar Cálculo"]);
+    assert.equal(dias[0].items.find((i) => i.titulo === "Estudiar Cálculo")?.tipo, "estudio");
+  });
+});

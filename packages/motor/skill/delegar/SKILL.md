@@ -46,6 +46,8 @@ especialista **nunca** le pases datos personales del estudiante:
   trozo: tienen voces de otras personas, que no sabrán que su voz llegó a un servicio gratuito;
 - sus tarjetas de repaso, resúmenes de clase, glosarios y preguntas de práctica (salen de sus transcripciones),
   ni qué tarjetas sabe o le fallan.
+- sus planes de estudio, las fechas de sus pruebas y sus horarios de estudio (cuándo rinde, cuándo estudia, qué bloques tiene).
+- cuánto y cuándo estudia (horas por ramo, su racha, sus hábitos de estudio).
 
 Pásale solo el tema de estudio, escrito en general ("explica la derivada de funciones
 compuestas para primer año", no "Ana tiene prueba el jueves en la UC"). Si el estudiante

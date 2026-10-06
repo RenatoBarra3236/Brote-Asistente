@@ -149,6 +149,19 @@
 //   pedido { "tipo": "repaso-propuesta-decidir", "grabacion": "AAAA-MM-DD-HHMMSS", "decision": "aceptar"|"descartar", "temas"?: [0], "glosario"?: [0], "preguntas"?: [0], "ramoId"?: 3 | null, "glosarioEditado"?, "preguntasEditado"? }
 //   pedido { "tipo": "repaso-responder", "tarjeta": 7, "resultado": "no-sabia"|"casi"|"sabia" }
 //   pedido { "tipo": "repaso-borrar", "que": "tarjeta"|"grabacion"|"ramo"|"todo", "tarjeta"?: 7, "grabacion"?: "…", "ramo"?: 3 | null }   (definitivo: no hay Papelera)
+//   aviso { "tipo": "plan-estudio", "planes": PlanEstudio[] }   planes de estudio con sus bloques (A4); también si los cambia el MCP
+//   aviso { "tipo": "plan-estudio-aviso", "texto": "…", "bloque": 3, "ramo": 1 }   10 min antes de un bloque
+//   pedido { "tipo": "plan-estudio-estado" }   → "datos": { planes } (con la función apagada, vacío)
+//   pedido { "tipo": "plan-estudio-todo" }   → "datos": { ramos, planes, evaluaciones } (no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "plan-estudio-proponer", "ramo": 3, "evaluacion": 7, "horas"?: 6 }   → "datos": propuesta (no guarda nada)
+//   pedido { "tipo": "plan-estudio-agendar", "ramo": 3, "evaluacion": 7, "horas": 6, "bloques": [{ tipo, inicioMs, finMs }], "calendario": false }
+//   pedido { "tipo": "plan-estudio-bloque", "bloque": 4, "estado": "pendiente"|"hecho"|"saltado" }
+//   pedido { "tipo": "plan-estudio-borrar", "que": "plan"|"ramo"|"todo", "plan"?: 2, "ramo"?: 3 }   (los eventos ya creados en el calendario se borran a mano)
+//   pedido { "tipo": "pomodoro-iniciar", "ramo"?: 3, "etiqueta"?: "…" }   → un pomodoro enlazado al ramo
+//   aviso { "tipo": "estadisticas-estudio", "resumen": ResumenEstudio }   tiempo estudiado de la semana, racha y totales por ramo (A5); también si lo cambia el pomodoro, un bloque hecho o el MCP
+//   pedido { "tipo": "estadisticas-estado" }   → "datos": { resumen } (con la función apagada, vacío)
+//   pedido { "tipo": "estadisticas-todo" }   → "datos": { ramos, resumen } (no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "estadisticas-borrar", "que": "registro"|"ramo"|"todo", "registro"?: 4, "ramo"?: 3 | null }   (definitivo: no hay Papelera)
 //   pedido { "tipo": "ramo-asignar", "que": "tarea"|"propuesta"|"pomodoro"|"grabacion", "ref": 7 | "AAAA-MM-DD-HHMMSS", "ramo": 3 | null }
 //
 // Conectores (Todoist, Notion…): sus herramientas de solo lectura pasan sin preguntar si el conector
@@ -258,6 +271,16 @@ import {
   Ramos,
   Notas,
   Repaso,
+  PlanesEstudio,
+  EstadisticasEstudio,
+  resumirEstudio,
+  POMODORO,
+  HORARIO_POR_DEFECTO,
+  bloquesPorAvisar,
+  leerFechaPrueba,
+  proponerPlan,
+  textoAvisoBloque,
+  tituloDeBloque,
   RESULTADOS,
   armarEstadoRepaso,
   armarFichaNotas,
@@ -325,6 +348,11 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__notas_necesaria",
   // Repaso: solo deja una propuesta pendiente; el usuario decide en la isla.
   "mcp__gastos__repaso_proponer",
+  // Plan de estudio: solo calcula y lee; agendar lo decide el usuario en la isla.
+  "mcp__gastos__estudio_plan",
+  "mcp__gastos__estudio_hoy",
+  // Estadísticas de estudio: solo lectura.
+  "mcp__gastos__estudio_estadisticas",
   "mcp__gastos__transcripciones_listar",
   "mcp__gastos__transcripciones_leer",
   // Solo deja propuestas pendientes: nada llega a la Agenda sin que el usuario lo acepte en la isla.
@@ -419,6 +447,10 @@ const ramos = new Ramos(gastos);
 const notas = new Notas(gastos, ramos);
 /** Las propuestas y tarjetas de repaso (A3): las propone el agente por MCP; decide el usuario en la isla. */
 const repaso = new Repaso(gastos, ramos);
+/** Los planes de estudio antes de una prueba (A4): los calcula el motor; el usuario confirma en la isla. */
+const planesEstudio = new PlanesEstudio(gastos, notas);
+/** El tiempo estudiado (A5): lo escriben el pomodoro, los bloques hechos y lo que el usuario anota a mano. */
+const estadisticas = new EstadisticasEstudio(gastos, ramos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -443,6 +475,8 @@ const motor = new Motor(gastos, {
   ramos,
   notas,
   repaso,
+  planes: planesEstudio,
+  estadisticas,
   activa,
 });
 
@@ -597,6 +631,18 @@ function inicioDeHoy(ms: number): number {
   const d = new Date(ms);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
+/** Los bloques de estudio entre dos instantes, con su título genérico («Estudiar Cálculo»). */
+function bloquesParaAgenda(desdeMs: number, hastaMs: number) {
+  const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
+  return planesEstudio.bloquesEntre(desdeMs, hastaMs).map((b) => ({
+    id: b.id,
+    ramoId: b.ramoId,
+    titulo: tituloDeBloque(b.tipo, nombres.get(b.ramoId) ?? "tu ramo"),
+    inicioMs: b.inicioMs,
+    finMs: b.finMs,
+    hecho: b.estado === "hecho",
+  }));
+}
 async function estadoAgenda() {
   if (activa("calendario")) await leerCalendarios();
   if (activa("aula")) await leerAulaSiToca();
@@ -608,6 +654,8 @@ async function estadoAgenda() {
       temporizadores: activa("temporizadores") ? temporizadores.activos() : [],
       // Lo ya aceptado es del usuario: se ve aunque la función de grabar se apague.
       tareas: tareasAgenda.tareas(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000),
+      // Los bloques de un plan de estudio ya agendado también son del usuario.
+      bloques: bloquesParaAgenda(inicioDeHoy(ahora), inicioDeHoy(ahora) + DIAS_VENTANA * 86_400_000),
     },
     ahora,
     DIAS_VENTANA,
@@ -1231,6 +1279,82 @@ function detenerRepaso(): void {
   marcaRepaso = "";
   avisar({ tipo: "repaso", repaso: armarEstadoRepaso([], [], [], Date.now()) });
 }
+// Plan de estudio (A4): se mira la marca cada 2 s (el MCP puede cambiar bloques) y se avisa 10 min antes de cada bloque
+// sin abrir la isla. Nada del contenido se registra: son ramos, fechas y horas del usuario.
+let marcaPlanEstudio = "";
+const bloquesAvisados = new Set<number>();
+function estadoPlanEstudio() {
+  return { planes: planesEstudio.planes(Date.now()) };
+}
+function revisarPlanEstudio(forzar = false): void {
+  const marca = `${planesEstudio.marca()}|${ramos.marca()}`;
+  if (forzar || marca !== marcaPlanEstudio) {
+    marcaPlanEstudio = marca;
+    avisar({ tipo: "plan-estudio", ...estadoPlanEstudio() });
+  }
+  const ahora = Date.now();
+  const proximos = planesEstudio.bloquesEntre(ahora, ahora + 15 * 60_000);
+  const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
+  for (const id of bloquesPorAvisar(proximos, bloquesAvisados, ahora)) {
+    bloquesAvisados.add(id);
+    const b = proximos.find((x) => x.id === id)!;
+    registrar("estudio: aviso de un bloque");
+    avisar({ tipo: "plan-estudio-aviso", texto: textoAvisoBloque(b, nombres.get(b.ramoId) ?? "tu ramo"), bloque: id, ramo: b.ramoId });
+  }
+}
+// Estadísticas de estudio (A5): se mira la marca cada 2 s (el pomodoro que termina, un bloque hecho, lo anotado por
+// frase o por el agente) y al cambiar el día. Solo números: nunca se registra su contenido.
+let marcaEstadisticas = "";
+function estadoEstadisticas() {
+  return { resumen: resumirEstudio(estadisticas.registros(), Date.now()) };
+}
+function revisarEstadisticas(forzar = false): void {
+  const marca = `${estadisticas.marca()}|${ramos.marca()}|${inicioDeHoy(Date.now())}`;
+  if (!forzar && marca === marcaEstadisticas) return;
+  marcaEstadisticas = marca;
+  avisar({ tipo: "estadisticas-estudio", ...estadoEstadisticas() });
+}
+function detenerEstadisticas(): void {
+  marcaEstadisticas = "";
+  avisar({ tipo: "estadisticas-estudio", resumen: resumirEstudio([], Date.now()) });
+}
+function detenerPlanEstudio(): void {
+  marcaPlanEstudio = "";
+  avisar({ tipo: "plan-estudio", planes: [] });
+}
+/** La propuesta de plan para una evaluación: cuánto estudiar y dónde caen los bloques (esquivando calendario y otros planes). */
+async function propuestaPlanEstudio(ramoId: number, evaluacionId: number, horas?: number) {
+  const ev = notas.obtener(evaluacionId);
+  if (!ev || ev.ramoId !== ramoId) throw new Error("Esa evaluación no existe");
+  if (activa("calendario")) await leerCalendarios();
+  const ahora = Date.now();
+  const existente = planesEstudio.planDe(evaluacionId);
+  const propios = new Set((existente?.bloques ?? []).map((b) => `${b.inicioMs}-${b.finMs}`));
+  const ocupados = [
+    // Los eventos que son copia de los bloques de este mismo plan no cuentan como ocupados.
+    ...(activa("calendario") ? eventosCalendario().filter((e) => !e.todoElDia && !propios.has(`${e.inicioMs}-${e.finMs}`)) : []).map((e) => ({ inicioMs: e.inicioMs, finMs: e.finMs })),
+    ...planesEstudio
+      .bloquesEntre(ahora, ahora + 31 * 86_400_000)
+      .filter((b) => !(existente && b.planId === existente.id && b.estado !== "hecho"))
+      .map((b) => ({ inicioMs: b.inicioMs, finMs: b.finMs })),
+  ];
+  const ficha = armarFichaNotas(ramoId, notas.listar(ramoId), notas.ajustes(ramoId));
+  const hechas = existente ? planesEstudio.horasHechas(existente.id) : 0;
+  let r = proponerPlan(ficha, evaluacionId, { ahoraMs: ahora, ocupados, horas, horario: HORARIO_POR_DEFECTO });
+  // Rehacer un plan que ya avanzó: se reparte solo lo que falta.
+  if (r.ok && horas === undefined && hechas > 0) r = proponerPlan(ficha, evaluacionId, { ahoraMs: ahora, ocupados, horas: Math.max(1, r.propuesta.horasObjetivo - hechas), horario: HORARIO_POR_DEFECTO });
+  if (!r.ok) throw new Error(r.motivo);
+  return {
+    ...r.propuesta,
+    ramoNombre: ramos.obtener(ramoId)?.nombre ?? "",
+    horasHechas: Math.round(hechas * 10) / 10,
+    tarjetas: repaso.tarjetas(ramoId).length,
+    planId: existente?.id ?? null,
+    calendario: activa("calendario"),
+    // Lo que el calendario conoce llega hasta DIAS_VENTANA días: más allá se asume libre.
+    miraHasta: ahora + DIAS_VENTANA * 86_400_000,
+  };
+}
 /** La pestaña Estudio: ramos con su ficha y lo que se sugiere agregar. Lee las fuentes solo si su función está prendida. */
 async function estadoEstudio() {
   if (activa("calendario")) await leerCalendarios();
@@ -1338,12 +1462,16 @@ const tareas = new TareasPorFuncion({
       revisarRamos();
       revisarNotas();
       revisarRepaso();
+      revisarPlanEstudio();
+      revisarEstadisticas();
     });
     return () => {
       detener();
       detenerRamos();
       detenerNotas();
       detenerRepaso();
+      detenerPlanEstudio();
+      detenerEstadisticas();
     };
   },
   grabaciones: () => {
@@ -1854,6 +1982,88 @@ async function atender(pedido: any): Promise<Extra> {
       registrar(`estudio: repaso borrado (${n})`);
       revisarRepaso();
       return { datos: { borradas: n } };
+    }
+    // Plan de estudio (A4). Lo guardado es del usuario: se ve y se borra aunque la función esté apagada; proponer y agendar exigen la función.
+    case "plan-estudio-estado":
+      return { datos: activa("estudio") ? estadoPlanEstudio() : { planes: [] } };
+    case "plan-estudio-todo": {
+      const nombres: Record<number, string> = {};
+      for (const e of ramos.listar(true).flatMap((r) => notas.listar(r.id))) nombres[e.id] = e.nombre;
+      return { datos: { ramos: ramos.listar(true), ...estadoPlanEstudio(), evaluaciones: nombres } };
+    }
+    case "plan-estudio-proponer": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.ramo) || !Number.isInteger(pedido.evaluacion)) break;
+      if (pedido.horas !== undefined && (typeof pedido.horas !== "number" || !Number.isFinite(pedido.horas))) break;
+      return { datos: await propuestaPlanEstudio(pedido.ramo, pedido.evaluacion, pedido.horas) };
+    }
+    case "plan-estudio-agendar": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.ramo) || !Number.isInteger(pedido.evaluacion) || !Array.isArray(pedido.bloques)) break;
+      const ev = notas.obtener(pedido.evaluacion);
+      if (!ev || ev.ramoId !== pedido.ramo) throw new Error("Esa evaluación no existe");
+      const fecha = leerFechaPrueba(ev.fecha);
+      if (!fecha) throw new Error("Falta la fecha de la prueba");
+      const horas = typeof pedido.horas === "number" && Number.isFinite(pedido.horas) ? pedido.horas : (pedido.bloques.length * 50) / 60;
+      const aCalendario = pedido.calendario === true && activa("calendario");
+      const r = planesEstudio.crear(pedido.ramo, pedido.evaluacion, fecha.ms, horas, pedido.bloques, aCalendario, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      // Copia al Calendario del Mac solo si el usuario marcó la casilla. Los eventos creados no se pueden borrar desde Brote.
+      let creados = 0;
+      let fallidos = 0;
+      if (aCalendario) {
+        const nombre = ramos.obtener(pedido.ramo)?.nombre ?? "tu ramo";
+        for (const b of r.plan.bloques.filter((x) => x.estado === "pendiente")) {
+          const res = crearEvento({ titulo: tituloDeBloque(b.tipo, nombre), lugar: null, inicioMs: b.inicioMs, finMs: b.finMs });
+          if (res.ok) creados++;
+          else fallidos++;
+        }
+        if (creados === 0) planesEstudio.desmarcarCalendario(r.plan.id);
+      }
+      registrar(`estudio: plan agendado (${r.plan.bloques.length} bloques${aCalendario ? `, ${creados} al calendario` : ""})`);
+      revisarPlanEstudio(true);
+      return { datos: { plan: planesEstudio.plan(r.plan.id), calendario: { pedido: aCalendario, creados, fallidos } } };
+    }
+    case "plan-estudio-bloque": {
+      if (!Number.isInteger(pedido.bloque) || !["pendiente", "hecho", "saltado"].includes(pedido.estado)) break;
+      if (!planesEstudio.marcar(pedido.bloque, pedido.estado)) throw new Error("Ese bloque ya no existe");
+      revisarPlanEstudio();
+      return {};
+    }
+    case "plan-estudio-borrar": {
+      let n = 0;
+      if (pedido.que === "plan" && Number.isInteger(pedido.plan)) n = planesEstudio.borrarPlan(pedido.plan) ? 1 : 0;
+      else if (pedido.que === "ramo" && Number.isInteger(pedido.ramo)) n = planesEstudio.borrarDeRamo(pedido.ramo);
+      else if (pedido.que === "todo") n = planesEstudio.borrarTodo();
+      else break;
+      registrar(`estudio: planes de estudio borrados (${n})`);
+      revisarPlanEstudio(true);
+      return { datos: { borrados: n } };
+    }
+    case "pomodoro-iniciar": {
+      // «Empezar» en un bloque de estudio: un pomodoro con el nombre del ramo (queda enlazado a él).
+      if (!activa("temporizadores")) throw new Error("Temporizadores está apagado: actívalo en Configurar Brote ⚙️");
+      const ramo = Number.isInteger(pedido.ramo) ? ramos.obtener(pedido.ramo) : null;
+      const etiqueta = ramo ? ramo.nombre : typeof pedido.etiqueta === "string" && pedido.etiqueta.trim() ? pedido.etiqueta.trim().slice(0, 60) : null;
+      const t = temporizadores.iniciarPomodoro(POMODORO.estudioMs, etiqueta, new Date());
+      if (ramo) ramos.asignar("pomodoro", t.id, ramo.id);
+      revisarTemporizadores();
+      return { datos: { id: t.id } };
+    }
+    // Estadísticas de estudio (A5). Lo guardado es del usuario: se ve y se borra aunque la función esté apagada.
+    case "estadisticas-estado":
+      return { datos: activa("estudio") ? estadoEstadisticas() : { resumen: resumirEstudio([], Date.now()) } };
+    case "estadisticas-todo":
+      return { datos: { ramos: ramos.listar(true), ...estadoEstadisticas() } };
+    case "estadisticas-borrar": {
+      let n = 0;
+      if (pedido.que === "registro" && Number.isInteger(pedido.registro)) n = estadisticas.borrarRegistro(pedido.registro) ? 1 : 0;
+      else if (pedido.que === "ramo" && (pedido.ramo === null || Number.isInteger(pedido.ramo))) n = estadisticas.borrarDeRamo(pedido.ramo);
+      else if (pedido.que === "todo") n = estadisticas.borrarTodo();
+      else break;
+      registrar(`estudio: estadísticas borradas (${n})`);
+      revisarEstadisticas(true);
+      return { datos: { borrados: n } };
     }
     case "ramo-asignar": {
       if (!["tarea", "propuesta", "pomodoro", "grabacion"].includes(pedido.que)) break;

@@ -11,6 +11,8 @@ import type { EstadoUso } from "./uso.ts";
 import type { Trabajando } from "./especialistas.ts";
 import type { EstadoPlata } from "./plata.ts";
 import type { EstadoEstudio, Ramo } from "./estudio.ts";
+import type { BloquePlan, PlanEstudio, PropuestaVista } from "./plan-estudio.ts";
+import type { ResumenEstudio } from "./estadisticas.ts";
 import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from "./repaso.ts";
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
@@ -152,6 +154,9 @@ type Aviso =
   | { tipo: "ramos"; ramos: Ramo[] }
   | { tipo: "notas"; fichas: unknown[] }
   | { tipo: "repaso"; repaso: EstadoRepaso }
+  | { tipo: "plan-estudio"; planes: PlanEstudio[] }
+  | { tipo: "estadisticas-estudio"; resumen: ResumenEstudio }
+  | { tipo: "plan-estudio-aviso"; texto: string; bloque: number; ramo: number }
   | { tipo: "plata-aviso"; texto: string }
   | {
       tipo: "respuesta";
@@ -185,6 +190,9 @@ export class TransportePuente implements Transporte {
   private readonly oyentesMusica = new Set<(estado: EstadoMusica | null) => void>();
   private readonly oyentesCalendario = new Set<(estado: EstadoCalendario) => void>();
   private readonly oyentesAvisoCalendario = new Set<(texto: string) => void>();
+  private readonly oyentesEstadisticas = new Set<(resumen: ResumenEstudio) => void>();
+  private readonly oyentesPlanEstudio = new Set<(planes: PlanEstudio[]) => void>();
+  private readonly oyentesAvisoBloque = new Set<(aviso: { texto: string; bloque: number; ramo: number }) => void>();
   private readonly oyentesRepaso = new Set<(estado: EstadoRepaso) => void>();
   private readonly oyentesPropuestas = new Set<(propuestas: PropuestaAgenda[]) => void>();
   private readonly oyentesTranscripcion = new Set<(aviso: AvisoTranscripcion) => void>();
@@ -287,6 +295,24 @@ export class TransportePuente implements Transporte {
   alCambiarPropuestas(oyente: (propuestas: PropuestaAgenda[]) => void): () => void {
     this.oyentesPropuestas.add(oyente);
     return () => this.oyentesPropuestas.delete(oyente);
+  }
+
+  /** El tiempo estudiado de la semana, la racha y los totales por ramo (A5): al partir y cada vez que cambian. */
+  alCambiarEstadisticas(oyente: (resumen: ResumenEstudio) => void): () => void {
+    this.oyentesEstadisticas.add(oyente);
+    return () => this.oyentesEstadisticas.delete(oyente);
+  }
+
+  /** Los planes de estudio con sus bloques (A4): al partir y cada vez que cambian (también si los toca el agente). */
+  alCambiarPlanEstudio(oyente: (planes: PlanEstudio[]) => void): () => void {
+    this.oyentesPlanEstudio.add(oyente);
+    return () => this.oyentesPlanEstudio.delete(oyente);
+  }
+
+  /** Aviso 10 minutos antes de un bloque de estudio. */
+  alAvisoBloque(oyente: (aviso: { texto: string; bloque: number; ramo: number }) => void): () => void {
+    this.oyentesAvisoBloque.add(oyente);
+    return () => this.oyentesAvisoBloque.delete(oyente);
   }
 
   /** Propuestas de repaso, tarjetas que vencen y resúmenes (A3): al partir y cada vez que cambian (también si los deja el agente). */
@@ -476,6 +502,28 @@ export class TransportePuente implements Transporte {
     await this.pedir({ tipo: "repaso-responder", tarjeta, resultado });
   }
 
+  /** Arma (sin guardar) la propuesta de plan de estudio de una evaluación. */
+  async proponerPlanEstudio(ramo: number, evaluacion: number, horas?: number): Promise<PropuestaVista> {
+    return this.consultar({ tipo: "plan-estudio-proponer", ramo, evaluacion, ...(horas !== undefined ? { horas } : {}) });
+  }
+
+  async agendarPlanEstudio(ramo: number, evaluacion: number, horas: number, bloques: BloquePlan[], calendario: boolean): Promise<{ plan: PlanEstudio | null; calendario: { pedido: boolean; creados: number; fallidos: number } }> {
+    return this.consultar({ tipo: "plan-estudio-agendar", ramo, evaluacion, horas, bloques, calendario });
+  }
+
+  async marcarBloque(bloque: number, estado: "pendiente" | "hecho" | "saltado"): Promise<void> {
+    await this.pedir({ tipo: "plan-estudio-bloque", bloque, estado });
+  }
+
+  async borrarPlanEstudio(plan: number): Promise<void> {
+    await this.pedir({ tipo: "plan-estudio-borrar", que: "plan", plan });
+  }
+
+  /** «Empezar» en un bloque: un pomodoro con el nombre del ramo. */
+  async iniciarPomodoro(ramo: number): Promise<void> {
+    await this.pedir({ tipo: "pomodoro-iniciar", ramo });
+  }
+
   /** Un pedido cualquiera al puente (por ejemplo, los de "Lo que sé de ti"); devuelve sus datos. */
   async consultar<T = unknown>(pedido: Record<string, unknown>): Promise<T> {
     const { datos } = await this.pedir(pedido);
@@ -588,6 +636,15 @@ export class TransportePuente implements Transporte {
         return;
       case "repaso":
         for (const oyente of this.oyentesRepaso) oyente(aviso.repaso);
+        return;
+      case "estadisticas-estudio":
+        for (const oyente of this.oyentesEstadisticas) oyente(aviso.resumen);
+        return;
+      case "plan-estudio":
+        for (const oyente of this.oyentesPlanEstudio) oyente(aviso.planes);
+        return;
+      case "plan-estudio-aviso":
+        for (const oyente of this.oyentesAvisoBloque) oyente({ texto: aviso.texto, bloque: aviso.bloque, ramo: aviso.ramo });
         return;
       case "plata":
         for (const oyente of this.oyentesPlata) oyente(aviso.plata);

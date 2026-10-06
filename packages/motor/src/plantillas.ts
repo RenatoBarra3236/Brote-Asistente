@@ -13,6 +13,7 @@ import { NOMBRES_DE_CATEGORIA } from "./categorias.ts";
 import { FORMAS_DE_PERIODO } from "./periodos.ts";
 import { normalizarConMapa } from "./texto.ts";
 import { PATRON_DURACION, PATRON_HORA } from "./tiempo.ts";
+import { PATRON_DIA } from "./fechas.ts";
 
 export type Intencion =
   | "registrar-gasto"
@@ -65,9 +66,15 @@ export type Intencion =
   | "notas-borrar"
   | "notas-ajuste"
   | "repaso-hay"
-  | "repaso-empezar";
+  | "repaso-empezar"
+  | "estudio-fecha"
+  | "estudio-plan"
+  | "estudio-hoy"
+  | "estudio-horas"
+  | "estudio-racha"
+  | "estudio-anotar";
 
-export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista";
+export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista" | "fecha" | "dia";
 
 export interface Plantilla {
   id: string;
@@ -99,6 +106,8 @@ const RANURAS: Record<Ranura, string> = {
   cosa: ".+?",
   tiempo: PATRON_DURACION,
   hora: PATRON_HORA,
+  fecha: PATRON_DIA,
+  dia: "ayer|hoy",
   // Notas (A2): una nota 1–7 con coma o punto, y un peso en % (la coma entre dígitos no se pierde al normalizar).
   nota: "\\d(?:[.,]\\d{1,2})?",
   peso: "\\d{1,3}(?: ?%| por ciento)?",
@@ -396,6 +405,25 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "repaso-empezar-solo", intencion: "repaso-empezar", patron: "(repasemos|a repasar|vamos a repasar|quiero repasar|empecemos a repasar|empieza el repaso)" },
   { id: "repaso-empezar-ramo", intencion: "repaso-empezar", patron: "(repasemos|vamos a repasar|quiero repasar|empecemos a repasar) {cosa}" },
   { id: "repaso-empezar-un", intencion: "repaso-empezar", patron: "(hagamos|haz|hacer|empieza|empezar|inicia|iniciar|quiero) [un|el|mi] repaso" },
+  // Plan de estudio (A4): la fecha de una prueba, pedir el plan (la isla lo muestra y el usuario confirma) y los bloques de hoy.
+  { id: "estudio-fecha-es", intencion: "estudio-fecha", patron: "{cosa} (es|sera|cae) {fecha} [a las {hora}]" },
+  { id: "estudio-plan-hazme", intencion: "estudio-plan", patron: "(armame|hazme|haz|arma|organizame|organiza|dame|crea|crear|prepara|preparame) [un|el|mi] (plan de estudio|plan) (para|de) {cosa}" },
+  { id: "estudio-plan-organiza", intencion: "estudio-plan", patron: "(organiza|organizame|planifica|planificame|arma|armame) [el|mi] estudio (para|de) {cosa}" },
+  { id: "estudio-plan-solo", intencion: "estudio-plan", patron: "plan de estudio (para|de) {cosa}" },
+  { id: "estudio-hoy-que", intencion: "estudio-hoy", patron: "que (tengo|debo|me toca) [que] estudiar [hoy]" },
+  { id: "estudio-hoy-estudio", intencion: "estudio-hoy", patron: "que estudio hoy" },
+  // Estadísticas de estudio (A5): cuánto, la racha y anotar horas a mano.
+  { id: "estudio-horas-periodo", intencion: "estudio-horas", patron: "cuanto (he estudiado|estudie|llevo estudiando|llevo estudiado) {periodo}" },
+  { id: "estudio-horas-ramo-periodo", intencion: "estudio-horas", patron: "cuanto (he estudiado|estudie|llevo estudiando|llevo estudiado) (de|en) {cosa} {periodo}" },
+  { id: "estudio-horas-ramo", intencion: "estudio-horas", patron: "cuanto (he estudiado|estudie|llevo estudiando|llevo estudiado) (de|en) {cosa}" },
+  { id: "estudio-horas-solo", intencion: "estudio-horas", patron: "cuanto (he estudiado|llevo estudiando|llevo estudiado)" },
+  { id: "estudio-racha-cual", intencion: "estudio-racha", patron: "(cual es|como va|cuanto es) mi racha [de estudio]" },
+  { id: "estudio-racha-mi", intencion: "estudio-racha", patron: "mi racha [de estudio]" },
+  { id: "estudio-racha-dias", intencion: "estudio-racha", patron: "cuantos dias seguidos (he estudiado|llevo estudiando)" },
+  { id: "estudio-anotar-ramo-ayer", intencion: "estudio-anotar", patron: "estudie {tiempo} (de|en) {cosa} {dia}" },
+  { id: "estudio-anotar-ramo", intencion: "estudio-anotar", patron: "estudie {tiempo} (de|en) {cosa}" },
+  { id: "estudio-anotar-ayer", intencion: "estudio-anotar", patron: "estudie {tiempo} {dia}" },
+  { id: "estudio-anotar-solo", intencion: "estudio-anotar", patron: "estudie {tiempo}" },
   { id: "notas-promedio-todos", intencion: "notas-como-voy", patron: "(mi promedio|mis notas|mis promedios)" },
   { id: "notas-como-voy", intencion: "notas-como-voy", patron: "(como voy|como me va|como estoy|como ando) (con|en) [el|la|mi] [ramo] {ramo}" },
   { id: "notas-promedio", intencion: "notas-como-voy", patron: "[cual es] [mi] promedio (de|en) [el|la|mi] [ramo] {ramo}" },

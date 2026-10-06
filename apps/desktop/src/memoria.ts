@@ -4,6 +4,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estudio";
+import { NOTA_ESTADISTICAS_MEMORIA, avisoEstadisticasBorradas, formatearMinutos, lineaDeRamo, textoDesde, type ResumenEstudio } from "./agente/estadisticas";
+import { NOTA_PLAN_MEMORIA, avisoPlanBorrado, describirPrueba as describirPruebaPlan, resumenPlan, type PlanEstudio } from "./agente/plan-estudio";
 import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
 import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
 import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
@@ -78,6 +80,10 @@ let ramosGuardados: Ramo[] | null = null;
 /** Las notas guardadas, por ramo (con los archivados). Se ven y se borran aunque la función Estudio esté apagada. */
 /** Las tarjetas y resúmenes de repaso (A3), con las propuestas pendientes. Se ven y se borran aunque Estudio esté apagado. */
 let repasoGuardado: (EstadoRepaso & { ramos: Ramo[]; tarjetas: import("./agente/repaso").Tarjeta[] }) | null = null;
+/** Los planes de estudio (A4): ramos, fechas y horas. Se ven y se borran aunque Estudio esté apagado. */
+let planesGuardados: { ramos: Ramo[]; planes: PlanEstudio[]; evaluaciones: Record<number, string> } | null = null;
+/** El tiempo estudiado (A5): totales por ramo. Se ve y se borra aunque Estudio esté apagado. */
+let estudioGuardado: { ramos: Ramo[]; resumen: ResumenEstudio } | null = null;
 let notasGuardadas: { ramos: Ramo[]; fichas: FichaNotas[] } | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
@@ -379,6 +385,92 @@ function seccionRepaso(datos: NonNullable<typeof repasoGuardado>): HTMLElement {
   return seccion;
 }
 
+// ---- Plan de estudio (A4): ver y borrar un plan, los de un ramo o todos ----
+
+async function cargarPlanes(): Promise<void> {
+  try {
+    planesGuardados = await puente.consultar({ tipo: "plan-estudio-todo" });
+  } catch {
+    planesGuardados = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+async function borrarPlanes(pedido: Record<string, unknown>): Promise<void> {
+  const { borrados } = await puente.consultar<{ borrados: number }>({ tipo: "plan-estudio-borrar", ...pedido });
+  mostrarAviso(avisoPlanBorrado(borrados));
+  await cargarPlanes();
+  pintarTodo();
+}
+
+function seccionPlanes(datos: NonNullable<typeof planesGuardados>): HTMLElement {
+  const seccion = crear("section", "seccion seccion-ramos");
+  const encabezado = crear("h2", undefined, "Plan de estudio");
+  encabezado.append(crear("span", "cuenta", String(datos.planes.length)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_PLAN_MEMORIA));
+  for (const plan of datos.planes) {
+    const ramo = datos.ramos.find((r) => r.id === plan.ramoId);
+    const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+    if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+    const cabeza = crear("div", "tarjeta-cabeza");
+    cabeza.append(crear("h3", undefined, `${datos.evaluaciones[plan.evaluacionId] ?? "Prueba"} · ${describirPruebaPlan(plan.pruebaMs, true)}`), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
+    tarjeta.append(cabeza, crear("p", "meta", resumenPlan(plan, Date.now())));
+    if (plan.calendario) tarjeta.append(crear("p", "meta", "Copiado a tu calendario: ahí se borra a mano."));
+    const botones = crear("div", "botones");
+    botones.append(botonOlvidar(() => borrarPlanes({ que: "plan", plan: plan.id }), "Borrar este plan"));
+    tarjeta.append(botones);
+    seccion.append(tarjeta);
+  }
+  const botones = crear("div", "botones");
+  const ramosConPlan = datos.ramos.filter((r) => datos.planes.some((p) => p.ramoId === r.id));
+  for (const r of ramosConPlan) botones.append(botonOlvidar(() => borrarPlanes({ que: "ramo", ramo: r.id }), `Borrar los planes de ${r.nombre}`));
+  botones.append(botonOlvidar(() => borrarPlanes({ que: "todo" }), "Borrar todos los planes"));
+  seccion.append(botones);
+  return seccion;
+}
+
+// ---- Estadísticas de estudio (A5): ver y borrar el tiempo de un ramo o todo ----
+
+async function cargarEstadisticas(): Promise<void> {
+  try {
+    estudioGuardado = await puente.consultar({ tipo: "estadisticas-todo" });
+  } catch {
+    estudioGuardado = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+async function borrarEstadisticas(pedido: Record<string, unknown>): Promise<void> {
+  const { borrados } = await puente.consultar<{ borrados: number }>({ tipo: "estadisticas-borrar", ...pedido });
+  mostrarAviso(avisoEstadisticasBorradas(borrados));
+  await cargarEstadisticas();
+  pintarTodo();
+}
+
+function seccionEstadisticas(datos: NonNullable<typeof estudioGuardado>): HTMLElement {
+  const { resumen } = datos;
+  const seccion = crear("section", "seccion seccion-ramos");
+  const encabezado = crear("h2", undefined, "Estadísticas de estudio");
+  encabezado.append(crear("span", "cuenta", formatearMinutos(resumen.totalHistoricoMin)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_ESTADISTICAS_MEMORIA));
+  const desde = textoDesde(resumen.desdeMs);
+  if (desde) seccion.append(crear("p", "meta", desde));
+  for (const total of [...resumen.totales].sort((a, b) => b.totalMin - a.totalMin)) {
+    const ramo = total.ramoId === null ? undefined : datos.ramos.find((r) => r.id === total.ramoId);
+    const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
+    if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+    const cabeza = crear("div", "tarjeta-cabeza");
+    cabeza.append(crear("h3", undefined, ramo ? ramo.nombre : "Sin ramo"), crear("span", "fecha", ramo?.archivado ? "Archivado" : ""));
+    tarjeta.append(cabeza, crear("p", "meta", lineaDeRamo(total) ?? ""));
+    const botones = crear("div", "botones");
+    botones.append(botonOlvidar(() => borrarEstadisticas({ que: "ramo", ramo: total.ramoId }), ramo ? `Borrar el tiempo de ${ramo.nombre}` : "Borrar el tiempo sin ramo"));
+    tarjeta.append(botones);
+    seccion.append(tarjeta);
+  }
+  const todo = crear("div", "botones");
+  todo.append(botonOlvidar(() => borrarEstadisticas({ que: "todo" }), "Borrar todo el tiempo de estudio"));
+  seccion.append(todo);
+  return seccion;
+}
+
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
 
 async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
@@ -518,6 +610,8 @@ function pintar(memoria: Memoria): void {
   if (ramosGuardados && ramosGuardados.length > 0 && !coincidencias) contenido.push(seccionRamos(ramosGuardados));
   if (notasGuardadas && notasGuardadas.fichas.length > 0 && !coincidencias) contenido.push(seccionNotas(notasGuardadas));
   if (repasoGuardado && (repasoGuardado.tarjetas.length > 0 || repasoGuardado.resumenes.length > 0) && !coincidencias) contenido.push(seccionRepaso(repasoGuardado));
+  if (planesGuardados && planesGuardados.planes.length > 0 && !coincidencias) contenido.push(seccionPlanes(planesGuardados));
+  if (estudioGuardado && estudioGuardado.resumen.hay && !coincidencias) contenido.push(seccionEstadisticas(estudioGuardado));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
@@ -529,6 +623,8 @@ async function cargar(): Promise<void> {
     await cargarRamos();
     await cargarNotas();
     await cargarRepaso();
+    await cargarPlanes();
+    await cargarEstadisticas();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

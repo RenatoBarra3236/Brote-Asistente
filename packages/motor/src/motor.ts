@@ -24,6 +24,12 @@ import type { CabeceraTranscripcion } from "./transcripciones.ts";
 import { Ramos } from "./ramos.ts";
 import { Notas } from "./notas.ts";
 import { Repaso } from "./repaso.ts";
+import { PlanesEstudio } from "./plan-estudio.ts";
+import { interpretarPlanEstudio, responderPlanEstudio } from "./plan-estudio-motor.ts";
+import type { AccionPlanEstudio } from "./plan-estudio-motor.ts";
+import { EstadisticasEstudio } from "./estadisticas.ts";
+import { interpretarEstadisticas, responderEstadisticas } from "./estadisticas-motor.ts";
+import type { AccionEstadisticas } from "./estadisticas-motor.ts";
 import { textoEmpezarRepaso, textoHayRepaso } from "./repaso-frases.ts";
 import { interpretarNotas, responderNotas } from "./notas-motor.ts";
 import type { AccionNotas } from "./notas-motor.ts";
@@ -75,6 +81,8 @@ export type Accion =
   | { intencion: "ramos-ver" }
   | { intencion: "repaso-hay" }
   | { intencion: "repaso-empezar"; ramo: string | null }
+  | AccionPlanEstudio
+  | AccionEstadisticas
   | AccionNotas;
 
 /** Cuántos gastos muestra "mis últimos gastos". */
@@ -145,6 +153,14 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "notas-borrar":
     case "notas-ajuste":
       return interpretarNotas(intencion, ranuras, originales);
+    case "estudio-horas":
+    case "estudio-racha":
+    case "estudio-anotar":
+      return interpretarEstadisticas(intencion, ranuras, originales);
+    case "estudio-fecha":
+    case "estudio-plan":
+    case "estudio-hoy":
+      return interpretarPlanEstudio(intencion, ranuras, originales);
     case "repaso-hay":
       return { intencion };
     case "repaso-empezar": {
@@ -204,6 +220,8 @@ export class Motor {
   private readonly ramos: Ramos | null;
   private readonly notas: Notas | null;
   private readonly repaso: Repaso | null;
+  private readonly planes: PlanesEstudio | null;
+  private readonly estadisticas: EstadisticasEstudio | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -238,11 +256,17 @@ export class Motor {
       notas?: Notas;
       /** Las tarjetas de repaso. Sin esto (o sin ramos), esas frases van al agente. */
       repaso?: Repaso;
+      /** Los planes de estudio. Sin esto, «¿qué estudio hoy?» va al agente (la fecha y el plan solo necesitan ramos y notas). */
+      planes?: PlanesEstudio;
+      /** El tiempo estudiado. Sin esto, esas frases van al agente. */
+      estadisticas?: EstadisticasEstudio;
     } = {},
   ) {
     this.ramos = opciones.ramos ?? null;
     this.notas = opciones.notas ?? null;
     this.repaso = opciones.repaso ?? null;
+    this.planes = opciones.planes ?? null;
+    this.estadisticas = opciones.estadisticas ?? null;
     this.uso = opciones.uso ?? null;
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
@@ -331,6 +355,16 @@ export class Motor {
       }
       const { texto, hay } = textoEmpezarRepaso(lista, nombreRamo, ramoId, ahora);
       return { intencion: accion.intencion, plantilla: plantilla.id, texto, ...(hay ? { datos: { repaso: { ramoId } } } : {}) };
+    }
+    if (accion.intencion === "estudio-horas" || accion.intencion === "estudio-racha" || accion.intencion === "estudio-anotar") {
+      if (!this.ramos || !this.estadisticas) return null;
+      const texto = responderEstadisticas(accion, { ramos: this.ramos, estadisticas: this.estadisticas, ahoraMs: this.reloj().getTime() });
+      return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
+    }
+    if (accion.intencion === "estudio-fecha" || accion.intencion === "estudio-plan" || accion.intencion === "estudio-hoy") {
+      if (!this.ramos || !this.notas) return null;
+      const r = responderPlanEstudio(accion, { ramos: this.ramos, notas: this.notas, planes: this.planes, ahoraMs: this.reloj().getTime() });
+      return r === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto: r.texto, ...(r.datos !== undefined ? { datos: r.datos } : {}) };
     }
     if (accion.intencion.startsWith("notas-")) {
       if (!this.ramos || !this.notas) return null;

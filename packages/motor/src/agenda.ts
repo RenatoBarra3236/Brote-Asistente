@@ -3,7 +3,7 @@
 // para probarlo y para usarlo desde la ventana. Las tareas vienen de lo que el usuario aceptó de una
 // grabación (`tareas-agenda.ts`); Todoist sigue sin ser fuente.
 
-export type TipoItemAgenda = "evento" | "entrega" | "recordatorio" | "tarea";
+export type TipoItemAgenda = "evento" | "entrega" | "recordatorio" | "tarea" | "estudio";
 
 export interface ItemAgenda {
   tipo: TipoItemAgenda;
@@ -19,6 +19,9 @@ export interface ItemAgenda {
   /** Solo las tareas (las de las grabaciones): su id y si ya está hecha, para el check de la isla. */
   tareaId?: number;
   hecha?: boolean;
+  /** Solo los bloques de estudio (A4): su id, su ramo y si se saltó (no sale) o ya se hizo (`hecha`). */
+  bloqueId?: number;
+  ramoId?: number;
 }
 
 export interface DiaAgenda {
@@ -48,6 +51,14 @@ interface TareaEntrada {
   venceMs: number;
   hecha: boolean;
 }
+interface BloqueEntrada {
+  id: number;
+  ramoId: number;
+  titulo: string;
+  inicioMs: number;
+  finMs: number;
+  hecho: boolean;
+}
 interface TemporizadorEntrada {
   tipo: "temporizador" | "pomodoro";
   etiqueta: string | null;
@@ -65,7 +76,7 @@ function inicioDelDia(ms: number, dias = 0): number {
  * de varios días aparece en cada día que toca.
  */
 export function armarAgenda(
-  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[]; tareas?: TareaEntrada[] },
+  fuentes: { eventos?: EventoEntrada[]; entregas?: EntregaEntrada[]; temporizadores?: TemporizadorEntrada[]; tareas?: TareaEntrada[]; bloques?: BloqueEntrada[] },
   ahoraMs: number,
   dias = 14,
 ): DiaAgenda[] {
@@ -73,8 +84,10 @@ export function armarAgenda(
   const items: ItemAgenda[] = [];
   // Una tarea aceptada también se crea en el calendario (termina justo a su hora límite): ahí no se repite.
   const espejoDeTarea = (e: EventoEntrada) => (fuentes.tareas ?? []).some((t) => t.titulo === e.titulo && t.venceMs === e.finMs && !e.todoElDia);
+  // Un bloque de estudio que el usuario también copió al calendario: se muestra el bloque (con su check), no el evento.
+  const espejoDeBloque = (e: EventoEntrada) => (fuentes.bloques ?? []).some((b) => b.titulo === e.titulo && b.inicioMs === e.inicioMs && b.finMs === e.finMs);
   for (const e of fuentes.eventos ?? []) {
-    if (espejoDeTarea(e)) continue;
+    if (espejoDeTarea(e) || espejoDeBloque(e)) continue;
     items.push({ tipo: "evento", titulo: e.titulo, detalle: e.lugar, inicioMs: e.inicioMs, finMs: e.finMs, todoElDia: e.todoElDia, url: null });
   }
   for (const e of fuentes.entregas ?? []) {
@@ -89,6 +102,10 @@ export function armarAgenda(
 
   for (const t of fuentes.tareas ?? []) {
     items.push({ tipo: "tarea", titulo: t.titulo, detalle: t.detalle, inicioMs: t.venceMs, finMs: t.venceMs, todoElDia: false, url: null, tareaId: t.id, hecha: t.hecha });
+  }
+
+  for (const b of fuentes.bloques ?? []) {
+    items.push({ tipo: "estudio", titulo: b.titulo, detalle: null, inicioMs: b.inicioMs, finMs: b.finMs, todoElDia: false, url: null, bloqueId: b.id, ramoId: b.ramoId, hecha: b.hecho });
   }
 
   const resultado: DiaAgenda[] = [];

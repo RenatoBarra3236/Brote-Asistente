@@ -30,7 +30,7 @@ function sinArticulo(t: string): string {
 }
 
 /** Un ramo por su nombre o palabra clave; si hay dos que calzan igual, no adivina. */
-function buscarRamo(texto: string, ramos: readonly Ramo[]): Ramo | null {
+export function buscarRamo(texto: string, ramos: readonly Ramo[]): Ramo | null {
   const t = sinArticulo(texto);
   if (normalizarRamo(t).length < 2) return null;
   return emparejarRamo(t, ramos) ?? ramos.find((r) => !r.archivado && normalizarRamo(r.nombre) === normalizarRamo(t)) ?? null;
@@ -50,7 +50,7 @@ export function separarEvaluacionYRamo(texto: string, ramos: readonly Ramo[]): {
 }
 
 /** La evaluación de un ramo por su nombre (sin tildes ni mayúsculas). «el 2» toma el nombre de `modelo` con el número cambiado. */
-function buscarEvaluacion(nombre: string, evals: readonly Evaluacion[], modelo: string | null = null): Evaluacion | null {
+export function buscarEvaluacion(nombre: string, evals: readonly Evaluacion[], modelo: string | null = null): Evaluacion | null {
   let t = normalizarRamo(sinArticulo(nombre));
   const soloNumero = /^\d{1,2}$/.test(t);
   if (soloNumero && modelo) {

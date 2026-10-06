@@ -49,6 +49,26 @@
           resumenes: [{ id: 1, grabacion: "2026-10-03-143000", ramoId: 1, creadoMs: Date.now(), temas: [{ titulo: "Límites y continuidad", puntos: ["Un límite describe a qué valor se acerca"] }] }],
           propuestas: [], deHoy: [], porRamo: [], total: 3, hoy: 2,
         },
+        // Datos inventados (A5): nunca tiempos reales.
+        estudio: {
+          ramos: [{ id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false }],
+          resumen: { totalMin: 320, pasadaMin: 200, porDia: [60, 90, 0, 0, 0, 0, 0], hoy: 2, hoyMin: 0, porRamo: [], racha: 0, desdeSemanaMs: 0, desdeMs: Date.now() - 12 * 86400000, hay: true, totalHistoricoMin: 1260,
+            totales: [{ ramoId: 1, semanaMin: 150, totalMin: 840 }, { ramoId: null, semanaMin: 0, totalMin: 420 }] },
+        },
+        // Datos inventados (A4): nunca planes reales.
+        planes: {
+          ramos: [{ id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false }],
+          evaluaciones: { 7: "Certamen 2", 8: "Control 1" },
+          planes: [
+            { id: 1, ramoId: 1, evaluacionId: 7, pruebaMs: Date.now() + 5 * 86400000, horas: 6, calendario: true, creadoMs: Date.now(), bloques: [
+              { id: 1, planId: 1, tipo: "temas", inicioMs: Date.now() + 86400000, finMs: Date.now() + 86400000 + 3000000, estado: "hecho" },
+              { id: 2, planId: 1, tipo: "repaso-final", inicioMs: Date.now() + 4 * 86400000, finMs: Date.now() + 4 * 86400000 + 3000000, estado: "pendiente" },
+            ] },
+            { id: 2, ramoId: 1, evaluacionId: 8, pruebaMs: Date.now() + 9 * 86400000, horas: 2, calendario: false, creadoMs: Date.now(), bloques: [
+              { id: 3, planId: 2, tipo: "temas", inicioMs: Date.now() + 2 * 86400000, finMs: Date.now() + 2 * 86400000 + 3000000, estado: "pendiente" },
+            ] },
+          ],
+        },
         transcripciones:
           modo === "sin"
             ? []
@@ -117,6 +137,26 @@
                 case "notas-todas":
                   datos = sim.notas;
                   break;
+                case "estadisticas-todo":
+                  datos = sim.estudio;
+                  break;
+                case "estadisticas-borrar": {
+                  const antes = sim.estudio.resumen.totales.length;
+                  sim.estudio.resumen.totales = sim.estudio.resumen.totales.filter((t) => !(pedido.que === "todo" || (pedido.que === "ramo" && t.ramoId === pedido.ramo)));
+                  sim.estudio.resumen.hay = sim.estudio.resumen.totales.length > 0;
+                  sim.estudio.resumen.totalHistoricoMin = sim.estudio.resumen.totales.reduce((a, t) => a + t.totalMin, 0);
+                  datos = { borrados: antes - sim.estudio.resumen.totales.length };
+                  break;
+                }
+                case "plan-estudio-todo":
+                  datos = sim.planes;
+                  break;
+                case "plan-estudio-borrar": {
+                  const antes = sim.planes.planes.length;
+                  sim.planes.planes = sim.planes.planes.filter((x) => !(pedido.que === "todo" || (pedido.que === "plan" && x.id === pedido.plan) || (pedido.que === "ramo" && x.ramoId === pedido.ramo)));
+                  datos = { borrados: antes - sim.planes.planes.length };
+                  break;
+                }
                 case "repaso-todo":
                   datos = sim.repaso;
                   break;

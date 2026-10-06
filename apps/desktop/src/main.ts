@@ -32,6 +32,8 @@ import {
 } from "./agente/grabaciones";
 import type { EstadoAgenda } from "./agente/agenda";
 import type { EstadoEstudio } from "./agente/estudio";
+import type { PlanEstudio } from "./agente/plan-estudio";
+import type { ResumenEstudio } from "./agente/estadisticas";
 import { debeAvisarTarjetas, claveDia, propuestasRepasoNuevas, textoAvisoPropuestaRepaso, textoAvisoTarjetas, REPASO_VACIO, type EstadoRepaso } from "./agente/repaso";
 import { propuestasNuevas, textoAvisoPropuestas, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import type { Grabaciones } from "./agente/grabaciones-memoria";
@@ -115,6 +117,8 @@ const DURACION_ERROR = 6000;
 let alPedirGrabarPorFrase: (datos: unknown) => void = () => {};
 /** Lo mismo para «repasemos»: la isla abre Estudio y arma la sesión. Se asigna en `iniciar`. */
 let alPedirRepasoPorFrase: (datos: unknown) => void = () => {};
+/** Y para «plan de estudio para el certamen 2…»: la isla arma la propuesta y el usuario confirma. */
+let alPedirPlanPorFrase: (datos: unknown) => void = () => {};
 
 async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
   if ((await invoke<string>("agente_modo")) === "simulado") {
@@ -129,6 +133,7 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
       // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
       alPedirGrabarPorFrase(datos);
       alPedirRepasoPorFrase(datos);
+      alPedirPlanPorFrase(datos);
       const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
       if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
         mostrarDescarga(descarga.ruta, descarga.abrir === true);
@@ -171,6 +176,15 @@ async function iniciar(): Promise<void> {
           alCancelarTemporizador: (id: number) => void puente.cancelarTemporizador(id),
           alPedirAgenda: () => pedirAgenda(),
           alPedirEstudio: () => pedirEstudio(),
+          alProponerPlan: (ramo, evaluacion, horas) => puente.proponerPlanEstudio(ramo, evaluacion, horas),
+          alAgendarPlan: async (ramo, evaluacion, horas, bloques, calendario) => {
+            const r = await puente.agendarPlanEstudio(ramo, evaluacion, horas, bloques, calendario);
+            pedirAgenda();
+            return r;
+          },
+          alMarcarBloque: (bloque, estado) => puente.marcarBloque(bloque, estado),
+          alEmpezarBloque: (ramo) => puente.iniciarPomodoro(ramo),
+          alBorrarPlan: (plan) => puente.borrarPlanEstudio(plan),
           alAceptarRepaso: (grabacion, decision) => puente.aceptarRepaso(grabacion, decision),
           alDescartarRepaso: (grabacion) => puente.descartarRepaso(grabacion),
           alResponderRepaso: (tarjeta, resultado) => puente.responderRepaso(tarjeta, resultado),
@@ -323,6 +337,20 @@ async function iniciar(): Promise<void> {
     };
     puente.alCambiarRepaso((estado) => cambiarRepaso(estado, true));
     void puente.consultar<EstadoRepaso>({ tipo: "repaso-estado" }).then((estado) => cambiarRepaso(estado, false), () => {});
+    // Plan de estudio (A4): los bloques viven en la Agenda; el aviso llega 10 min antes y no abre la isla.
+    puente.alCambiarPlanEstudio((planes) => {
+      panel.ponerPlanEstudio(planes);
+      if (panel.agendaAbierta) pedirAgenda();
+    });
+    void puente.consultar<{ planes: PlanEstudio[] }>({ tipo: "plan-estudio-estado" }).then((e) => panel.ponerPlanEstudio(e.planes), () => {});
+    // Estadísticas de estudio (A5): la tarjeta «Esta semana» se actualiza sola cuando termina un pomodoro o se marca un bloque.
+    puente.alCambiarEstadisticas((resumen) => panel.ponerEstadisticas(resumen));
+    void puente.consultar<{ resumen: ResumenEstudio }>({ tipo: "estadisticas-estado" }).then((e) => panel.ponerEstadisticas(e.resumen), () => {});
+    puente.alAvisoBloque((aviso) => avisar("estudio", aviso.texto));
+    alPedirPlanPorFrase = (datos) => {
+      const plan = (datos as { planEstudio?: { ramoId?: unknown; evaluacionId?: unknown } } | undefined)?.planEstudio;
+      if (plan && typeof plan.ramoId === "number" && typeof plan.evaluacionId === "number") panel.iniciarPlanEstudio(plan.ramoId, plan.evaluacionId);
+    };
     // Al cambiar el día vencen otras tarjetas: el puente vuelve a avisar solo.
     alPedirRepasoPorFrase = (datos) => {
       const repaso = (datos as { repaso?: { ramoId?: unknown } } | undefined)?.repaso;

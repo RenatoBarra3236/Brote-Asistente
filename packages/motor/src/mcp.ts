@@ -21,7 +21,7 @@ import { PLANTILLAS_BASE } from "./plantillas.ts";
 import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
 import { MedidorCpu, describirEquipo, formatearBytes, leerBateria, leerDisco, leerMemoria, procesoMasPesado, procesosPesados } from "./sistema.ts";
-import { rangoDe, type Rango } from "./periodos.ts";
+import { FORMAS_DE_PERIODO, rangoDe, type Rango } from "./periodos.ts";
 import { combinar, crearEventoMacAhora, describirCreacion, descargarIcal, eventosDeIcal, leerCalendarioMac, leerUrlIcal, proximos, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
 import { aulaSoloEnLlavero, describirErrorAula, leerAula, leerConfigAula, type Entrega } from "./aula.ts";
 import { describirSesiones, pedirAlPuente, pedirSesiones, type SesionClaude } from "./programador.ts";
@@ -32,6 +32,14 @@ import { MENSAJE_APAGADA_MCP, funcionDeHerramienta } from "./funciones.ts";
 import { Ramos } from "./ramos.ts";
 import { Notas } from "./notas.ts";
 import { Repaso } from "./repaso.ts";
+import { PlanesEstudio } from "./plan-estudio.ts";
+import { EstadisticasEstudio } from "./estadisticas.ts";
+import { formatearMinutos, minutosEnRango, racha, resumirEstudio } from "./estadisticas-tipos.ts";
+import { proponerPlan } from "./plan-estudio-ficha.ts";
+import { textoBloquesDeHoy } from "./plan-estudio-frases.ts";
+import { tituloDeBloque } from "./plan-estudio-tipos.ts";
+import { armarFichaNotas } from "./notas-ficha.ts";
+import { buscarEvaluacion } from "./notas-motor.ts";
 import { calcularRamo, formatearNota, notaNecesaria, notaNecesariaExamen } from "./notas-tipos.ts";
 import { COLORES_RAMO, emparejarRamo, normalizarRamo } from "./ramos-tipos.ts";
 import { FuncionesVigiladas } from "./funciones-archivo.ts";
@@ -437,6 +445,47 @@ const HERRAMIENTAS = [
     annotations: { title: "Repaso: proponer resumen y tarjetas de una grabación", readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
   {
+    name: "estudio_plan",
+    description:
+      "Calcula, SIN guardar nada, un plan de estudio para una evaluación del usuario que ya tiene fecha: cuántas horas, y qué " +
+      "bloques de 50 minutos caben antes de la prueba esquivando su calendario. Es solo para comentárselo o explicárselo; " +
+      "agendarlo lo decide el usuario con un toque en la isla (tú no puedes agendar). Si falta la fecha de la prueba, " +
+      "dile que la ponga («el certamen 2 de cálculo es el viernes 9 a las 15:00»). Los títulos de los bloques son genéricos.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ramo: { type: "string", description: "Nombre o palabra clave del ramo" },
+        evaluacion: { type: "string", description: "Por ejemplo «certamen 2»" },
+        horas: { type: "number", minimum: 1, maximum: 12, description: "Horas a repartir; si no, la fórmula de Brote" },
+      },
+      required: ["ramo", "evaluacion"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Plan de estudio: calcular (sin guardar)", readOnlyHint: true },
+  },
+  {
+    name: "estudio_hoy",
+    description: "Los bloques de estudio que el usuario tiene planeados para hoy (los pendientes y los ya hechos).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Plan de estudio: bloques de hoy", readOnlyHint: true },
+  },
+  {
+    name: "estudio_estadisticas",
+    description:
+      "Cuánto ha estudiado el usuario (pomodoros, bloques de su plan de estudio hechos y lo que anotó a mano), en minutos reales: " +
+      "total de un periodo (hoy, ayer, esta semana, la semana pasada, este mes), por ramo, su racha de días seguidos (al menos " +
+      "25 minutos por día) y la semana día por día. Solo lectura. Son datos personales del usuario: úsalos solo para responderle.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        periodo: { type: "string", enum: ["hoy", "ayer", "esta semana", "la semana pasada", "este mes"], default: "esta semana" },
+        ramo: { type: "string", description: "Nombre o palabra clave de un ramo, opcional" },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Estudio: estadísticas", readOnlyHint: true },
+  },
+  {
     name: "motor_proponer_plantilla",
     description:
       "Propone una plantilla para que el motor de comandos entienda, SIN IA, frases como la del usuario. " +
@@ -500,7 +549,7 @@ function fechaHora(ms: number): string {
 }
 
 /** Las herramientas que necesitan esperar algo (el puente de Brote, el iCal, osascript). */
-async function usarEsperando(nombre: string, args: any): Promise<string> {
+async function usarEsperando(gastos: Gastos, nombre: string, args: any): Promise<string> {
   switch (nombre) {
     case "calendario_proximos": {
       const horas = Number.isInteger(args.horas) ? Math.min(Math.max(args.horas, 1), 72) : 24;
@@ -585,6 +634,34 @@ async function usarEsperando(nombre: string, args: any): Promise<string> {
         entregas: lista.map((e) => ({ curso: e.curso, titulo: e.titulo, vence: fechaHora(e.entregaMs), entregada: e.entregada, url: e.url })),
       });
     }
+    case "estudio_plan": {
+      const { ramo } = ramoPorNombre(gastos, args.ramo);
+      if (typeof args.evaluacion !== "string") throw new ErrorDeUso("Falta la «evaluacion»");
+      const notas = new Notas(gastos, new Ramos(gastos));
+      const e = buscarEvaluacion(args.evaluacion, notas.listar(ramo.id));
+      if (!e) throw new ErrorDeUso(`No hay una evaluación «${args.evaluacion}» en ${ramo.nombre}`);
+      const horas = typeof args.horas === "number" && Number.isFinite(args.horas) ? args.horas : undefined;
+      // El calendario lo mira Brote (tiene el permiso); si no está abierto, se calcula sin él y se dice.
+      const deBrote = await pedirAlPuente("/consulta", { tipo: "calendario" });
+      const eventos: EventoCalendario[] | null = deBrote && Array.isArray(deBrote.eventos) ? deBrote.eventos : null;
+      const ficha = armarFichaNotas(ramo.id, notas.listar(ramo.id), notas.ajustes(ramo.id));
+      const r = proponerPlan(ficha, e.id, { ahoraMs: Date.now(), horas, ocupados: (eventos ?? []).filter((x) => !x.todoElDia) });
+      if (!r.ok) throw new ErrorDeUso(r.motivo);
+      const p = r.propuesta;
+      return JSON.stringify({
+        ramo: ramo.nombre,
+        evaluacion: e.nombre,
+        prueba: p.conHora ? fechaHora(p.pruebaMs) : fechaIso(new Date(p.pruebaMs)),
+        pesoPorCiento: p.peso,
+        notaQueNecesita: p.necesaria,
+        horasQueSugiereBrote: p.horasObjetivo,
+        horasRepartidas: p.horas,
+        bloques: p.bloques.map((b) => ({ tipo: b.tipo, titulo: tituloDeBloque(b.tipo, ramo.nombre), inicio: fechaHora(b.inicioMs), fin: fechaHora(b.finMs) })),
+        avisos: p.avisos,
+        calendario: eventos ? "mirado" : "no pude mirarlo (Brote cerrado o sin calendario): asumí que está libre",
+        nota: "Esto NO está guardado ni agendado. El usuario lo agenda con un toque en la isla (pestaña Estudio → Planear estudio).",
+      });
+    }
     case "claude_uso": {
       const ahora = Date.now();
       // Los tokens los calcula Brote (lee las transcripciones de forma incremental); sin Brote, solo el plan guardado.
@@ -632,7 +709,7 @@ function periodoUso(p: ResumenPeriodo) {
   };
 }
 
-const ESPERAN = new Set(["claude_uso", "aula_entregas", "calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
+const ESPERAN = new Set(["estudio_plan", "claude_uso", "aula_entregas", "calendario_proximos", "calendario_crear", "programador_sesiones", "musica_estado", "musica_control"]);
 
 /** Los argumentos de `calendario_crear` → el evento, o un error de uso. */
 function leerNuevoEvento(args: any): NuevoEvento {
@@ -898,6 +975,38 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         texto: trozo.texto,
       });
     }
+    case "estudio_estadisticas": {
+      const periodo = typeof args.periodo === "string" ? FORMAS_DE_PERIODO[normalizar(args.periodo)] : "esta semana";
+      if (!periodo || periodo === "el mes pasado" || periodo === "este año") throw new ErrorDeUso("«periodo» debe ser hoy, ayer, esta semana, la semana pasada o este mes");
+      const ramos = new Ramos(gastos);
+      const registros = new EstadisticasEstudio(gastos, ramos).registros();
+      const ahora = Date.now();
+      let ramo: { id: number; nombre: string } | null = null;
+      if (typeof args.ramo === "string" && args.ramo.trim() !== "") ramo = ramoPorNombre(gastos, args.ramo).ramo;
+      const rango = rangoDe(periodo, new Date(ahora));
+      const minutos = minutosEnRango(registros, rango.desde.getTime(), rango.hasta.getTime(), ramo ? ramo.id : undefined);
+      const resumen = resumirEstudio(registros, ahora);
+      const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
+      return JSON.stringify({
+        periodo,
+        ramo: ramo ? ramo.nombre : null,
+        minutos,
+        texto: formatearMinutos(minutos),
+        rachaDias: racha(registros, ahora),
+        esteSemana: { minutos: resumen.totalMin, semanaPasadaALaMismaAltura: resumen.pasadaMin, lunesADomingo: resumen.porDia },
+        porRamoEstaSemana: resumen.porRamo.map((x) => ({ ramo: x.ramoId === null ? "sin ramo" : (nombres.get(x.ramoId) ?? "sin ramo"), minutos: x.min })),
+        hayRegistros: registros.length > 0,
+        desde: resumen.desdeMs === null ? null : fechaIso(new Date(resumen.desdeMs)),
+      });
+    }
+    case "estudio_hoy": {
+      const ahora = new Date();
+      const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime();
+      const ramos = new Ramos(gastos);
+      const planes = new PlanesEstudio(gastos, new Notas(gastos, ramos));
+      const nombres = new Map(ramos.listar(true).map((r) => [r.id, r.nombre]));
+      return textoBloquesDeHoy(planes.bloquesEntre(inicio, new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1).getTime()), (id) => nombres.get(id) ?? "tu ramo");
+    }
     case "ramos_listar":
       return JSON.stringify({ ramos: new Ramos(gastos).listar().map((r) => ({ id: r.id, nombre: r.nombre, color: r.color, palabrasClave: r.alias })) });
     case "ramos_crear": {
@@ -981,7 +1090,7 @@ export function atender(gastos: Gastos, mensaje: any): object | null | Promise<o
       const funcion = funcionDeHerramienta(String(params?.name));
       if (funcion && !funciones.activa(funcion)) return responder({ content: [{ type: "text", text: MENSAJE_APAGADA_MCP }] });
       if (ESPERAN.has(String(params?.name))) {
-        return usarEsperando(String(params?.name), params?.arguments ?? {}).then(
+        return usarEsperando(gastos, String(params?.name), params?.arguments ?? {}).then(
           (texto) => responder({ content: [{ type: "text", text: texto }] }),
           (error) => {
             const motivo = error instanceof ErrorDeUso ? error.message : "No pude completar la consulta";

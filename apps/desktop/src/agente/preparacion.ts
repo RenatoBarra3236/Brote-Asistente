@@ -2,7 +2,7 @@
 // la barra de "Preparar", cuáles necesitan que el usuario haga algo, el orden de los arreglos
 // automáticos y qué se sabe de cada permiso de macOS.
 
-import { FUNCIONES, type Funcion, type IdFuncion, type PermisoMac } from "./funciones.ts";
+import { FUNCIONES, NECESITAN_IA, type Funcion, type IdFuncion, type PermisoMac } from "./funciones.ts";
 
 export type EstadoPaso = "ok" | "falta" | "opcional";
 
@@ -54,6 +54,8 @@ export function necesitaAlUsuario(paso: Paso, consentimientos: ReadonlySet<strin
 
 /** El próximo paso técnico que el script puede arreglar solo (con el consentimiento, si lo pide). */
 export function siguienteAutomatico(pasos: readonly Paso[], consentimientos: ReadonlySet<string>): Paso | undefined {
+  // Los arreglos automáticos (instalar OpenClaw con npm…) necesitan el Node del sistema: sin él, primero va Node.
+  if (pasos.some((p) => p.id === "node" && p.estado === "falta")) return undefined;
   return pasos.find(
     (p) =>
       esTecnico(p) &&
@@ -98,6 +100,54 @@ export function preparacion(pasos: readonly Paso[], consentimientos: ReadonlySet
  */
 export function necesitaAsistente(pasos: readonly Paso[], hayFunciones: boolean): boolean {
   return !hayFunciones && pasos.some((p) => esTecnico(p) && p.estado === "falta");
+}
+
+// ---------------------------------------------------------------- «Empezar sin IA»
+
+/** Los pasos técnicos de la IA (OpenClaw y Claude Code): todo menos Node, que el motor sí necesita. */
+export const PASOS_DE_IA: readonly string[] = TECNICOS.filter((id) => id !== "node");
+
+/**
+ * «Empezar sin IA» se ofrece cuando el script de revisión corrió (Brote tiene con qué funcionar: el
+ * Node del sistema o el que trae la app) y todavía falta algo técnico. Si solo llegó el paso «Node»
+ * (Rust no halló ninguno), no hay con qué correr nada y no se ofrece.
+ */
+export function puedeEmpezarSinIA(pasos: readonly Paso[]): boolean {
+  const reviso = pasos.some((p) => p.id === "openclaw");
+  return reviso && pasos.some((p) => esTecnico(p) && p.estado === "falta");
+}
+
+/** Las funciones que quedan apagadas porque necesitan la IA (solo cuando Brote está sin IA). */
+export function sinLasDeIA(activas: Record<IdFuncion, boolean>): Record<IdFuncion, boolean> {
+  const nuevas = { ...activas };
+  for (const id of NECESITAN_IA) nuevas[id] = false;
+  return nuevas;
+}
+
+/** La función necesita la IA y Brote está sin ella: su interruptor no se puede prender. */
+export function bloqueadaSinIA(id: IdFuncion, sinIA: boolean): boolean {
+  return sinIA && NECESITAN_IA.includes(id);
+}
+
+// ---------------------------------------------------------------- diagnóstico
+
+/**
+ * Lo que se copia con «Copiar diagnóstico»: versiones y estado de cada paso técnico y qué funciones
+ * están prendidas. Solo ids, estados y los textos fijos de la revisión: nunca rutas, nombres, claves ni
+ * nada tuyo (el `detalle` de un paso puede traer una ruta o el mensaje de un error, y no se incluye).
+ */
+export function armarDiagnostico(datos: {
+  version: string;
+  sistema: string;
+  pasos: readonly Paso[];
+  activas: Record<IdFuncion, boolean>;
+  sinIA: boolean;
+}): string {
+  const lineas = [`Brote ${datos.version} · ${datos.sistema}${datos.sinIA ? " · sin IA" : ""}`, "", "Pasos:"];
+  for (const p of datos.pasos) lineas.push(`- ${p.id}: ${p.estado}`);
+  const prendidas = FUNCIONES.filter((f) => datos.activas[f.id]).map((f) => f.id);
+  lineas.push("", `Funciones prendidas: ${prendidas.length > 0 ? prendidas.join(", ") : "ninguna"}`);
+  return lineas.join("\n");
 }
 
 // ---------------------------------------------------------------- permisos de macOS

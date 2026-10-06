@@ -10,8 +10,10 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { WORKSPACE, memoriaDeClaudeCode } from "./rutas.ts";
+import { CONVERSACION, MESES, olvidarConversacion, recortar, resumenDeConversacion } from "./conversaciones.ts";
+import { WORKSPACE, memoriaDeClaudeCode, transcripcionesDeClaudeCode } from "./rutas.ts";
 
 export type TipoRecuerdo = "brote" | "conversacion" | "importado";
 
@@ -31,18 +33,22 @@ export interface Lugares {
   brote: string;
   conversaciones: string;
   importados: string;
+  /** Las transcripciones de Claude Code del espacio de Brote (el chat completo de cada conversación). */
+  transcripciones?: string;
+  /** Las ventanas de conversaciones ya olvidadas (ver `conversaciones.ts`). */
+  olvidadas?: string;
 }
 
 export const LUGARES: Lugares = {
   brote: memoriaDeClaudeCode(WORKSPACE),
   conversaciones: join(WORKSPACE, "memory"),
   importados: join(WORKSPACE, "memory", "imports", "claude-code"),
+  transcripciones: transcripcionesDeClaudeCode(WORKSPACE),
+  olvidadas: process.env.ASISTENTE_CONVERSACIONES_OLVIDADAS ?? join(homedir(), ".asistente-prototipo", "conversaciones-olvidadas.json"),
 };
 
 const INDICE = "MEMORY.md";
 const NOMBRE_VALIDO = /^[\w.-]+$/;
-const CONVERSACION = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})\.md$/;
-const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
 /** Manda un archivo o carpeta a la Papelera de macOS (o lo borra en otros sistemas). */
 export function aLaPapelera(ruta: string): void {
@@ -95,9 +101,6 @@ function fechaDe(ruta: string, campo?: string): string | null {
   }
 }
 
-function recortar(texto: string, max: number): string {
-  return texto.length > max ? `${texto.slice(0, max - 1).trimEnd()}…` : texto;
-}
 
 function archivosMd(carpeta: string): string[] {
   if (!existsSync(carpeta)) return [];
@@ -138,18 +141,7 @@ export function listarRecuerdos(lugares: Lugares = LUGARES): Recuerdo[] {
     if (!partes) continue;
     const ruta = join(lugares.conversaciones, nombre);
     const contenido = readFileSync(ruta, "utf8");
-    const resumen = (contenido.split("## Conversation Summary")[1] ?? contenido)
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((linea) =>
-        linea
-          .replace(/^user:\s*/, "Tú: ")
-          .replace(/^assistant:\s*/, "Brote: ")
-          .replace(/"(.*)"$/, "$1")
-          .replace(/\\n/g, " "),
-      )
-      .join("\n");
+    const resumen = resumenDeConversacion(contenido);
     const [, anio, mes, dia, hora, minuto] = partes;
     recuerdos.push({
       id: `conversacion:${nombre}`,
@@ -210,10 +202,14 @@ function quitarDelIndice(lugares: Lugares, nombre: string): void {
 }
 
 /** Olvida un recuerdo: va a la Papelera y, si era de Brote, sale de su índice. */
-export function olvidarRecuerdo(id: string, lugares: Lugares = LUGARES, eliminar: (ruta: string) => void = aLaPapelera): void {
+export function olvidarRecuerdo(id: string, lugares: Lugares = LUGARES, eliminar: (ruta: string) => void = aLaPapelera): { transcripciones: number; quedan: number } {
   const { tipo, nombre, ruta } = ubicar(id, lugares);
+  // Una conversación también lleva su chat completo (las transcripciones de Claude Code con solo mensajes de ella):
+  // va primero, porque el resumen es lo que dice dónde empieza y termina.
+  const chat = tipo === "conversacion" ? olvidarConversacion(nombre, lugares, eliminar) : { borradas: 0, quedan: 0 };
   eliminar(ruta);
   if (tipo === "brote") quitarDelIndice(lugares, nombre);
+  return { transcripciones: chat.borradas, quedan: chat.quedan };
 }
 
 /** Corrige un recuerdo de Brote: el texto nuevo reemplaza al anterior y a su resumen. */

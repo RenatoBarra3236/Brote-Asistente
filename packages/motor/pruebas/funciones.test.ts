@@ -16,6 +16,8 @@ import {
   funcionesQueUsan,
   normalizarFunciones,
   presetDe,
+  NECESITAN_IA,
+  SUGERIDAS_DESPUES,
   serializarFunciones,
 } from "../src/funciones.ts";
 import { FuncionesVigiladas, leerFunciones } from "../src/funciones-archivo.ts";
@@ -75,6 +77,26 @@ describe("funciones.json", () => {
     assert.deepEqual(IDS_FUNCIONES.filter((id) => activasDePreset("minimo")[id]), ["gastos"]);
     assert.equal(presetDe(activasDePreset("programador")), "programador");
     assert.equal(presetDe({ ...activasDePreset("estudiante"), musica: false }), null);
+  });
+
+  it("«Para empezar» no pide ningún permiso de macOS y deja lo demás como sugerido", () => {
+    const inicio = activasDePreset("inicio");
+    assert.deepEqual(IDS_FUNCIONES.filter((id) => inicio[id]), ["gastos", "temporizadores", "equipo", "estudio"]);
+    for (const f of FUNCIONES.filter((f) => inicio[f.id])) assert.equal(f.permiso, null, f.id);
+    for (const id of SUGERIDAS_DESPUES) assert.equal(inicio[id], false, id);
+    assert.equal(presetDe(inicio), "inicio");
+    // El valor de quien ya usaba Brote sin archivo no cambia.
+    assert.equal(presetDe(leerFunciones(join(CARPETA, "no-existe.json")).activas), "estudiante");
+  });
+
+  it("sinIA va y vuelve por el archivo; solo cuenta si es verdadero y las funciones de IA existen", () => {
+    assert.equal(leerFunciones(join(CARPETA, "no-existe.json")).sinIA, false);
+    const config = normalizarFunciones({ sinIA: true, activas: {} });
+    assert.equal(config.sinIA, true);
+    assert.equal(normalizarFunciones(JSON.parse(serializarFunciones(config))).sinIA, true);
+    assert.equal(normalizarFunciones({ sinIA: "sí" }).sinIA, false);
+    assert.equal("sinIA" in JSON.parse(serializarFunciones(normalizarFunciones({}))), false);
+    for (const id of NECESITAN_IA) assert.ok(IDS_FUNCIONES.includes(id), id);
   });
 
   it("cada función del catálogo está una vez, y cada tarjeta tiene su función", () => {

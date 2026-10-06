@@ -18,6 +18,8 @@
 //
 // "Lo que sé de ti" (paso 9):
 //   { "tipo": "memoria-listar" }                        → respuesta con "datos": { recuerdos, frases, sinIA }
+//   { "tipo": "conversaciones-listar" }                → "datos": [{ id, titulo, fecha, extracto }] (lo que ve «Anteriores» en la isla)
+//   { "tipo": "conversacion-ver", "conversacion": "2026-10-05-1841.md" }  → "datos": el texto guardado (sin llamar a la IA)
 //   { "tipo": "memoria-olvidar", "recuerdo": "brote:x.md" }
 //   { "tipo": "memoria-corregir", "recuerdo": "brote:x.md", "texto": "…" }
 //   { "tipo": "frase-olvidar", "plantilla": 3 }
@@ -335,7 +337,8 @@ import {
   resolverAprobacion,
   suscribirseALaSesion,
 } from "./conexion.ts";
-import { buscarRecuerdos, corregirRecuerdo, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
+import { buscarRecuerdos, corregirRecuerdo, LUGARES, listarRecuerdos, olvidarRecuerdo } from "./memoria.ts";
+import { leerConversacion, listarConversaciones } from "./conversaciones.ts";
 import { leerConectados, nombreBonito, permitidaSinPreguntar } from "./conectores.ts";
 import { limpiarRegistros } from "./limpiar-registros.ts";
 import { migrarFunciones } from "./migrar-funciones.ts";
@@ -1866,7 +1869,11 @@ async function atender(pedido: any): Promise<Extra> {
       if (activa("estudio")) revisarNotas();
       return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
-    if (!conectado) throw new Error("OpenClaw no está conectado; sin él solo funcionan los comandos de gastos");
+    if (!conectado) throw new Error(
+        funciones.sinIA
+          ? "La IA no está activada: eso lo responde la IA. Las frases con ⚡ (gastos, pomodoro, notas…) funcionan igual; para activarla, 🌱 → Configurar Brote → Estado"
+          : "OpenClaw no está conectado; sin él solo funcionan las frases sin IA (gastos, pomodoro, notas…)",
+      );
     ultimoMensajeAlAgente = texto;
     anotacionesDelTurno.clear();
     await enviarMensaje(cliente!, texto);
@@ -1896,11 +1903,19 @@ async function atender(pedido: any): Promise<Extra> {
           sinIA: porcentajeSinIA(gastos),
         },
       };
+    case "conversaciones-listar":
+      return { datos: listarConversaciones(LUGARES) };
+    case "conversacion-ver":
+      if (typeof pedido.conversacion !== "string") break;
+      return { datos: leerConversacion(pedido.conversacion, LUGARES) };
     case "memoria-olvidar":
       if (typeof pedido.recuerdo !== "string") break;
-      olvidarRecuerdo(pedido.recuerdo);
-      registrar(`recuerdo olvidado: ${pedido.recuerdo}`);
-      return {};
+      {
+        const olvidado = olvidarRecuerdo(pedido.recuerdo);
+        registrar(`recuerdo olvidado: ${pedido.recuerdo}`);
+        // Una conversación también olvida su chat completo; `quedan` = archivos de Claude Code que mezclan otra conversación.
+        return { datos: olvidado };
+      }
     case "memoria-corregir":
       if (typeof pedido.recuerdo !== "string" || typeof pedido.texto !== "string") break;
       corregirRecuerdo(pedido.recuerdo, pedido.texto);

@@ -1,6 +1,7 @@
 import { open as abrirDialogo } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { EXTENSIONES_DOCUMENTO } from "./agente/documentos";
+import type { ConversacionGuardada, ConversacionLeida } from "./agente/conversaciones";
 import type { Ramo } from "./agente/estudio";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -19,7 +20,8 @@ import {
   type TemporizadorActivo,
 } from "./agente/puente";
 import { TransporteSimulado } from "./agente/simulado";
-import type { ConfigFunciones } from "./agente/funciones";
+import { activasDePreset, type ConfigFunciones } from "./agente/funciones";
+import { descartarSugerencia, leerPrimerosPasos, marcarPorIntencion, ocultarPrimerosPasos, vistaPrimerosPasos } from "./agente/primeros-pasos";
 import type { EstadoUso } from "./agente/uso";
 import type { Trabajando } from "./agente/especialistas";
 import { avisoGrabacionBorrada } from "./agente/papelera";
@@ -141,6 +143,9 @@ async function elegirDocumento(): Promise<string | null> {
   return typeof ruta === "string" ? ruta : null;
 }
 
+/** «Primeros pasos»: lo asigna `iniciar` (cuando existe el panel) para tachar pasos al resolver una frase sin IA. */
+let alResolverIntencion: (intencion: string) => void = () => {};
+
 async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
   if ((await invoke<string>("agente_modo")) === "simulado") {
     return { agente: new Agente(new TransporteSimulado({ escenas: ESCENAS })), puente: null };
@@ -150,6 +155,7 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
   // "¿Qué sabes de mí?" lo resuelve el motor sin IA y abre la ventana "Lo que sé de ti".
   const agente = new Agente(puente, {
     alResolverSinIA: (intencion, datos) => {
+      alResolverIntencion(intencion);
       if (intencion === "ver-memoria") void invoke("abrir_memoria");
       // "Abre la última descarga": el motor eligió el archivo y si se puede abrir o solo mostrar.
       alPedirGrabarPorFrase(datos);
@@ -184,11 +190,34 @@ async function iniciar(): Promise<void> {
   // La pestaña Grabar pide al puente lo guardado (se asigna donde el puente existe; sin puente no hay pestaña).
   let pedirGrabaciones = () => {};
   // La interfaz para hablarle al agente: dentro de la isla (notch) o junto a Brote (flotante).
+  // «Primeros pasos» (bloque F): lo que se guarda y se calcula está en agente/primeros-pasos.ts.
+  let funcionesActuales: ConfigFunciones = { activas: activasDePreset("estudiante"), sinIA: false, tarjetas: { orden: [], ocultas: [] } };
+  const actualizarPrimerosPasos = () =>
+    panel.mostrarPrimerosPasos(vistaPrimerosPasos(leerPrimerosPasos(localStorage), funcionesActuales.activas, Date.now()));
   const panel = new Panel(agente, document.body, {
     flotante: !isla,
     ...(puente
       ? {
-          alAbrirMemoria: () => void invoke("abrir_memoria"),
+          // «Anteriores»: las conversaciones pasadas, de este computador (el puente lee los resúmenes de OpenClaw y las
+          // transcripciones de Claude Code del espacio de Brote).
+          alListarConversaciones: () => puente.consultar<ConversacionGuardada[]>({ tipo: "conversaciones-listar" }),
+          alLeerConversacion: (id: string) => puente.consultar<ConversacionLeida>({ tipo: "conversacion-ver", conversacion: id }),
+        }
+      : {}),
+    alOcultarPrimerosPasos: () => {
+      ocultarPrimerosPasos(localStorage);
+      actualizarPrimerosPasos();
+    },
+    alDescartarSugerencia: (id) => {
+      descartarSugerencia(localStorage, id);
+      actualizarPrimerosPasos();
+    },
+    ...(puente
+      ? {
+          alAbrirMemoria: () => {
+            if (marcarPorIntencion(localStorage, "ver-memoria")) actualizarPrimerosPasos();
+            void invoke("abrir_memoria");
+          },
           alAbrirConfiguracion: () => void invoke("abrir_configuracion"),
           alActualizarPlan: () =>
             void puente
@@ -354,8 +383,18 @@ async function iniciar(): Promise<void> {
   setInterval(actualizarConcentracion, 5000);
   if (puente) {
     // Qué funciones están prendidas y qué tarjetas se ven (Configurar Brote → Funciones).
-    puente.alCambiarFunciones((config) => panel.mostrarFunciones(config));
-    void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then((config) => panel.mostrarFunciones(config), () => {});
+    const alLlegarFunciones = (config: ConfigFunciones) => {
+      funcionesActuales = config;
+      panel.mostrarFunciones(config);
+      actualizarPrimerosPasos();
+    };
+    puente.alCambiarFunciones(alLlegarFunciones);
+    void puente.consultar<ConfigFunciones>({ tipo: "funciones-estado" }).then(alLlegarFunciones, () => {});
+    alResolverIntencion = (intencion) => {
+      if (marcarPorIntencion(localStorage, intencion)) actualizarPrimerosPasos();
+    };
+    // La sugerencia cambia de un día a otro y la tarjeta se apaga sola a los 7 días.
+    setInterval(actualizarPrimerosPasos, 30 * 60 * 1000);
     pedirAgenda = () => void puente.consultar<EstadoAgenda>({ tipo: "agenda-estado" }).then((estado) => panel.mostrarAgenda(estado), () => {});
     // Estudio: los ramos llegan por aviso cuando cambian (también si el agente agrega uno); sus fichas se piden al ver la pestaña.
     pedirEstudio = () => void puente.estadoEstudio().then((estado: EstadoEstudio) => panel.mostrarEstudio(estado), () => {});

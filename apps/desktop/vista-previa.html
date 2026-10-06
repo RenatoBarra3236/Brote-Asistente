@@ -250,6 +250,10 @@
               switch (pedido.tipo) {
                 case "funciones-estado":
                   return responder(id, { datos: funciones });
+                case "conversaciones-listar":
+                  return responder(id, { datos: window.__conversaciones() });
+                case "conversacion-ver":
+                  return responder(id, { datos: window.__conversacion(pedido.conversacion) });
                 case "temporizadores-listar":
                   return responder(id, { datos: datos.temporizadores });
                 case "musica-estado":
@@ -591,6 +595,62 @@
               { id: 3, grabacion: "2026-10-05-090000", tipo: "tarea", titulo: "Leer capítulo 4", detalle: null, inicioMs: en(2, 23, 59), conHora: false },
             ]
           : [];
+      }
+      // «Primeros pasos» (bloque F): ?primeros=pasos|parcial|hechos|oculta|vieja deja lo que guardaría el asistente
+      // (sin el parámetro, como quien ya usaba Brote: no hay tarjeta). `&dia=N` finge que van N días de uso.
+      try {
+        const modoPrimeros = parametros.get("primeros");
+        const dia = Number(parametros.get("dia") ?? 0);
+        const DIA = 24 * 60 * 60 * 1000;
+        const base = { desde: Date.now() - dia * DIA, hechos: [], descartadas: [], oculta: false };
+        const recetas = {
+          pasos: base,
+          parcial: { ...base, hechos: ["gasto", "pomodoro"] },
+          hechos: { ...base, hechos: ["gasto", "pomodoro", "ramo", "memoria"] },
+          oculta: { ...base, oculta: true },
+          vieja: { ...base, desde: Date.now() - 9 * DIA },
+        };
+        if (modoPrimeros && recetas[modoPrimeros]) localStorage.setItem("brote.primeros-pasos", JSON.stringify(recetas[modoPrimeros]));
+        else localStorage.removeItem("brote.primeros-pasos");
+      } catch {}
+      // «Anteriores» (conversaciones pasadas): ?anteriores=lista|chat|resumen|vacio la abre sola con datos de ejemplo.
+      {
+        const modoAnteriores = parametros.get("anteriores");
+        const hora = (d, h, m) => new Date(2026, 9, d, h, m).toISOString();
+        const mensajesEj = [
+          { rol: "tu", texto: "usa a tu investigador para averiguar las 3 diferencias principales entre mitosis y meiosis", t: 1 },
+          { rol: "brote", texto: "Esto me trajo el investigador sobre mitosis vs meiosis 🌱\n\n1. **Divisiones y resultado:** la mitosis hace una sola división y da 2 células idénticas; la meiosis hace dos y da 4 distintas.\n2. **Dónde ocurre:** células del cuerpo vs células sexuales.", t: 2 },
+          { rol: "tu", texto: "¿y cuál cae más en las pruebas de biología?", t: 3 },
+          { rol: "brote", texto: "Suele caer la comparación mitosis vs meiosis: te dejo un plan corto si quieres.", t: 4 },
+        ];
+        window.__conversaciones = () =>
+          modoAnteriores === "vacio"
+            ? []
+            : [
+                { id: "actual", titulo: "La conversación de ahora", fecha: hora(6, 17, 34), extracto: "¿qué tengo que estudiar hoy?", mensajes: 8 },
+                { id: "2026-10-05-1841.md", titulo: "Conversación del 5 de octubre, 18:41", fecha: hora(5, 18, 41), extracto: "Tú: usa a tu investigador para averiguar las 3 diferencias principales entre mitosis y meiosis\nBrote: Esto me trajo…", mensajes: 4 },
+                { id: "2026-10-02-1523.md", titulo: "Conversación del 2 de octubre, 15:23", fecha: hora(2, 15, 23), extracto: "Tú: hola\nBrote: hola 🌱", mensajes: 0 },
+              ];
+        window.__conversacion = (id) => ({
+          id,
+          titulo: id === "actual" ? "La conversación de ahora" : "Conversación del 5 de octubre, 18:41",
+          resumen: "Tú: hola\nBrote: hola 🌱",
+          mensajes: modoAnteriores === "resumen" ? [] : mensajesEj,
+          recortada: false,
+        });
+        if (modoAnteriores) {
+          window.addEventListener("load", () => {
+            const esperar = (f, n = 40) => { const v = f(); if (v) return v; if (n > 0) return new Promise((r) => setTimeout(r, 100)).then(() => esperar(f, n - 1)); };
+            (async () => {
+              const boton = await esperar(() => [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Anteriores")));
+              boton?.click();
+              if (modoAnteriores === "chat" || modoAnteriores === "resumen") {
+                const fila = await esperar(() => document.querySelectorAll(".anterior-fila")[modoAnteriores === "resumen" ? 1 : 0]);
+                fila?.click();
+              }
+            })();
+          });
+        }
       }
       // ?vista=semana|lista deja elegida la vista de la Agenda (en la app se recuerda en localStorage).
       try {

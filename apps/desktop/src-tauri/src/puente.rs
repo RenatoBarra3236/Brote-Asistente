@@ -26,14 +26,16 @@ impl Puente {
     pub fn iniciar(app: &AppHandle) -> Puente {
         let script = crate::entorno::script_del_puente(app);
         let conexion = Arc::new(Mutex::new(aviso_desconectado("Conectando con OpenClaw…")));
-        let Some((node, _)) = crate::entorno::buscar_node() else {
+        let Some((node, _, embebido)) = crate::entorno::node_para_brote(app) else {
             let detalle = format!("No encontré Node {} o superior: instálalo desde nodejs.org", crate::entorno::NODE_MINIMO);
             eprintln!("[puente] {detalle}");
             *conexion.lock().unwrap() = aviso_desconectado(&detalle);
             return Puente { hijo: Mutex::new(None), entrada: Mutex::new(None), conexion };
         };
 
-        let lanzado = crate::entorno::sin_consola(crate::entorno::sin_clave_api(&mut Command::new(&node)))
+        let mut comando = Command::new(&node);
+        crate::entorno::marcar_embebido(&mut comando, embebido);
+        let lanzado = crate::entorno::sin_consola(crate::entorno::sin_clave_api(&mut comando))
             .arg(&script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

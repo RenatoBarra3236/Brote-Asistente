@@ -53,3 +53,11 @@ export const WORKSPACE: string =
 export function memoriaDeClaudeCode(proyecto: string): string {
   return join(homedir(), ".claude", "projects", proyecto.replace(/[^A-Za-z0-9]/g, "-"), "memory");
 }
+
+/**
+ * Las transcripciones que Claude Code guarda de un proyecto: `~/.claude/projects/<ruta>/*.jsonl` (la misma
+ * carpeta que la memoria, sin `memory`). Para el espacio de Brote, ahí queda el chat completo de cada conversación.
+ */
+export function transcripcionesDeClaudeCode(proyecto: string): string {
+  return join(homedir(), ".claude", "projects", proyecto.replace(/[^A-Za-z0-9]/g, "-"));
+}

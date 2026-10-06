@@ -90,3 +90,58 @@ describe("al terminar el asistente", () => {
     assert.deepEqual(funcionesSinConfigurar({ ...activas, aula: false, programador: false }, pasos), []);
   });
 });
+
+describe("Empezar sin IA y diagnóstico", () => {
+  it("«Empezar sin IA» se ofrece cuando el script corrió y falta algo técnico (también sin Node del sistema)", async () => {
+    const { puedeEmpezarSinIA, PASOS_DE_IA } = await import("../src/agente/preparacion.ts");
+    assert.equal(PASOS_DE_IA.includes("node"), false);
+    assert.equal(PASOS_DE_IA.includes("openclaw"), true);
+    // Sin ningún Node, Rust solo devuelve el paso «Node»: no hay con qué correr nada.
+    const sinNada: Paso[] = [{ id: "node", titulo: "Node", estado: "falta", detalle: "" }];
+    assert.equal(puedeEmpezarSinIA(sinNada), false);
+    // Node ok y la IA pendiente.
+    const conNode = [ok("node"), automatico("openclaw"), ...TECNICOS.slice(2).map((id) => ({ ...ok(id), estado: "falta" as const }))];
+    assert.equal(puedeEmpezarSinIA(conNode), true);
+    // Con el Node de la app: el script corrió, el paso «Node» (del sistema) falta y la IA también.
+    const conEmbebido = [{ ...ok("node"), estado: "falta" as const }, ...conNode.slice(1)];
+    assert.equal(puedeEmpezarSinIA(conEmbebido), true);
+    // Con todo listo no hace falta ofrecerlo.
+    assert.equal(puedeEmpezarSinIA(TECNICOS.map(ok)), false);
+  });
+
+  it("sin IA quedan apagadas las funciones que la necesitan, y sus interruptores bloqueados", async () => {
+    const { sinLasDeIA, bloqueadaSinIA } = await import("../src/agente/preparacion.ts");
+    const todo = activasDePreset("todo");
+    const apagadas = sinLasDeIA(todo);
+    assert.equal(apagadas.especialistas, false);
+    assert.equal(apagadas["memoria-local"], false);
+    assert.equal(apagadas.gastos, true);
+    assert.equal(todo.especialistas, true, "no cambia el original");
+    assert.equal(bloqueadaSinIA("especialistas", true), true);
+    assert.equal(bloqueadaSinIA("especialistas", false), false);
+    assert.equal(bloqueadaSinIA("gastos", true), false);
+  });
+
+  it("el diagnóstico trae ids y estados, nunca el detalle de un paso (que puede traer rutas o errores)", async () => {
+    const { armarDiagnostico } = await import("../src/agente/preparacion.ts");
+    const pasos: Paso[] = [
+      { id: "node", titulo: "Node", estado: "ok", detalle: "Node 24.1 en /Users/ana/.nvm/bin/node" },
+      { id: "claude", titulo: "Claude Code", estado: "falta", detalle: "error: sk-ant-secreto" },
+    ];
+    const texto = armarDiagnostico({ version: "0.1.0", sistema: "macOS", pasos, activas: activasDePreset("inicio"), sinIA: true });
+    assert.match(texto, /Brote 0\.1\.0 · macOS · sin IA/);
+    assert.match(texto, /- node: ok/);
+    assert.match(texto, /- claude: falta/);
+    assert.match(texto, /Funciones prendidas: gastos, temporizadores, equipo, estudio/);
+    assert.doesNotMatch(texto, /Users|ana|secreto|sk-ant/);
+  });
+});
+
+describe("Preparar con el Node de la app", () => {
+  it("sin Node del sistema no se arregla nada automático hasta instalarlo", () => {
+    const pasos = [{ ...ok("node"), estado: "falta" as const }, automatico("openclaw"), ...TECNICOS.slice(2).map((id) => ({ ...ok(id), estado: "falta" as const }))];
+    assert.equal(siguienteAutomatico(pasos, new Set()), undefined);
+    assert.equal(preparacion(pasos, new Set()).hayAutomatico, false);
+    assert.equal(siguienteAutomatico([ok("node"), ...pasos.slice(1)], new Set())?.id, "openclaw");
+  });
+});

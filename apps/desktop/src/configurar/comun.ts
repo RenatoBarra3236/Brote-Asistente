@@ -206,8 +206,8 @@ export async function deshacer(titulo: string, id: string): Promise<void> {
 /** Guarda funciones.json (Rust lo valida contra sus listas cerradas). El puente lo nota solo. */
 export async function guardarFunciones(): Promise<boolean> {
   try {
-    const { activas, tarjetas } = estado.funciones;
-    await invoke("guardar_funciones", { activas, orden: tarjetas.orden, ocultas: tarjetas.ocultas });
+    const { activas, tarjetas, sinIA } = estado.funciones;
+    await invoke("guardar_funciones", { activas, orden: tarjetas.orden, ocultas: tarjetas.ocultas, sinIa: sinIA });
     estado.hayArchivoFunciones = true;
     return true;
   } catch (error) {

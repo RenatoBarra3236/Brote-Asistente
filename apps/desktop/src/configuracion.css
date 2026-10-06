@@ -765,3 +765,26 @@ body {
 .tarjeta.funcion.ancha {
   grid-column: 1 / -1;
 }
+
+/* Bloque F: «Empezar sin IA», recuadro de confianza y diagnóstico. */
+.diagnostico {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+}
+.diagnostico .nota {
+  margin: 0;
+}
+.oferta-sin-ia .botones,
+.confianza .botones {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.lista-confianza {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}

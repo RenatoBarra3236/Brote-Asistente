@@ -660,7 +660,7 @@ export class TransportePuente implements Transporte {
         for (const oyente of this.oyentesAvisoCalendario) oyente(aviso.texto);
         return;
       case "funciones":
-        for (const oyente of this.oyentesFunciones) oyente({ activas: aviso.activas, tarjetas: aviso.tarjetas });
+        for (const oyente of this.oyentesFunciones) oyente({ activas: aviso.activas, sinIA: aviso.sinIA === true, tarjetas: aviso.tarjetas });
         return;
       case "aula":
         for (const oyente of this.oyentesAula) oyente({ configurada: aviso.configurada, proxima: aviso.proxima, pendientes: aviso.pendientes, error: aviso.error });

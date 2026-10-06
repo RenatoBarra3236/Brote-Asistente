@@ -6,6 +6,8 @@
   Parámetros:
     ?escenario=nuevo    primera vez sin Node (con Homebrew): asistente de 3 pasos. "Instalar con Homebrew",
                         "Iniciar sesión" y el consentimiento destraban "Preparar Brote", que avanza solo.
+    ?escenario=nodeok   primera vez con Node ya instalado: aparece «Empezar sin IA» (bloque F)
+    ?escenario=sinia    ya se empezó sin IA: Estado dice «Brote funciona sin IA» y ofrece «Activar la IA»
     ?escenario=listo    todo listo: barra lateral (por defecto)
     ?escenario=roto     ya se usaba Brote, pero OpenClaw está apagado: Estado ofrece "Reparar"
     ?escenario=permiso  todo listo, pero la música no tiene el permiso de Automatización, el Calendario del
@@ -32,33 +34,36 @@
       }
 
       // ---- El estado simulado del computador.
+      // nodeok = primera vez con Node ya instalado («Empezar sin IA» a la vista); sinia = ya se empezó sin IA.
+      const esNuevo = ["nuevo", "nodeok", "sinia"].includes(escenario);
       const sim = {
         presupuesto: escenario === "listo" ? 250000 : null,
         node: escenario !== "nuevo",
-        openclaw: escenario !== "nuevo",
-        claude: escenario !== "nuevo",
-        agente: escenario !== "nuevo",
-        modelo: escenario !== "nuevo",
-        gateway: escenario !== "nuevo" && escenario !== "roto",
-        identidad: escenario !== "nuevo",
-        permisos: escenario !== "nuevo",
-        skill: escenario !== "nuevo",
-        mcp: escenario !== "nuevo",
-        memoria: escenario !== "nuevo",
+        openclaw: !esNuevo,
+        claude: !esNuevo,
+        agente: !esNuevo,
+        modelo: !esNuevo,
+        gateway: !esNuevo && escenario !== "roto",
+        identidad: !esNuevo,
+        permisos: !esNuevo,
+        skill: !esNuevo,
+        mcp: !esNuevo,
+        memoria: !esNuevo,
         "memoria-local": escenario === "listo",
         programador: false,
         statusline: false,
         calendarioMac: escenario === "permiso" ? 2 : escenario === "listo" ? 3 : 0,
         ical: escenario === "listo",
-        aula: escenario !== "nuevo",
+        aula: !esNuevo,
         whisper: parametros.get("grabaciones") === "listo",
         modelos: { base: false, small: parametros.get("grabaciones") === "listo", medium: false, "large-v3-turbo": false },
         grabaciones: null,
         funciones:
-          escenario === "nuevo"
+          escenario === "nuevo" || escenario === "nodeok"
             ? null
             : JSON.stringify({
                 version: 1,
+                ...(escenario === "sinia" ? { sinIA: true } : {}),
                 activas: { gastos: true, temporizadores: true, calendario: true, aula: true, musica: true, descargas: escenario !== "permiso", equipo: true, programador: false, "uso-del-plan": escenario === "listo", "memoria-local": false, especialistas: escenario === "listo", grabaciones: parametros.has("grabaciones") },
                 tarjetas: { orden: ["temporizadores", "calendario", "aula", "musica", "descargas", "claude"], ocultas: [] },
               }),
@@ -316,7 +321,7 @@
             case "leer_funciones":
               return sim.funciones;
             case "guardar_funciones":
-              sim.funciones = JSON.stringify({ version: 1, activas: args.activas, tarjetas: { orden: args.orden, ocultas: args.ocultas } });
+              sim.funciones = JSON.stringify({ version: 1, ...(args.sinIa ? { sinIA: true } : {}), activas: args.activas, tarjetas: { orden: args.orden, ocultas: args.ocultas } });
               console.log("funciones.json", sim.funciones);
               return null;
             case "guardar_calendario":

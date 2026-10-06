@@ -1,5 +1,7 @@
 # Asistente multiplataforma: prototipo
 
+**Brote 🌱: el agente que crece contigo.** Anota tus gastos al tiro sin IA, te ayuda a estudiar (ramos, notas, repaso, plan de estudio y tus apuntes) y todo vive en tu computador: tú decides lo que recuerda. [Presentación](docs/index.md) · [Instalar](docs/instalar.md) · [Todo lo que hace](docs/funciones.md) · [Privacidad](docs/privacidad.md)
+
 > **¿Solo quieres usar Brote?** Sigue la [guía de instalación](docs/instalar.md). Lo de abajo es para desarrollar.
 
 Un personaje animado que vive en el PC, conectado a un agente de IA ([OpenClaw](https://github.com/openclaw/openclaw)), que hace tareas básicas sin IA y sigue siendo el mismo agente cuando le hablas desde el celular.

@@ -275,20 +275,31 @@ function estadoClaude(): { claude: string | null; sesion: any; suscripcion: stri
   return { claude, sesion, suscripcion, conPlan };
 }
 
-export function revisar(): Paso[] {
-  const pasos: Paso[] = [];
-  const version = Number(process.versions.node.split(".")[0]);
-  // Con Homebrew (macOS) se ofrece instalarlo con él; Rust hace lo mismo cuando no hay Node para correr esto.
+/**
+ * El paso «Node». Con Homebrew (macOS) se ofrece instalarlo con él; Rust hace lo mismo cuando no hay Node
+ * para correr el script. `embebido`: el script corre con el Node de la app y no hay uno del sistema.
+ */
+export function pasoNode(versionActual: string, embebido: boolean, conBrew: boolean): Paso {
   const descargar: Accion = { tipo: "enlace", etiqueta: "Descargar Node", enlace: "node" };
-  const conBrew = process.platform === "darwin" && buscarPrograma("brew") !== null;
-  pasos.push({
+  const version = Number(versionActual.split(".")[0]);
+  const bien = !embebido && version >= 24;
+  return {
     id: "node",
     titulo: "Node",
-    estado: version >= 24 ? "ok" : "falta",
-    detalle: `Node ${process.versions.node}${version >= 24 ? "" : ": Brote necesita Node 24 o superior"}`,
-    accion: version >= 24 ? undefined : conBrew ? { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-node" } : descargar,
-    alternativa: version >= 24 || !conBrew ? undefined : descargar,
-  });
+    estado: bien ? "ok" : "falta",
+    detalle: embebido
+      ? "Brote trae su propio Node y funciona con él, sin IA. Para activar la IA (OpenClaw) hace falta instalar Node 24 o superior."
+      : `Node ${versionActual}${version >= 24 ? "" : ": Brote necesita Node 24 o superior"}`,
+    accion: bien ? undefined : conBrew ? { tipo: "terminal", etiqueta: "Instalar con Homebrew", terminal: "brew-node" } : descargar,
+    alternativa: bien || !conBrew ? undefined : descargar,
+  };
+}
+
+export function revisar(): Paso[] {
+  const pasos: Paso[] = [];
+  // Con el Node que viaja dentro de la app (Rust no halló uno del sistema), lo básico funciona; la IA
+  // (OpenClaw, npm) sigue necesitando uno instalado: el paso «Node» habla de ese.
+  pasos.push(pasoNode(process.versions.node, process.env.ASISTENTE_NODE_EMBEBIDO === "1", process.platform === "darwin" && buscarPrograma("brew") !== null));
 
   const versionOpenclaw = openclaw(["--version"]).salida.match(/(\d{4}\.\d+\.\d+)/)?.[1];
   pasos.push({
@@ -595,6 +606,8 @@ function mcpAlDia(): boolean {
 
 /** Lo justo para decidir al iniciar si abrir el asistente, sin ejecutar programas (es rápido). */
 export function rapido(): { listo: boolean } {
+  // «Empezar sin IA»: Brote funciona con solo el motor; la ventana no se abre sola en cada inicio.
+  if (leerFunciones().sinIA) return { listo: true };
   const config = leerConfig();
   const elAgente = agente(config);
   const servidor = config?.mcp?.servers?.gastos;

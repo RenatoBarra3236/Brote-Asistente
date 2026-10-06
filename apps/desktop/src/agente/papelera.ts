@@ -16,6 +16,22 @@ export function avisoOlvidado(enMac: boolean): string {
     : "Listo, lo olvidé y se borró. Para que Brote deje de usarlo ya, empieza una conversación nueva.";
 }
 
+/**
+ * Aviso al olvidar una conversación: además del resumen, su chat completo (las transcripciones de Claude Code
+ * del espacio de Brote). `quedan` = archivos que mezclan otra conversación: no se reescriben, pero lo olvidado
+ * ya no se muestra, y Claude Code los borra solo a los 30 días.
+ */
+export function avisoConversacionOlvidada(enMac: boolean, archivos: number, quedan: number): string {
+  const base = avisoOlvidado(enMac);
+  if (archivos === 0 && quedan === 0) return base;
+  const chat = archivos > 0 ? ` Su chat completo también se ${enMac ? "mandó a la Papelera" : "borró"} (${archivos} ${archivos === 1 ? "archivo" : "archivos"}).` : "";
+  const resto =
+    quedan > 0
+      ? ` ${quedan === 1 ? "Un archivo de Claude Code mezcla" : `${quedan} archivos de Claude Code mezclan`} esa conversación con otra: no se pueden tocar, así que ya no se muestran en la isla y Claude Code los borra solos a los 30 días.`
+      : "";
+  return `${base}${chat}${resto}`;
+}
+
 /** Aviso al olvidar todo sobre un tema (la conversación nueva ya se empezó). */
 export function avisoTemaOlvidado(enMac: boolean, olvidados: number, tema: string): string {
   const cosas = `${olvidados} ${olvidados === 1 ? "cosa" : "cosas"}`;

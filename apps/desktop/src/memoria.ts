@@ -10,7 +10,7 @@ import { NOTA_PLAN_MEMORIA, avisoPlanBorrado, describirPrueba as describirPrueba
 import { describirDocumento, type DocumentoVista } from "./agente/documentos";
 import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
 import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
-import { avisoDocumentoBorrado, confirmarBorrarTodosDocumentos, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, etiquetaAlmacenamiento, explicacionAlmacenamiento, type QueGrabacion } from "./agente/papelera";
+import { avisoDocumentoBorrado, confirmarBorrarTodosDocumentos, avisoGrabacionBorrada, avisoConversacionOlvidada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, etiquetaAlmacenamiento, explicacionAlmacenamiento, type QueGrabacion } from "./agente/papelera";
 import {
   GRUPOS,
   SECCIONES_DE,
@@ -189,8 +189,8 @@ function tarjetaRecuerdo(recuerdo: Recuerdo): HTMLElement {
   }
   botones.append(
     botonOlvidar(async () => {
-      await puente.consultar({ tipo: "memoria-olvidar", recuerdo: recuerdo.id });
-      mostrarAviso(avisoOlvidado(EN_MAC));
+      const olvidado = await puente.consultar<{ transcripciones: number; quedan: number } | undefined>({ tipo: "memoria-olvidar", recuerdo: recuerdo.id });
+      mostrarAviso(recuerdo.tipo === "conversacion" && olvidado ? avisoConversacionOlvidada(EN_MAC, olvidado.transcripciones, olvidado.quedan) : avisoOlvidado(EN_MAC));
       await cargar();
     }),
   );

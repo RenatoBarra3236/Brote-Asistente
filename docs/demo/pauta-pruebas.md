@@ -57,3 +57,17 @@ Si alguien acepta usarlo dos semanas, pídele al final el número que aparece ar
 | 3 | | | | | | | | |
 | 4 | | | | | | | | |
 | 5 | | | | | | | | |
+
+## 4. Semana 1 (a los 7 días, por mensaje o en persona)
+
+Brote no mide el uso desde la app (decisión del bloque F: sin telemetría); el éxito se mide aquí. A los 7 días, pregunta a cada tester, sin guiar:
+
+1. ¿Lo abriste después de la primera vez? ¿Cuántos días de los 7? ¿Qué estabas haciendo cuando lo usaste?
+2. ¿Qué usaste más? ¿Qué dejaste de usar, y por qué?
+3. ¿Empezaste **sin IA** o con la IA? Si empezaste sin IA, ¿la activaste? ¿Por qué sí o por qué no?
+4. ¿Te sirvió la tarjeta **Primeros pasos**? ¿Probaste alguna sugerencia del día? ¿La ocultaste?
+5. ¿Qué te dio desconfianza o te hizo dudar de dejarlo instalado (permisos, avisos, datos)?
+6. ¿Lo seguirías usando? ¿Se lo recomendarías a un compañero? (Criterio de éxito: **3 de 5 dicen que sí**.)
+
+Anota también, para cada uno: sistema, si necesitó **Copiar diagnóstico**, y qué dijo de la **instalación** ahora que Node y Claude pueden esperar.
+

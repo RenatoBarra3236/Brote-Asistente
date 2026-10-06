@@ -94,6 +94,42 @@ pub fn buscar_node() -> Option<(PathBuf, u32)> {
         .find_map(|ruta| version_de(&ruta).filter(|v| *v >= NODE_MINIMO).map(|v| (ruta, v)))
 }
 
+/// El Node que viaja dentro de la app (`recursos/node/node[.exe]`, lo deja `empaquetar-node`). Solo existe
+/// en la app empaquetada: en desarrollo se usa el Node del sistema.
+pub fn node_embebido(app: &AppHandle) -> Option<PathBuf> {
+    let nombre = if cfg!(windows) { "node.exe" } else { "node" };
+    let ruta = recursos(app)?.join("node").join(nombre);
+    ruta.is_file().then_some(ruta)
+}
+
+/// El Node que usan el puente y el asistente: el del sistema si hay uno de la versión mínima y, si no, el de
+/// la app (así Brote funciona sin instalar nada; la IA, que usa OpenClaw, sigue pidiendo el del sistema).
+/// El tercer valor dice si es el de la app. `ASISTENTE_SOLO_NODE_EMBEBIDO=1` ignora el del sistema (solo
+/// para probar ese camino).
+pub fn node_para_brote(app: &AppHandle) -> Option<(PathBuf, u32, bool)> {
+    let sistema = if std::env::var_os("ASISTENTE_SOLO_NODE_EMBEBIDO").is_some() { None } else { buscar_node() };
+    let embebido = node_embebido(app).and_then(|ruta| version_de(&ruta).filter(|v| *v >= NODE_MINIMO).map(|v| (ruta, v)));
+    elegir_node(sistema, embebido)
+}
+
+/// El del sistema gana; el de la app es el respaldo.
+fn elegir_node(sistema: Option<(PathBuf, u32)>, embebido: Option<(PathBuf, u32)>) -> Option<(PathBuf, u32, bool)> {
+    match (sistema, embebido) {
+        (Some((ruta, version)), _) => Some((ruta, version, false)),
+        (None, Some((ruta, version))) => Some((ruta, version, true)),
+        (None, None) => None,
+    }
+}
+
+/// Avisa al script (configurar, puente) que corre con el Node de la app y no con el del sistema: así
+/// «Node» en la revisión significa «el que necesita la IA».
+pub fn marcar_embebido(comando: &mut Command, embebido: bool) -> &mut Command {
+    if embebido {
+        comando.env("ASISTENTE_NODE_EMBEBIDO", "1");
+    }
+    comando
+}
+
 /// Dónde están los archivos que la app lleva adentro (el puente, el servidor MCP y la skill).
 /// En desarrollo se usa el código del repo directamente, sin empaquetar.
 pub fn recursos(app: &AppHandle) -> Option<PathBuf> {
@@ -114,6 +150,26 @@ pub fn script_del_puente(app: &AppHandle) -> PathBuf {
 #[cfg(all(test, unix))]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn el_node_del_sistema_gana_y_el_de_la_app_es_el_respaldo() {
+        let sistema = Some((PathBuf::from("/sistema/node"), 24));
+        let app = Some((PathBuf::from("/app/node"), 24));
+        assert_eq!(elegir_node(sistema.clone(), app.clone()), Some((PathBuf::from("/sistema/node"), 24, false)));
+        assert_eq!(elegir_node(None, app), Some((PathBuf::from("/app/node"), 24, true)));
+        assert_eq!(elegir_node(sistema, None), Some((PathBuf::from("/sistema/node"), 24, false)));
+        assert_eq!(elegir_node(None, None), None);
+    }
+
+    #[test]
+    fn marca_solo_cuando_es_el_de_la_app() {
+        let mut con = Command::new("env");
+        marcar_embebido(&mut con, true);
+        assert!(con.get_envs().any(|(k, _)| k == "ASISTENTE_NODE_EMBEBIDO"));
+        let mut sin = Command::new("env");
+        marcar_embebido(&mut sin, false);
+        assert!(sin.get_envs().next().is_none());
+    }
 
     #[test]
     fn quita_la_clave_heredada_y_deja_el_resto() {

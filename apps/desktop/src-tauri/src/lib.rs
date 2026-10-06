@@ -95,6 +95,12 @@ async fn abrir_memoria(app: AppHandle) -> Result<(), String> {
     abrir_ventana(&app, "memoria", "memoria.html", "Lo que sé de ti", (720.0, 660.0)).await
 }
 
+/// La ventana "Privacidad": el texto de docs/privacidad.md, que viaja dentro de la app.
+#[tauri::command]
+async fn abrir_privacidad(app: AppHandle) -> Result<(), String> {
+    abrir_ventana(&app, "privacidad", "privacidad.html", "Privacidad de Brote", (680.0, 640.0)).await
+}
+
 /// La ventana "Configurar Brote".
 #[tauri::command]
 async fn abrir_configuracion(app: AppHandle) -> Result<(), String> {
@@ -230,10 +236,11 @@ fn crear_icono_de_barra(app: &tauri::App) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let memoria = MenuItem::with_id(app, "memoria", "Lo que sé de ti", true, None::<&str>)?;
+    let privacidad = MenuItem::with_id(app, "privacidad", "Privacidad", true, None::<&str>)?;
     let configurar = MenuItem::with_id(app, "configurar", "Configurar Brote…", true, None::<&str>)?;
     let salir = MenuItem::with_id(app, "salir", "Salir de Brote", true, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&memoria, &configurar, &separador, &salir])?;
+    let menu = Menu::with_items(app, &[&memoria, &privacidad, &configurar, &separador, &salir])?;
 
     let mut icono = TrayIconBuilder::with_id("brote")
         .tooltip("Brote")
@@ -245,6 +252,11 @@ fn crear_icono_de_barra(app: &tauri::App) -> tauri::Result<()> {
                 "memoria" => {
                     tauri::async_runtime::spawn(async move {
                         let _ = abrir_memoria(app).await;
+                    });
+                }
+                "privacidad" => {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = abrir_privacidad(app).await;
                     });
                 }
                 "configurar" => {
@@ -320,6 +332,7 @@ pub fn run() {
             agente_escribir,
             abrir_memoria,
             abrir_configuracion,
+            abrir_privacidad,
             configuracion::configuracion,
             configuracion::abrir_terminal,
             configuracion::abrir_enlace,

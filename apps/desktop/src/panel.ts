@@ -35,6 +35,16 @@ import type {
   TemporizadorActivo,
 } from "./agente/puente";
 import { IDS_TARJETAS, activasDePreset, type ConfigFunciones, type IdTarjeta } from "./agente/funciones";
+import { textoCampoSinConexion, type VistaPrimerosPasos } from "./agente/primeros-pasos";
+import {
+  TEXTO_RECORTADA,
+  TEXTO_SIN_CONVERSACIONES,
+  TEXTO_SOLO_RESUMEN,
+  lineaDeConversacion,
+  mensajeParaRetomar,
+  type ConversacionGuardada,
+  type ConversacionLeida,
+} from "./agente/conversaciones";
 import { Novedades, textoCorto, type Novedad, type TipoNovedad } from "./agente/novedades";
 import { pestanaSugerida, tarjetasVisibles, textoPildora, type DatosPildoras, type Pestana } from "./agente/tarjetas";
 import { barrasPlan, filasTokens, precioCorto, type EstadoUso } from "./agente/uso";
@@ -150,6 +160,12 @@ export interface Zona {
 }
 
 interface Opciones {
+  /** «Anteriores»: la lista de conversaciones pasadas y el chat entero de una (el puente las lee de este computador). */
+  alListarConversaciones?: () => Promise<ConversacionGuardada[]>;
+  alLeerConversacion?: (id: string) => Promise<ConversacionLeida>;
+  /** «Primeros pasos»: ocultar la tarjeta, o descartar la sugerencia de hoy. */
+  alOcultarPrimerosPasos?: () => void;
+  alDescartarSugerencia?: (id: string) => void;
   alAbrirMemoria?: () => void;
   alAbrirConfiguracion?: () => void;
   /** El botón ↻ del uso del plan: revisa la app de Claude y corre la consulta mínima. */
@@ -250,9 +266,17 @@ export class Panel {
   private readonly tituloInicio: HTMLDivElement;
   private readonly verRespuesta: HTMLButtonElement;
   private readonly tarjetas: HTMLDivElement;
+  /** La tarjeta «Primeros pasos» (solo para quien acaba de instalar Brote; ver `agente/primeros-pasos.ts`). */
+  private readonly primerosPasos: HTMLDivElement;
+  private vistaPrimerosPasos: VistaPrimerosPasos | null = null;
+  /** «Anteriores»: la lista de conversaciones pasadas y su chat, en lugar de las tarjetas de Inicio. */
+  private readonly anteriores: HTMLDivElement;
+  private anterioresAbierto = false;
+  /** Se pidió volver a aplicar el modo aunque no haya cambiado (al abrir o cerrar «Anteriores»). */
+  private reaplicarModo = false;
   private readonly pildoras: HTMLDivElement;
   /** Las funciones prendidas y el orden de las tarjetas (hasta que el puente avise, todo prendido). */
-  private funciones: ConfigFunciones = { activas: activasDePreset("todo"), tarjetas: { orden: [...IDS_TARJETAS], ocultas: [] } };
+  private funciones: ConfigFunciones = { activas: activasDePreset("todo"), sinIA: false, tarjetas: { orden: [...IDS_TARJETAS], ocultas: [] } };
   /** Qué tarjetas tienen algo que mostrar. */
   private readonly conDatos: Partial<Record<IdTarjeta, boolean>> = {};
   private readonly datosPildoras: DatosPildoras = {
@@ -516,8 +540,20 @@ export class Panel {
       this.leerHasta = performance.now() + LECTURA_MIN * 2;
       this.aplicarModo();
     });
-    this.cabeceraInicio.append(this.tituloInicio, this.verRespuesta);
+    const accionesInicio = crear("div", "acciones-vista");
+    if (opciones.alListarConversaciones) {
+      const anteriores = boton("enlace-vista", "🕘 Anteriores");
+      anteriores.title = "Tus conversaciones pasadas con Brote";
+      anteriores.addEventListener("click", () => void this.abrirAnteriores());
+      accionesInicio.append(anteriores);
+    }
+    accionesInicio.append(this.verRespuesta);
+    this.cabeceraInicio.append(this.tituloInicio, accionesInicio);
+    this.anteriores = crear("div", "anteriores");
+    this.anteriores.hidden = true;
     this.tarjetas = crear("div", "tarjetas");
+    this.primerosPasos = crear("div", "tarjeta primeros-pasos");
+    this.primerosPasos.hidden = true;
     this.pildoras = crear("div", "pildoras");
     this.pildoras.hidden = true;
     this.tarjetasTemporizador = crear("div", "grupo-tarjetas");
@@ -608,7 +644,7 @@ export class Panel {
     this.conversacionEquipo = crear("div", "conversacion-equipo");
     this.conversacionEquipo.hidden = true;
     this.vistaBrote = inicio;
-    inicio.append(this.cabeceraInicio, this.escenario, this.fichasEquipo, this.conversacionEquipo, this.tarjetas, this.pildoras, this.burbuja, this.aprobacion, this.propuesta);
+    inicio.append(this.cabeceraInicio, this.escenario, this.fichasEquipo, this.conversacionEquipo, this.primerosPasos, this.anteriores, this.tarjetas, this.pildoras, this.burbuja, this.aprobacion, this.propuesta);
 
     // --- Claude ---
     const codigo = crear("div", "vista vista-claude");
@@ -2837,6 +2873,55 @@ export class Panel {
     });
   }
 
+  /**
+   * La tarjeta «Primeros pasos» (o su ausencia): 4 cosas para probar con un toque que dejan la frase en
+   * el campo, y la sugerencia de hoy. Nada suena ni avisa: solo está en Inicio.
+   */
+  mostrarPrimerosPasos(vista: VistaPrimerosPasos | null): void {
+    this.vistaPrimerosPasos = vista;
+    this.primerosPasos.replaceChildren();
+    this.primerosPasos.hidden = vista === null || this.compacto || this.anterioresAbierto;
+    if (vista) {
+      const cabeza = crear("div", "primeros-cabeza");
+      const titulo = crear("strong", "");
+      titulo.textContent = "🌱 Primeros pasos";
+      const ocultar = boton("primeros-ocultar", "Ocultar");
+      ocultar.title = "No volver a mostrar esta tarjeta";
+      ocultar.addEventListener("click", () => this.opciones.alOcultarPrimerosPasos?.());
+      cabeza.append(titulo, ocultar);
+      this.primerosPasos.append(cabeza);
+      for (const paso of vista.pasos) {
+        const fila = crear("div", `primeros-fila${paso.hecho ? " hecho" : ""}`);
+        const texto = crear("span", "primeros-texto");
+        texto.textContent = `${paso.hecho ? "✓" : "○"} ${paso.texto}`;
+        fila.append(texto);
+        if (!paso.hecho) {
+          const probar = boton("sugerencia", "Probar");
+          probar.title = `Deja «${paso.frase}» en el campo`;
+          probar.addEventListener("click", () => this.escribirEnCampo(paso.frase));
+          fila.append(probar);
+        }
+        this.primerosPasos.append(fila);
+      }
+      if (vista.sugerencia) {
+        const sugerencia = vista.sugerencia;
+        const fila = crear("div", "primeros-fila sugerencia-del-dia");
+        const texto = crear("span", "primeros-texto");
+        texto.textContent = `Hoy prueba: ${sugerencia.texto}`;
+        const probar = boton("sugerencia", "Probar");
+        probar.title = `Deja «${sugerencia.frase}» en el campo`;
+        probar.addEventListener("click", () => this.escribirEnCampo(sugerencia.frase));
+        const descartar = boton("primeros-ocultar", "✕");
+        descartar.title = "No me sirve";
+        descartar.setAttribute("aria-label", "No me sirve esta sugerencia");
+        descartar.addEventListener("click", () => this.opciones.alDescartarSugerencia?.(sugerencia.id));
+        fila.append(texto, probar, descartar);
+        this.primerosPasos.append(fila);
+      }
+    }
+    this.actualizarInicio();
+  }
+
   /** Muestra en el campo si se perdió la conexión con OpenClaw. */
   mostrarConexion(estado: EstadoConexion): void {
     this.sinConexion = estado.conectado ? null : (estado.detalle ?? "Sin conexión con OpenClaw");
@@ -2874,11 +2959,117 @@ export class Panel {
     const compacto = conversando && !this.forzarTarjetas;
     this.burbuja.hidden = !compacto || !this.hayConversacion() || (c.aprobacion !== null && c.respuesta === "");
     this.verRespuesta.hidden = compacto || !this.hayConversacion() || ocupado(c);
-    if (compacto === this.compacto) return;
+    if (compacto === this.compacto && !this.reaplicarModo) return;
+    this.reaplicarModo = false;
     this.compacto = compacto;
-    this.cabeceraInicio.hidden = compacto;
-    this.tarjetas.hidden = compacto;
+    // «Anteriores» ocupa el lugar de las tarjetas (y se cierra solo si Brote empieza a conversar).
+    if (compacto && this.anterioresAbierto) this.anterioresAbierto = false;
+    const anteriores = this.anterioresAbierto;
+    this.anteriores.hidden = !anteriores;
+    this.cabeceraInicio.hidden = compacto || anteriores;
+    this.tarjetas.hidden = compacto || anteriores;
+    this.primerosPasos.hidden = compacto || anteriores || this.vistaPrimerosPasos === null;
     this.pildoras.hidden = !compacto || this.pildoras.childElementCount === 0;
+  }
+
+  /** Abre «Anteriores»: la lista de conversaciones pasadas, de la más nueva a la más vieja. */
+  private async abrirAnteriores(): Promise<void> {
+    if (!this.opciones.alListarConversaciones) return;
+    this.anterioresAbierto = true;
+    this.reaplicarModo = true;
+    this.aplicarModo();
+    this.anteriores.replaceChildren(textoNota("Buscando tus conversaciones…"));
+    try {
+      this.pintarListaAnteriores(await this.opciones.alListarConversaciones());
+    } catch (error) {
+      this.anteriores.replaceChildren(
+        this.cabeceraAnteriores("Conversaciones anteriores", () => this.cerrarAnteriores()),
+        textoNota(`No pude leerlas: ${String(error).replace(/^Error: /, "")}`),
+      );
+    }
+  }
+
+  private cerrarAnteriores(): void {
+    if (!this.anterioresAbierto) return;
+    this.anterioresAbierto = false;
+    this.reaplicarModo = true;
+    this.aplicarModo();
+  }
+
+  /** El título de «Anteriores» con su botón para volver (a Inicio o a la lista). */
+  private cabeceraAnteriores(titulo: string, alVolver: () => void, textoVolver = "← Inicio"): HTMLElement {
+    const cabeza = crear("div", "anteriores-cabeza");
+    const volver = boton("enlace-vista", textoVolver);
+    volver.addEventListener("click", alVolver);
+    const t = crear("strong", "");
+    t.textContent = titulo;
+    cabeza.append(volver, t);
+    return cabeza;
+  }
+
+  private pintarListaAnteriores(lista: ConversacionGuardada[]): void {
+    const ahora = new Date();
+    const partes: HTMLElement[] = [this.cabeceraAnteriores("Conversaciones anteriores", () => this.cerrarAnteriores())];
+    if (lista.length === 0) partes.push(textoNota(TEXTO_SIN_CONVERSACIONES));
+    for (const c of lista) {
+      const fila = boton("anterior-fila", "");
+      const titulo = crear("span", "anterior-titulo");
+      titulo.textContent = c.titulo;
+      const linea = crear("span", "anterior-linea");
+      linea.textContent = lineaDeConversacion(c, ahora);
+      const extracto = crear("span", "anterior-extracto");
+      extracto.textContent = c.extracto;
+      fila.append(titulo, linea, extracto);
+      fila.addEventListener("click", () => void this.abrirConversacionAnterior(c));
+      partes.push(fila);
+    }
+    this.anteriores.replaceChildren(...partes);
+  }
+
+  /** El chat entero de una conversación pasada, con «Retomar». */
+  private async abrirConversacionAnterior(c: ConversacionGuardada): Promise<void> {
+    if (!this.opciones.alLeerConversacion) return;
+    const volver = () => void this.abrirAnteriores();
+    this.anteriores.replaceChildren(this.cabeceraAnteriores(c.titulo, volver, "← Anteriores"), textoNota("Abriendo la conversación…"));
+    let leida: ConversacionLeida;
+    try {
+      leida = await this.opciones.alLeerConversacion(c.id);
+    } catch (error) {
+      this.anteriores.replaceChildren(
+        this.cabeceraAnteriores(c.titulo, volver, "← Anteriores"),
+        textoNota(`No pude abrirla: ${String(error).replace(/^Error: /, "")}`),
+      );
+      return;
+    }
+    const partes: HTMLElement[] = [this.cabeceraAnteriores(leida.titulo, volver, "← Anteriores")];
+    const cuerpo = crear("div", "anterior-chat");
+    if (leida.mensajes.length === 0) {
+      cuerpo.append(textoNota(TEXTO_SOLO_RESUMEN));
+      const resumen = crear("div", "anterior-resumen");
+      resumen.textContent = leida.resumen;
+      cuerpo.append(resumen);
+    } else {
+      if (leida.recortada) cuerpo.append(textoNota(TEXTO_RECORTADA));
+      for (const m of leida.mensajes) {
+        const burbuja = crear("div", `anterior-mensaje ${m.rol}`);
+        const quien = crear("span", "anterior-quien");
+        quien.textContent = m.rol === "tu" ? "Tú" : "Brote";
+        const texto = crear("div", "anterior-texto");
+        if (m.rol === "brote") pintarMarkdown(texto, m.texto);
+        else texto.textContent = m.texto;
+        burbuja.append(quien, texto);
+        cuerpo.append(burbuja);
+      }
+    }
+    const retomar = boton("sugerencia anterior-retomar", "Retomar esta conversación");
+    retomar.title = "Le pasa a Brote lo último que se habló para seguir desde ahí";
+    retomar.addEventListener("click", () => {
+      if (ocupado(this.agente.conversacion)) return;
+      this.enviarTexto(mensajeParaRetomar(leida));
+    });
+    partes.push(cuerpo, retomar);
+    this.anteriores.replaceChildren(...partes);
+    cuerpo.scrollTop = cuerpo.scrollHeight;
   }
 
   /** Una píldora por tarjeta a la vista (en su orden); al tocarla vuelven las tarjetas. */
@@ -2926,6 +3117,7 @@ export class Panel {
   private enviarTexto(texto: string): void {
     if (!texto.trim()) return;
     this.forzarTarjetas = false;
+    this.cerrarAnteriores();
     this.elegir("brote");
     void this.agente.enviar(texto).then((enviado) => {
       if (enviado && this.entrada.value === texto) this.entrada.value = "";
@@ -2998,7 +3190,7 @@ export class Panel {
       // Los temporizadores son tarjetas sueltas dentro de la grilla (su grupo no tiene caja propia).
       for (const el of id === "temporizadores" ? [...elemento.children] : [elemento]) (el as HTMLElement).style.order = orden;
     }
-    this.tarjetaVacia.hidden = visibles.length > 0;
+    this.tarjetaVacia.hidden = visibles.length > 0 || this.vistaPrimerosPasos !== null;
     this.pintarPildoras();
   }
 
@@ -3090,7 +3282,7 @@ export class Panel {
   private actualizarEntrada(): void {
     const c = this.agente.conversacion;
     if (ocupado(c)) this.entrada.placeholder = "Espera a que termine…";
-    else this.entrada.placeholder = this.sinConexion ? "Sin OpenClaw: solo gastos…" : "Escríbeme algo…";
+    else this.entrada.placeholder = this.sinConexion ? textoCampoSinConexion(this.funciones.sinIA) : "Escríbeme algo…";
     this.actualizarBotonEnviar();
   }
 
@@ -3327,4 +3519,12 @@ function pintarMarkdown(contenedor: HTMLElement, texto: string): void {
       return parrafo;
     }),
   );
+}
+
+/** Una nota corta y discreta (un aviso dentro de una vista). */
+function textoNota(texto: string): HTMLElement {
+  const p = document.createElement("p");
+  p.className = "nota-vista";
+  p.textContent = texto;
+  return p;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
-import { avisoDocumentoBorrado, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, confirmarBorrarTodosDocumentos, pieDocumentos, pieGrabaciones, pieOlvidar } from "../src/agente/papelera.ts";
+import { avisoConversacionOlvidada, avisoDocumentoBorrado, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, confirmarBorrarTodosDocumentos, pieDocumentos, pieGrabaciones, pieOlvidar } from "../src/agente/papelera.ts";
 
 describe("textos de olvidar", () => {
   test("en Mac avisa que sigue en la Papelera hasta vaciarla", () => {
@@ -47,5 +47,17 @@ describe("documentos en la papelera", () => {
     assert.equal(avisoDocumentoBorrado(false, 3), "Borré 3 documentos para siempre.");
     assert.equal(avisoDocumentoBorrado(true, 0), "No había nada que borrar: ya no estaba.");
     assert.equal(confirmarBorrarTodosDocumentos(4), "¿Seguro? Se borran 4 documentos");
+  });
+});
+
+describe("avisos al olvidar una conversación", () => {
+  it("sin chat completo dice lo de siempre; con él, cuenta los archivos y lo que no se pudo tocar", () => {
+    assert.equal(avisoConversacionOlvidada(true, 0, 0), avisoOlvidado(true));
+    assert.match(avisoConversacionOlvidada(true, 2, 0), /chat completo también se mandó a la Papelera \(2 archivos\)/);
+    assert.match(avisoConversacionOlvidada(false, 1, 0), /también se borró \(1 archivo\)/);
+    const mezclado = avisoConversacionOlvidada(true, 1, 2);
+    assert.match(mezclado, /2 archivos de Claude Code mezclan esa conversación con otra/);
+    assert.match(mezclado, /ya no se muestran/);
+    assert.match(avisoConversacionOlvidada(true, 0, 1), /Un archivo de Claude Code mezcla/);
   });
 });

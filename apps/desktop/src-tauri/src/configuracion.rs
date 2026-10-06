@@ -64,13 +64,15 @@ pub async fn configuracion(app: AppHandle, orden: String, paso: Option<String>) 
         ("aplicar", Some(paso)) if PASOS.contains(&paso.as_str()) => argumentos.push(paso),
         _ => return Err("pedido no válido".into()),
     }
-    let Some((node, _)) = entorno::buscar_node() else {
+    let Some((node, _, embebido)) = entorno::node_para_brote(&app) else {
         return Ok(if orden == "rapido" { r#"{"listo":false}"#.into() } else { sin_node(brew().is_some()) });
     };
     let script = script(&app);
     // El script puede tardar (instalar OpenClaw, configurarlo): se corre fuera del hilo principal.
     tauri::async_runtime::spawn_blocking(move || {
-        let salida = entorno::sin_consola(entorno::sin_clave_api(&mut Command::new(node)))
+        let mut comando = Command::new(node);
+        entorno::marcar_embebido(&mut comando, embebido);
+        let salida = entorno::sin_consola(entorno::sin_clave_api(&mut comando))
             .arg(script)
             .args(argumentos)
             .stdin(Stdio::piped())

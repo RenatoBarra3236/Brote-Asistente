@@ -10,7 +10,8 @@
     "tipos": "tsc --noEmit",
     "test": "node --test \"pruebas/*.test.ts\"",
     "tauri": "tauri",
-    "empaquetar-puente": "node scripts/empaquetar-puente.mjs"
+    "empaquetar-puente": "node scripts/empaquetar-puente.mjs",
+    "empaquetar-node": "node scripts/empaquetar-node.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

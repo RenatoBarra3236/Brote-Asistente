@@ -3001,3 +3001,164 @@ button.tarjeta:hover {
   align-items: center;
   justify-content: space-between;
 }
+
+/* «Primeros pasos» en Inicio (bloque F): una tarjeta discreta, sin avisos. */
+.primeros-pasos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.primeros-cabeza {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.primeros-ocultar {
+  border: none;
+  background: transparent;
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.primeros-ocultar:hover {
+  color: var(--texto);
+}
+.primeros-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.primeros-fila.hecho .primeros-texto {
+  color: var(--texto-2);
+  text-decoration: line-through;
+}
+.primeros-texto {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sugerencia-del-dia {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--linea);
+}
+
+/* «Anteriores»: las conversaciones pasadas en la pestaña Brote. */
+.acciones-vista {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.anteriores {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.anteriores-cabeza {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: none;
+}
+.anteriores-cabeza strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nota-vista {
+  margin: 4px 0;
+  color: var(--texto-3);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.anterior-fila {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.anterior-fila:hover {
+  box-shadow: inset 0 0 0 1px var(--texto-3);
+}
+.anterior-titulo {
+  font-weight: 600;
+}
+.anterior-linea {
+  color: var(--texto-3);
+  font-size: 11px;
+}
+.anterior-extracto {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--texto-2);
+  font-size: 12px;
+  white-space: pre-line;
+}
+.anterior-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.anterior-mensaje {
+  padding: 6px 9px;
+  border-radius: 10px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.anterior-mensaje.tu {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--tarjeta-2, var(--tarjeta));
+}
+.anterior-quien {
+  display: block;
+  margin-bottom: 1px;
+  color: var(--texto-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.anterior-texto {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.anterior-resumen {
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--texto-2);
+}
+.anterior-retomar {
+  align-self: flex-start;
+  flex: none;
+}
+.vista-brote.con-equipo > .anteriores {
+  display: none !important;
+}

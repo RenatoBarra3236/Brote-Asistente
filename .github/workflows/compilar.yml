@@ -1,6 +1,7 @@
 # Compila Brote para macOS y Windows en las máquinas de GitHub y deja los instaladores como
 # artefactos descargables. Se lanza a mano (pestaña Actions → "Compilar Brote" → Run workflow)
-# o al subir una etiqueta v* (por ejemplo, v0.1.0).
+# o al subir una etiqueta v* (por ejemplo, v0.1.0). Con una etiqueta, además, deja un BORRADOR de
+# release con los instaladores: se revisa en la pestaña Releases y se publica a mano (docs/distribucion.md).
 name: Compilar Brote
 
 on:
@@ -57,3 +58,26 @@ jobs:
           name: brote-${{ matrix.nombre }}
           path: ${{ matrix.instaladores }}
           if-no-files-found: error
+
+  # Solo con etiqueta v*: junta los instaladores en un borrador de release (nunca se publica solo).
+  borrador:
+    name: Borrador de release
+    needs: compilar
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          pattern: brote-*
+          merge-multiple: true
+      - name: Crear el borrador
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" instaladores/* \
+            --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+            --title "Brote $GITHUB_REF_NAME (prototipo)" \
+            --notes "Prototipo. Guía de instalación: docs/instalar.md. Los instaladores no están firmados."

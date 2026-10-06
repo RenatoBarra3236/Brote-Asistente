@@ -3,10 +3,10 @@
 // programador, statusline del uso del plan) se configura dentro de su tarjeta al prenderla. Debajo, el orden y la visibilidad de
 // las tarjetas de Inicio en la isla. Todo va a funciones.json (Rust lo valida y lo guarda).
 
-import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
+import { FUNCIONES, NOMBRES_TARJETAS, PRESETS, SUGERIDAS_DESPUES, activasDePreset, presetDe, type Funcion, type IdPreset, type IdTarjeta } from "../agente/funciones";
 import { guardarNotificaciones, leerNotificaciones } from "../agente/notificaciones";
 import { CLAVE_CONCENTRACION, CLAVE_RESUMEN_MANANA, guardarInterruptor, leerInterruptor } from "../agente/preferencias";
-import { PERMISOS, type Paso } from "../agente/preparacion";
+import { PERMISOS, bloqueadaSinIA, sinLasDeIA, type Paso } from "../agente/preparacion";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { EN_MAC, boton, botonesDePaso, crear, estado, guardarFunciones, mostrarAviso, paso, pintar } from "./comun";
 import { formularioAula, formularioIcal, formularioPresupuesto } from "./formularios";
@@ -105,6 +105,8 @@ function tarjetaFuncion(funcion: Funcion, enAsistente: boolean): HTMLElement {
   casilla.setAttribute("role", "switch");
   casilla.setAttribute("aria-label", funcion.nombre);
   casilla.checked = activa;
+  const sinIA = bloqueadaSinIA(funcion.id, estado.funciones.sinIA);
+  casilla.disabled = sinIA;
   casilla.addEventListener("change", () => {
     estado.funciones.activas[funcion.id] = casilla.checked;
     void cambiar(enAsistente);
@@ -112,6 +114,7 @@ function tarjetaFuncion(funcion: Funcion, enAsistente: boolean): HTMLElement {
   interruptor.append(casilla, crear("span", "interruptor-riel"));
   cabeza.append(texto, interruptor);
   tarjeta.append(cabeza);
+  if (sinIA) tarjeta.append(crear("p", "funcion-permiso", "Necesita la IA: se prende después de activarla (Configurar Brote → Estado)."));
   if (EN_MAC) tarjeta.append(crear("p", `funcion-permiso${funcion.permiso ? " con-permiso" : ""}`, nombrePermiso(funcion)));
   tarjeta.append(...configuracionDe(funcion, activa));
   return tarjeta;
@@ -124,7 +127,8 @@ function presets(enAsistente: boolean): HTMLElement {
   for (const id of Object.keys(PRESETS) as IdPreset[]) {
     const p = PRESETS[id];
     const b = boton("", `preset${actual === id ? " elegido" : ""}`, () => {
-      estado.funciones.activas = activasDePreset(id);
+      const activas = activasDePreset(id);
+      estado.funciones.activas = estado.funciones.sinIA ? sinLasDeIA(activas) : activas;
       void cambiar(enAsistente);
     });
     b.setAttribute("aria-pressed", String(actual === id));
@@ -139,7 +143,13 @@ export function vistaFunciones(enAsistente: boolean): HTMLElement {
   const caja = crear("div", "funciones");
   const lista = crear("div", "lista-funciones");
   lista.append(...FUNCIONES.map((f) => tarjetaFuncion(f, enAsistente)));
-  caja.append(presets(enAsistente), lista);
+  caja.append(presets(enAsistente));
+  // Arranque suave: lo que pide un permiso de macOS o datos tuyos queda para cuando quieras.
+  if (enAsistente && presetDe(estado.funciones.activas) === "inicio") {
+    const nombres = FUNCIONES.filter((f) => SUGERIDAS_DESPUES.includes(f.id)).map((f) => f.nombre);
+    caja.append(crear("p", "nota", `Para después (piden un permiso o datos tuyos): ${nombres.join(", ")}. Préndelas cuando quieras, aquí o en Configurar Brote → Funciones.`));
+  }
+  caja.append(lista);
   return caja;
 }
 

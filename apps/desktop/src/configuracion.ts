@@ -13,9 +13,12 @@
 // ventana solo pide pasos conocidos y abre terminales o páginas de listas cerradas.
 
 import { invoke } from "@tauri-apps/api/core";
-import { FUNCIONES, normalizarFunciones } from "./agente/funciones";
-import { filasPermisos, funcionesSinConfigurar, necesitaAsistente, permisoCalendarioDePaso, preparacion, esTecnico, type LecturaPermisos } from "./agente/preparacion";
+import { getVersion } from "@tauri-apps/api/app";
+import { FUNCIONES, activasDePreset, normalizarFunciones } from "./agente/funciones";
+import { armarDiagnostico, filasPermisos, funcionesSinConfigurar, necesitaAsistente, permisoCalendarioDePaso, preparacion, puedeEmpezarSinIA, sinLasDeIA, esTecnico, type LecturaPermisos } from "./agente/preparacion";
 import { TransportePuente } from "./agente/puente";
+import { copiarTexto } from "./copiar";
+import { iniciarPrimerosPasos } from "./agente/primeros-pasos";
 import { revisarConectores, vistaConectores } from "./configurar/conectores";
 import { EN_MAC, alPintar, boton, cabecera, crear, estado, filaPaso, guardarFunciones, leerPresupuesto, mensajeDe, mostrarAviso, paso, pintar, prepararTodo, revisar, tarjetaPaso, usarPuente } from "./configurar/comun";
 import { formularioAula } from "./configurar/formularios";
@@ -92,6 +95,42 @@ function pasosDelAsistente(): HTMLElement {
   return lista;
 }
 
+/** «Empezar sin IA»: con Node listo se puede probar Brote sin Claude ni OpenClaw y activar la IA después. */
+function ofertaSinIA(listo: boolean): HTMLElement[] {
+  if (estado.funciones.sinIA) {
+    const caja = crear("div", "tarjeta oferta-sin-ia");
+    caja.append(
+      crear("h3", undefined, "Vas a empezar sin IA"),
+      crear("p", "tarjeta-texto", "Brote anota tus gastos, lleva pomodoros, notas y ramos, y mucho más, sin IA ⚡. La IA la activas cuando quieras en Configurar Brote → Estado."),
+    );
+    const botones = crear("div", "botones");
+    botones.append(
+      boton("Mejor preparar la IA ahora", "boton", () => {
+        estado.funciones.sinIA = false;
+        pintar();
+      }, estado.ocupado),
+    );
+    caja.append(botones);
+    return [caja];
+  }
+  if (listo || !puedeEmpezarSinIA(estado.pasos)) return [];
+  const caja = crear("div", "tarjeta oferta-sin-ia");
+  caja.append(
+    crear("h3", undefined, "¿No tienes Claude, o quieres probar primero?"),
+    crear("p", "tarjeta-texto", "Puedes empezar sin IA: Brote anota gastos, lleva pomodoros, notas y ramos, y responde las frases con ⚡ sin conectarse a nada. Solo no contesta preguntas libres. La IA la activas después, cuando quieras, en Configurar Brote → Estado."),
+  );
+  const botones = crear("div", "botones");
+  botones.append(
+    boton("Empezar sin IA", "boton", () => {
+      estado.funciones.sinIA = true;
+      estado.funciones.activas = sinLasDeIA(estado.funciones.activas);
+      irA(2);
+    }, estado.ocupado),
+  );
+  caja.append(botones);
+  return [caja];
+}
+
 function asistentePreparar(): HTMLElement[] {
   const resumen = preparacion(estado.pasos, estado.consentimientos);
   const preparar = boton(
@@ -111,6 +150,7 @@ function asistentePreparar(): HTMLElement[] {
   else if (!resumen.listo && !resumen.hayAutomatico && estado.revisado && !estado.ocupado) {
     partes.push(crear("p", "nota", "Revisa los detalles: algo no se pudo arreglar solo."));
   }
+  partes.push(...ofertaSinIA(resumen.listo));
   partes.push(detallesTecnicos());
   return partes;
 }
@@ -120,6 +160,25 @@ function asistenteFunciones(): HTMLElement[] {
     cabecera("¿Qué quieres que haga Brote?", "Elige un punto de partida y ajusta lo que quieras. Puedes cambiarlo cuando quieras en Configurar Brote → Funciones."),
     vistaFunciones(true),
   ];
+}
+
+/** «Qué hace Brote en tu computador»: lo que más importa saber antes de usarlo. */
+function recuadroConfianza(): HTMLElement {
+  const caja = crear("div", "tarjeta confianza");
+  const lista = crear("ul", "lista-confianza");
+  const lineas = [
+    "Todo lo que guarda (gastos, notas, recuerdos) queda en tu computador.",
+    estado.funciones.sinIA
+      ? "Sin IA, nada de lo que escribes sale de tu computador."
+      : "Lo que le preguntas a la IA pasa por tu cuenta de Claude, como cuando usas Claude Code.",
+    "Brote nunca ejecuta nada en tu computador sin tu permiso.",
+    "En «Lo que sé de ti» (menú 🌱) ves y borras todo lo que recuerda, cuando quieras.",
+  ];
+  for (const l of lineas) lista.append(crear("li", undefined, l));
+  const botones = crear("div", "botones");
+  botones.append(boton("Leer todo sobre tu privacidad", "boton", () => void invoke("abrir_privacidad").catch(() => {})));
+  caja.append(crear("h3", undefined, "Qué hace Brote en tu computador"), lista, botones);
+  return caja;
 }
 
 function asistenteListo(): HTMLElement[] {
@@ -138,7 +197,11 @@ function asistenteListo(): HTMLElement[] {
       crear("p", "nota", `macOS te va a preguntar por algunos permisos la primera vez que Brote los necesite: ${permisos.map((p) => p.nombre).join(", ")}. Puedes revisarlos en Configurar Brote → Permisos.`),
     );
   }
+  if (estado.funciones.sinIA) {
+    partes.push(crear("p", "nota", "Empiezas sin IA. Para que Brote también responda preguntas libres, actívala en Configurar Brote → Estado → Activar la IA."));
+  }
   partes.push(crear("p", "nota", "¿Usas Todoist, Notion, GitHub o Canva? Conéctalos después en Configurar Brote → Conectores."));
+  partes.push(recuadroConfianza());
   if (estado.funciones.activas.especialistas) {
     partes.push(crear("p", "nota", "Elige a tu equipo (Tutor, Investigador…) y con qué IA trabaja cada uno en Configurar Brote → Equipo."));
   }
@@ -154,8 +217,9 @@ function pintarAsistente(): void {
   if (pasoAsistente > 1) botones.append(boton("Atrás", "boton", () => irA((pasoAsistente - 1) as 1 | 2), estado.ocupado));
   if (pasoAsistente === 1) {
     const resumen = preparacion(estado.pasos, estado.consentimientos);
-    const siguiente = boton("Siguiente", "boton boton-primario", () => irA(2), estado.ocupado || !resumen.listo);
-    if (!resumen.listo) siguiente.title = "Primero hay que preparar a Brote";
+    const puede = resumen.listo || estado.funciones.sinIA;
+    const siguiente = boton("Siguiente", "boton boton-primario", () => irA(2), estado.ocupado || !puede);
+    if (!puede) siguiente.title = "Primero hay que preparar a Brote";
     botones.append(siguiente);
   } else if (pasoAsistente === 2) botones.append(boton("Siguiente", "boton boton-primario", () => irA(3), estado.ocupado));
   else botones.append(boton("Empezar", "boton boton-primario", () => void empezar(), estado.ocupado));
@@ -174,27 +238,58 @@ function irA(n: 1 | 2 | 3): void {
 
 async function empezar(): Promise<void> {
   if (!(await guardarFunciones())) return;
+  // Arranca la primera semana de «Primeros pasos» (solo quien pasa por el asistente la ve).
+  iniciarPrimerosPasos(localStorage, Date.now());
   void invoke("reiniciar");
 }
 
 // ---------------------------------------------------------------- uso diario
+
+/** «Activar la IA»: prepara OpenClaw y Claude Code; al terminar, Brote deja de estar «sin IA». */
+async function activarIA(): Promise<void> {
+  await prepararTodo();
+  if (!preparacion(estado.pasos, estado.consentimientos).listo) return;
+  estado.funciones.sinIA = false;
+  if (await guardarFunciones()) mostrarAviso("La IA quedó lista 🌱 Reinicia Brote para que se conecte.");
+  pintar();
+}
+
+/** «Copiar diagnóstico»: versiones y estado de los pasos, sin ningún dato tuyo (ver `armarDiagnostico`). */
+function cajaDiagnostico(): HTMLElement {
+  const caja = crear("div", "diagnostico");
+  caja.append(crear("p", "nota", "Si algo falla, copia esto y pégalo en tu mensaje: solo trae versiones y el estado de cada paso, nada tuyo."));
+  const copiar = boton("Copiar diagnóstico", "boton", () => {
+    void (async () => {
+      const version = await getVersion().catch(() => "desconocida");
+      const sistema = EN_MAC ? "macOS" : navigator.userAgent.includes("Windows") ? "Windows" : "Linux";
+      const texto = armarDiagnostico({ version, sistema, pasos: estado.pasos, activas: estado.funciones.activas, sinIA: estado.funciones.sinIA });
+      if (await copiarTexto(texto)) mostrarAviso("Copié el diagnóstico 📋");
+      else mostrarAviso("No pude copiar: el sistema no me dejó.", true);
+    })();
+  });
+  caja.append(copiar);
+  return caja;
+}
 
 function seccionEstado(): HTMLElement[] {
   const resumen = preparacion(estado.pasos, estado.consentimientos);
   const indicador = crear("div", `indicador ${!estado.revisado ? "revisando" : resumen.listo ? "bien" : "mal"}`);
   const punto = crear("span", "indicador-punto");
   const textos = crear("div", "indicador-texto");
+  const sinIA = estado.funciones.sinIA && !resumen.listo;
   if (!estado.revisado) textos.append(crear("strong", undefined, "Revisando…"));
+  else if (sinIA) textos.append(crear("strong", undefined, "Brote funciona sin IA"), crear("span", undefined, "Las frases con ⚡ funcionan. Activa la IA para que también responda preguntas libres."));
   else if (resumen.listo) textos.append(crear("strong", undefined, "Brote está funcionando"), crear("span", undefined, "OpenClaw, Claude Code y tus gastos están conectados."));
   else textos.append(crear("strong", undefined, "A Brote le falta algo"), crear("span", undefined, resumen.faltan.map((p) => p.titulo).join(", ")));
   const botones = crear("div", "botones");
   botones.append(boton("Revisar de nuevo", "boton", () => void revisarTodo(), estado.ocupado));
-  if (!resumen.listo || estado.trabajandoEn) botones.append(boton("Reparar", "boton boton-primario", () => void prepararTodo(), estado.ocupado || !resumen.hayAutomatico));
+  if (sinIA) botones.append(boton("Activar la IA", "boton boton-primario", () => void activarIA(), estado.ocupado || !resumen.hayAutomatico));
+  else if (!resumen.listo || estado.trabajandoEn) botones.append(boton("Reparar", "boton boton-primario", () => void prepararTodo(), estado.ocupado || !resumen.hayAutomatico));
   if (estado.reparado && resumen.listo) botones.append(boton("Reiniciar Brote", "boton boton-primario", () => void invoke("reiniciar"), estado.ocupado));
   indicador.append(punto, textos, botones);
   const partes: HTMLElement[] = [cabecera("Estado"), indicador];
   if (estado.trabajandoEn || !resumen.listo) partes.push(barraPreparacion());
-  partes.push(...tarjetasDelUsuario(), detallesTecnicos());
+  partes.push(...tarjetasDelUsuario(), detallesTecnicos(), cajaDiagnostico());
   return partes;
 }
 
@@ -385,6 +480,8 @@ async function iniciar(): Promise<void> {
   void leerGrabaciones();
   await revisar();
   modo = necesitaAsistente(estado.pasos, estado.hayArchivoFunciones) ? "asistente" : "diario";
+  // Arranque suave: quien instala Brote por primera vez parte con lo que no pide permisos de macOS.
+  if (modo === "asistente" && !estado.hayArchivoFunciones) estado.funciones.activas = activasDePreset("inicio");
   // Parámetros solo para la vista previa del diseño: ?seccion=funciones, ?paso=2.
   const parametros = new URLSearchParams(location.search);
   const pedida = parametros.get("seccion");

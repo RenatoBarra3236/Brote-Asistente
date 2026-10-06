@@ -143,10 +143,17 @@ export const NOMBRES_TARJETAS: Record<IdTarjeta, string> = {
   claude: "Claude Code",
 };
 
-export type IdPreset = "estudiante" | "programador" | "todo" | "minimo";
+export type IdPreset = "inicio" | "estudiante" | "programador" | "todo" | "minimo";
 
 /** Conjuntos listos para elegir de una vez. */
 export const PRESETS: Record<IdPreset, { nombre: string; descripcion: string; activas: readonly IdFuncion[] }> = {
+  // Arranque suave (F de docs/plan-estudio-y-mejoras.md): nada de esto pide un permiso de macOS, así la
+  // primera apertura no llena de avisos. Es lo que ve de partida quien instala Brote por primera vez.
+  inicio: {
+    nombre: "Para empezar",
+    descripcion: "Gastos, pomodoro, ramos y reacciones: sin avisos de permisos. Lo demás lo prendes cuando quieras.",
+    activas: ["gastos", "temporizadores", "equipo", "estudio"],
+  },
   estudiante: {
     nombre: "Estudiante",
     descripcion: "Gastos, pomodoro, calendario, aula, ramos, música, descargas y reacciones.",
@@ -161,8 +168,16 @@ export const PRESETS: Record<IdPreset, { nombre: string; descripcion: string; ac
   minimo: { nombre: "Lo mínimo", descripcion: "Solo conversar y anotar gastos. Sin permisos de macOS.", activas: ["gastos"] },
 };
 
+/** Las funciones que no sirven sin la IA (el agente de Brote): en «Empezar sin IA» quedan apagadas. */
+export const NECESITAN_IA: readonly IdFuncion[] = ["especialistas", "memoria-local"];
+
+/** Las funciones que, de partida, quedan fuera del preset «Para empezar» por pedir un permiso o datos tuyos. */
+export const SUGERIDAS_DESPUES: readonly IdFuncion[] = ["calendario", "aula", "musica", "descargas"];
+
 export interface ConfigFunciones {
   activas: Record<IdFuncion, boolean>;
+  /** Brote se preparó «sin IA»: solo el motor, sin OpenClaw ni Claude Code (se activa después en Estado). */
+  sinIA: boolean;
   tarjetas: { orden: IdTarjeta[]; ocultas: IdTarjeta[] };
 }
 
@@ -183,7 +198,7 @@ export function presetDe(activas: Record<IdFuncion, boolean>): IdPreset | null {
 
 /** La configuración por defecto (preset Estudiante, tarjetas en su orden). */
 export function funcionesPorDefecto(): ConfigFunciones {
-  return { activas: activasDePreset("estudiante"), tarjetas: { orden: [...IDS_TARJETAS], ocultas: [] } };
+  return { activas: activasDePreset("estudiante"), sinIA: false, tarjetas: { orden: [...IDS_TARJETAS], ocultas: [] } };
 }
 
 /**
@@ -194,7 +209,8 @@ export function funcionesPorDefecto(): ConfigFunciones {
 export function normalizarFunciones(datos: unknown): ConfigFunciones {
   const config = funcionesPorDefecto();
   if (!datos || typeof datos !== "object") return config;
-  const { activas, tarjetas } = datos as { activas?: unknown; tarjetas?: unknown };
+  const { activas, tarjetas, sinIA } = datos as { activas?: unknown; tarjetas?: unknown; sinIA?: unknown };
+  config.sinIA = sinIA === true;
   if (activas && typeof activas === "object") {
     for (const id of IDS_FUNCIONES) {
       const valor = (activas as Record<string, unknown>)[id];
@@ -214,7 +230,7 @@ export function normalizarFunciones(datos: unknown): ConfigFunciones {
 
 /** Lo que se guarda en funciones.json. */
 export function serializarFunciones(config: ConfigFunciones): string {
-  return JSON.stringify({ version: 1, activas: config.activas, tarjetas: config.tarjetas });
+  return JSON.stringify({ version: 1, activas: config.activas, ...(config.sinIA ? { sinIA: true } : {}), tarjetas: config.tarjetas });
 }
 
 /** Las funciones que alimentan la pestaña Agenda: con una prendida, la agenda existe. */

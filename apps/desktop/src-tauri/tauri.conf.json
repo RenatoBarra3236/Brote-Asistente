@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm empaquetar-puente && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build && pnpm empaquetar-puente",
+    "beforeBuildCommand": "pnpm build && pnpm empaquetar-puente && pnpm empaquetar-node",
     "frontendDist": "../dist"
   },
   "app": {

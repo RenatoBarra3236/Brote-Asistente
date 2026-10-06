@@ -18,7 +18,7 @@
   con &cerrada=1 se ve el punto rojo en el ala) ·
   ?freno=1 (el aviso del freno por plan: los especialistas con Claude salen del equipo) · &todos=1 (abre
   "Ver a todos") · &conversacion=1 (abre la conversación del Investigador) ·
-  ?pestana=agenda&vista=semana (la vista semanal de Agenda; &carga=pesada|ligera: la semana de certámenes o una liviana; se recuerda en localStorage) · ?pestana=plata (la pestaña Plata con seis meses de gastos de ejemplo), &tendencia=sin|seis|proyeccion (el gráfico de meses) y ?plata=sin|pasado|nuevo (sin
+  ?pestana=agenda&vista=semana (la vista semanal de Agenda; &carga=pesada|ligera: la semana de certámenes o una liviana; se recuerda en localStorage) · ?pestana=plata&ahorro=sin|una|varias|lenta|cumplida (las metas de ahorro de Plata; `lenta` muestra «a tu ritmo llegarías en…», nunca un reproche) · ?pestana=plata (la pestaña Plata con seis meses de gastos de ejemplo), &tendencia=sin|seis|proyeccion (el gráfico de meses) y ?plata=sin|pasado|nuevo (sin
   presupuesto, pasado del presupuesto con el aviso del 100 %, o sin ningún gasto todavía). Los botones de un
   toque y "mi presupuesto es…" funcionan.
   ?pestana=estudio (la pestaña Estudio con tres ramos de ejemplo: tocar uno abre su ficha; Agregar, Editar y
@@ -362,6 +362,8 @@
                   return responder(id, { datos: equipo(0.18 + 0.12 * Math.sin(t / 2) + 0.05 * Math.sin(t * 1.7)) });
                 case "plata-estado":
                   return responder(id, { datos: window.__plata.estado() });
+                case "ahorro-estado":
+                  return responder(id, { datos: window.__ahorro() });
                 case "plata-anotar":
                   window.__plata.anotar(pedido.monto, pedido.descripcion);
                   setTimeout(() => emitir({ tipo: "plata", plata: window.__plata.estado() }), 150);
@@ -537,10 +539,10 @@
       // ?celebrar=meta|racha|aprobado|tarea: a los 3 s llega una celebración (Brote hace su saltito y deja la novedad).
       const celebrarModo = parametros.get("celebrar");
       if (celebrarModo) {
-        const textos = { meta: "🎯 ¡Meta semanal cumplida! 10 h 🌱", racha: "🔥 ¡7 días seguidos estudiando!", aprobado: "🎉 ¡Aprobaste Cálculo II! 🌱", tarea: "✅ ¡Tarea lista! Una menos 🌱" };
+        const textos = { ahorro: "💰 ¡Mitad de «Viaje»! Vamos 💪", meta: "🎯 ¡Meta semanal cumplida! 10 h 🌱", racha: "🔥 ¡7 días seguidos estudiando!", aprobado: "🎉 ¡Aprobaste Cálculo II! 🌱", tarea: "✅ ¡Tarea lista! Una menos 🌱" };
         window.__celebracion = textos[celebrarModo] ?? textos.meta;
       }
-      if (window.__celebracion) setTimeout(() => emitir({ tipo: "celebracion", motivo: "meta", texto: window.__celebracion }), 3000);
+      if (window.__celebracion) setTimeout(() => emitir({ tipo: "celebracion", motivo: celebrarModo === "ahorro" ? "ahorro" : "meta", texto: window.__celebracion }), 3000);
       if (parametros.get("plata") === "pasado") setTimeout(() => emitir({ tipo: "plata-aviso", texto: "🚨 Te pasaste del presupuesto del mes: llevas $412.000 de $250.000. Nada de dramas: desde mañana vamos con calma 🌱" }), 2200);
       // El freno por plan, como lo avisaría el puente.
       if (parametros.has("freno")) setTimeout(() => emitir({ tipo: "especialistas-aviso", texto: "Tu plan semanal de Claude va alto (87 %): no le paso tareas a los especialistas con Claude hasta que baje. Los de otras IA siguen." }), 2000);
@@ -952,6 +954,7 @@
     <script type="module">
       // La pestaña Plata con el cálculo de verdad (motor/plata.ts) sobre gastos de ejemplo.
       import { resumenPlata } from "/src/agente/plata.ts";
+      import { resumirAhorro } from "/src/agente/ahorro.ts";
       const modo = new URLSearchParams(location.search).get("plata");
       // ?tendencia=sin (solo este mes) | seis (por defecto, seis meses) | proyeccion (un gasto único enorme este mes)
       const tendencia = new URLSearchParams(location.search).get("tendencia");
@@ -973,6 +976,36 @@
         if (tendencia === "proyeccion" && hoy.getDate() >= 5) lista.push(en(hoy.getDate() - 2, 10, 300000, "estudio", "matrícula"));
       }
       const datos = { lista: lista.filter((g) => g.fechaMs <= Date.now()).map((g, i) => ({ id: i + 1, ...g })), presupuesto: modo === "sin" || modo === "nuevo" ? null : 250000 };
+      // Metas de ahorro (cálculo real del motor): ?ahorro=sin|una|varias|cumplida|lenta (por defecto, una).
+      const modoAhorro = new URLSearchParams(location.search).get("ahorro") ?? "una";
+      window.__ahorro = () => {
+        const ahora = Date.now();
+        const dia = 86_400_000;
+        const fin = (meses) => new Date(hoy.getFullYear(), hoy.getMonth() + meses + 1, 0, 23, 59, 59).getTime();
+        const metas = [];
+        const aportes = [];
+        const meta = (id, nombre, monto, limiteMs, creadaDias) => metas.push({ id, nombre, monto, limiteMs, creadaMs: ahora - creadaDias * dia, estado: "activa" });
+        const aporte = (metaId, monto, haceDias) => aportes.push({ id: aportes.length + 1, metaId, monto, ms: ahora - haceDias * dia });
+        if (modoAhorro === "una" || modoAhorro === "varias") {
+          meta(1, "Viaje", 150000, fin(5), 40);
+          aporte(1, 30000, 25); aporte(1, 15000, 6);
+        }
+        if (modoAhorro === "varias") {
+          meta(2, "Notebook", 600000, fin(9), 70);
+          aporte(2, 200000, 40); aporte(2, 50000, 12);
+          meta(3, "Fondo de emergencia", 300000, null, 90);
+          aporte(3, 40000, 20);
+        }
+        if (modoAhorro === "lenta") {
+          meta(1, "Viaje", 150000, fin(3), 50);
+          aporte(1, 10000, 20);
+        }
+        if (modoAhorro === "cumplida") {
+          meta(1, "Viaje", 150000, fin(5), 40);
+          aporte(1, 150000, 3);
+        }
+        return resumirAhorro(metas, aportes, ahora, { holgura: modoAhorro === "lenta" ? 4000 : 52000, hormiga: { nombre: "café", suma: 24000 } });
+      };
       window.__plata = {
         estado: () => resumenPlata(datos.lista, datos.presupuesto, Date.now()),
         anotar: (monto, descripcion) => {

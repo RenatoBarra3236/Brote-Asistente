@@ -126,6 +126,13 @@
 //   pedido { "tipo": "plata-estado" }   → "datos": EstadoPlata | null
 //   pedido { "tipo": "plata-anotar", "monto": 1500, "descripcion": "café" }   → "mensaje"; solo uno de los botones de un toque
 //   pedido { "tipo": "presupuesto-poner", "monto": 200000 | null }   → "datos": EstadoPlata (null quita el presupuesto)
+//   aviso { "tipo": "ahorro", "ahorro": ResumenAhorro | null }   metas de ahorro con su avance, la holgura del mes y la sugerencia; al cambiar las metas, los gastos o el día
+//   pedido { "tipo": "ahorro-estado" }   → "datos": ResumenAhorro | null
+//   pedido { "tipo": "ahorro-todo" }   → "datos": { metas, aportes } (con las archivadas; no depende de la función: «Lo que sé de ti»)
+//   pedido { "tipo": "ahorro-crear", "nombre": "Viaje", "monto": 150000, "limiteMs"?: 1869000000000 | null }   → "datos": ResumenAhorro (error si pasa de 3 activas o repite nombre)
+//   pedido { "tipo": "ahorro-aportar", "meta": 1, "monto": 20000 | -10000 }   → "datos": ResumenAhorro (negativo = saqué; solo lo que el usuario dice, Brote no ve cuentas)
+//   pedido { "tipo": "ahorro-archivar", "meta": 1 }   → archiva (lo juntado queda guardado)
+//   pedido { "tipo": "ahorro-borrar", "meta": 1 | null }   → "datos": { borrados } (definitivo; null = todas)
 //
 // Estudio (función "estudio"; pestaña Estudio, A1 de docs/plan-estudio-y-mejoras.md): los ramos del usuario
 // (nombre, color, palabras clave) y lo que viene de cada uno: clases del calendario y entregas del aula (se
@@ -160,7 +167,7 @@
 //   pedido { "tipo": "plan-estudio-borrar", "que": "plan"|"ramo"|"todo", "plan"?: 2, "ramo"?: 3 }   (los eventos ya creados en el calendario se borran a mano)
 //   pedido { "tipo": "pomodoro-iniciar", "ramo"?: 3, "etiqueta"?: "…" }   → un pomodoro enlazado al ramo
 //   aviso { "tipo": "estadisticas-estudio", "resumen": ResumenEstudio }   tiempo estudiado de la semana, racha y totales por ramo (A5); también si lo cambia el pomodoro, un bloque hecho o el MCP
-//   aviso { "tipo": "celebracion", "motivo": "meta"|"racha"|"tarea"|"bloque"|"aprobado", "texto": "…" }   Brote festeja algo que lograste y marcaste tú (una sola vez cada cosa)
+//   aviso { "tipo": "celebracion", "motivo": "meta"|"racha"|"tarea"|"bloque"|"aprobado"|"ahorro", "texto": "…" }   Brote festeja algo que lograste y marcaste tú (una sola vez cada cosa)
 //   pedido { "tipo": "estadisticas-estado" }   → "datos": { resumen } (con la función apagada, vacío)
 //   pedido { "tipo": "estadisticas-todo" }   → "datos": { ramos, resumen } (no depende de la función: «Lo que sé de ti»)
 //   pedido { "tipo": "estadisticas-borrar", "que": "registro"|"ramo"|"todo", "registro"?: 4, "ramo"?: 3 | null }   (definitivo: no hay Papelera)
@@ -279,6 +286,9 @@ import {
   EstadisticasEstudio,
   resumirEstudio,
   celebracionesDeEstudio,
+  Ahorro,
+  celebracionesDeAhorro,
+  leerAvisosAhorro,
   leerAprobados,
   ramosPorCelebrar,
   textoBloqueHecho,
@@ -461,6 +471,8 @@ const repaso = new Repaso(gastos, ramos);
 const planesEstudio = new PlanesEstudio(gastos, notas);
 /** El tiempo estudiado (A5): lo escriben el pomodoro, los bloques hechos y lo que el usuario anota a mano. */
 const estadisticas = new EstadisticasEstudio(gastos, ramos);
+/** Las metas de ahorro (libreta de lo que el usuario dice que apartó; Brote no ve cuentas). */
+const libretaAhorro = new Ahorro(gastos);
 const motor = new Motor(gastos, {
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
@@ -489,6 +501,7 @@ const motor = new Motor(gastos, {
   repaso,
   planes: planesEstudio,
   estadisticas,
+  ahorro: libretaAhorro,
   activa,
 });
 
@@ -1240,6 +1253,26 @@ function detenerPlata(): void {
   avisar({ tipo: "plata", plata: null });
 }
 
+// Metas de ahorro: se mira la marca cada 2 s (el agente solo las lee por MCP, pero así aparece al tiro lo que
+// se anota por frase o desde la isla). Los hitos se festejan una sola vez; nunca hay avisos por atrasarse.
+// En los registros no queda ni el nombre de la meta ni los montos.
+let marcaAhorro = "";
+function revisarAhorro(forzar = false): void {
+  const marca = `${libretaAhorro.marca()}|${gastos.marca()}|${new Date().toDateString()}`;
+  if (!forzar && marca === marcaAhorro) return;
+  marcaAhorro = marca;
+  const resumen = motor.resumenAhorro();
+  avisar({ tipo: "ahorro", ahorro: resumen });
+  const previos = leerAvisosAhorro(libretaAhorro.avisos());
+  const { celebrar: hitos, guardar } = celebracionesDeAhorro(resumen.metas, previos);
+  if (JSON.stringify(guardar) !== JSON.stringify(previos)) libretaAhorro.guardarAvisos(JSON.stringify(guardar));
+  for (const h of hitos) celebrar("ahorro", h.texto);
+}
+function detenerAhorro(): void {
+  marcaAhorro = "";
+  avisar({ tipo: "ahorro", ahorro: null });
+}
+
 // Propuestas de tareas y fechas sacadas de una transcripción: las deja el agente por MCP (otro proceso),
 // así que se mira la marca cada 2 s. La isla las muestra con Agregar / Descartar; nada se agrega solo.
 let marcaPropuestas = "";
@@ -1448,10 +1481,14 @@ let transcriptor: Transcriptor | null = null;
 /** Las tareas de fondo de cada función: solo corren las prendidas. */
 const tareas = new TareasPorFuncion({
   gastos: () => {
-    const detener = cada(2000, () => revisarPlata());
+    const detener = cada(2000, () => {
+      revisarPlata();
+      revisarAhorro();
+    });
     return () => {
       detener();
       detenerPlata();
+      detenerAhorro();
     };
   },
   temporizadores: () => {
@@ -1763,7 +1800,10 @@ async function atender(pedido: any): Promise<Extra> {
       gastos.registrarUso("motor", resuelto.intencion, new Date());
       registrar(`resuelto sin IA (${resuelto.plantilla})`);
       // Lo anotado (o el presupuesto nuevo) aparece al tiro en la pestaña Plata.
-      if (activa("gastos")) revisarPlata();
+      if (activa("gastos")) {
+        revisarPlata();
+        revisarAhorro();
+      }
       if (activa("estudio")) revisarNotas();
       return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
     }
@@ -1882,6 +1922,45 @@ async function atender(pedido: any): Promise<Extra> {
       gastos.registrarUso("motor", "registrar-gasto", new Date());
       revisarPlata();
       return { mensaje };
+    }
+    case "ahorro-estado":
+      return { datos: activa("gastos") ? motor.resumenAhorro() : null };
+    case "ahorro-todo":
+      // No depende de la función: lo guardado es del usuario y debe poder verlo y borrarlo aunque la apague («Lo que sé de ti»).
+      return { datos: { metas: libretaAhorro.metas(true), aportes: libretaAhorro.aportes() } };
+    case "ahorro-crear": {
+      if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");
+      const r = libretaAhorro.crear({ nombre: pedido.nombre, monto: pedido.monto, limiteMs: pedido.limiteMs ?? null }, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      registrar("ahorro: meta creada");
+      revisarAhorro(true);
+      return { datos: motor.resumenAhorro() };
+    }
+    case "ahorro-aportar": {
+      if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");
+      if (!Number.isInteger(pedido.meta) || !Number.isInteger(pedido.monto)) break;
+      const r = libretaAhorro.aportar(pedido.meta, pedido.monto, Date.now());
+      if (!r.ok) throw new Error(r.motivo);
+      registrar(pedido.monto > 0 ? "ahorro: aporte anotado" : "ahorro: retiro anotado");
+      revisarAhorro(true);
+      return { datos: motor.resumenAhorro() };
+    }
+    case "ahorro-archivar": {
+      if (!Number.isInteger(pedido.meta)) break;
+      if (!libretaAhorro.archivar(pedido.meta)) throw new Error("Esa meta no existe");
+      registrar("ahorro: meta archivada");
+      revisarAhorro(true);
+      return { datos: activa("gastos") ? motor.resumenAhorro() : null };
+    }
+    case "ahorro-borrar": {
+      // Definitivo (no hay Papelera: es una base de datos). `meta: null` = todas.
+      let n = 0;
+      if (pedido.meta === null) n = libretaAhorro.borrarTodo();
+      else if (Number.isInteger(pedido.meta)) n = libretaAhorro.borrar(pedido.meta) ? 1 : 0;
+      else break;
+      registrar(`ahorro: metas borradas (${n})`);
+      revisarAhorro(true);
+      return { datos: { borrados: n } };
     }
     case "presupuesto-poner": {
       if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");

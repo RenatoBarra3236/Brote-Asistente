@@ -242,8 +242,8 @@ function categoriaDisparada(lista: readonly GastoPlano[], ahoraMs: number): Desc
   };
 }
 
-/** Gastos chicos que se repiten mucho en 30 días y juntos suman harto. */
-function gastoHormiga(lista: readonly GastoPlano[], ahoraMs: number): Descubrimiento | null {
+/** El gasto chico que más se repite en 30 días y juntos suma harto (lo usan el descubrimiento y las metas de ahorro). */
+export function hormigaDelMes(lista: readonly GastoPlano[], ahoraMs: number): { nombre: string; categoria: Categoria; veces: number; suma: number } | null {
   const grupos = new Map<string, { nombre: string; categoria: Categoria; veces: number; suma: number }>();
   for (const g of lista) {
     if (g.monto > HORMIGA.maximo || g.fechaMs < ahoraMs - 30 * DIA || g.fechaMs > ahoraMs) continue;
@@ -254,7 +254,12 @@ function gastoHormiga(lista: readonly GastoPlano[], ahoraMs: number): Descubrimi
     grupo.suma += g.monto;
     grupos.set(clave, grupo);
   }
-  const mejor = [...grupos.values()].filter((g) => g.veces >= HORMIGA.veces && g.suma >= HORMIGA.suma).sort((a, b) => b.suma - a.suma)[0];
+  return [...grupos.values()].filter((g) => g.veces >= HORMIGA.veces && g.suma >= HORMIGA.suma).sort((a, b) => b.suma - a.suma)[0] ?? null;
+}
+
+/** Gastos chicos que se repiten mucho en 30 días y juntos suman harto. */
+function gastoHormiga(lista: readonly GastoPlano[], ahoraMs: number): Descubrimiento | null {
+  const mejor = hormigaDelMes(lista, ahoraMs);
   if (!mejor) return null;
   return {
     tipo: "hormiga",

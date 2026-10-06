@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estudio";
+import { NOTA_AHORRO_MEMORIA, avisoAhorroBorrado, lineaDeMetaGuardada, type AporteAhorro, type MetaAhorro } from "./agente/ahorro";
 import { NOTA_ESTADISTICAS_MEMORIA, avisoEstadisticasBorradas, formatearMinutos, lineaDeRamo, textoDesde, type ResumenEstudio } from "./agente/estadisticas";
 import { NOTA_PLAN_MEMORIA, avisoPlanBorrado, describirPrueba as describirPruebaPlan, resumenPlan, type PlanEstudio } from "./agente/plan-estudio";
 import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
@@ -84,6 +85,8 @@ let repasoGuardado: (EstadoRepaso & { ramos: Ramo[]; tarjetas: import("./agente/
 let planesGuardados: { ramos: Ramo[]; planes: PlanEstudio[]; evaluaciones: Record<number, string> } | null = null;
 /** El tiempo estudiado (A5): totales por ramo. Se ve y se borra aunque Estudio esté apagado. */
 let estudioGuardado: { ramos: Ramo[]; resumen: ResumenEstudio } | null = null;
+/** Las metas de ahorro y sus aportes (con las archivadas). Se ven y se borran aunque Gastos esté apagado. */
+let ahorroGuardado: { metas: MetaAhorro[]; aportes: AporteAhorro[] } | null = null;
 let notasGuardadas: { ramos: Ramo[]; fichas: FichaNotas[] } | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
@@ -471,6 +474,44 @@ function seccionEstadisticas(datos: NonNullable<typeof estudioGuardado>): HTMLEl
   return seccion;
 }
 
+// ---- Metas de ahorro: ver y borrar una meta (con sus aportes) o todas ----
+
+async function cargarAhorro(): Promise<void> {
+  try {
+    ahorroGuardado = await puente.consultar({ tipo: "ahorro-todo" });
+  } catch {
+    ahorroGuardado = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
+async function borrarAhorro(meta: number | null): Promise<void> {
+  const { borrados } = await puente.consultar<{ borrados: number }>({ tipo: "ahorro-borrar", meta });
+  mostrarAviso(avisoAhorroBorrado(borrados));
+  await cargarAhorro();
+  pintarTodo();
+}
+
+function seccionAhorro(datos: NonNullable<typeof ahorroGuardado>): HTMLElement {
+  const seccion = crear("section", "seccion seccion-ramos");
+  const encabezado = crear("h2", undefined, "Metas de ahorro");
+  encabezado.append(crear("span", "cuenta", String(datos.metas.length)));
+  seccion.append(encabezado, crear("p", "nota", NOTA_AHORRO_MEMORIA));
+  for (const meta of datos.metas) {
+    const tarjeta = crear("article", `tarjeta ramo${meta.estado === "archivada" ? " archivado" : ""}`);
+    const cabeza = crear("div", "tarjeta-cabeza");
+    cabeza.append(crear("h3", undefined, meta.nombre), crear("span", "fecha", meta.estado === "archivada" ? "Archivada" : ""));
+    tarjeta.append(cabeza, crear("p", "meta", lineaDeMetaGuardada(meta, datos.aportes)));
+    const botones = crear("div", "botones");
+    botones.append(botonOlvidar(() => borrarAhorro(meta.id), `Borrar la meta «${meta.nombre}»`));
+    tarjeta.append(botones);
+    seccion.append(tarjeta);
+  }
+  const todo = crear("div", "botones");
+  todo.append(botonOlvidar(() => borrarAhorro(null), "Borrar todas las metas de ahorro"));
+  seccion.append(todo);
+  return seccion;
+}
+
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
 
 async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
@@ -612,6 +653,7 @@ function pintar(memoria: Memoria): void {
   if (repasoGuardado && (repasoGuardado.tarjetas.length > 0 || repasoGuardado.resumenes.length > 0) && !coincidencias) contenido.push(seccionRepaso(repasoGuardado));
   if (planesGuardados && planesGuardados.planes.length > 0 && !coincidencias) contenido.push(seccionPlanes(planesGuardados));
   if (estudioGuardado && estudioGuardado.resumen.hay && !coincidencias) contenido.push(seccionEstadisticas(estudioGuardado));
+  if (ahorroGuardado && ahorroGuardado.metas.length > 0 && !coincidencias) contenido.push(seccionAhorro(ahorroGuardado));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
   secciones.replaceChildren(...contenido);
 }
@@ -625,6 +667,7 @@ async function cargar(): Promise<void> {
     await cargarRepaso();
     await cargarPlanes();
     await cargarEstadisticas();
+    await cargarAhorro();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);

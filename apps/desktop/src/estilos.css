@@ -2718,3 +2718,37 @@ button.tarjeta:hover {
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
 }
+
+/* Metas de ahorro (tarjeta de Plata): una fila por meta, con la barra del semáforo y «+ Aporte». */
+.plata-ahorro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ahorro-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 3px;
+}
+.ahorro-meta + .ahorro-meta {
+  border-top: 1px solid var(--borde, rgba(255, 255, 255, 0.08));
+  padding-top: 7px;
+}
+.ahorro-cabecera {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+}
+.ahorro-linea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ahorro-ritmo,
+.ahorro-nota {
+  color: var(--texto-2);
+  white-space: normal;
+}

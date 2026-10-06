@@ -82,3 +82,24 @@ export function leerDia(entrada: string, ahoraMs: number): number | null {
   }
   return null;
 }
+
+/** La ranura {mes}: «marzo», «marzo de 2027». */
+export const PATRON_MES = `(?:${MES})(?: de \\d{4})?`;
+
+/**
+ * «marzo» → el último día de ese mes (fin del día), este año o el que viene si ya terminó; «marzo de 2027» → ese año.
+ * Nunca adivina: un mes ya terminado de un año explícito, o un texto raro, da `null`.
+ */
+export function leerMes(entrada: string, ahoraMs: number): number | null {
+  const m = entrada.trim().replace(/\s+/g, " ").match(new RegExp(`^(${MES})(?: de (\\d{4}))?$`));
+  if (!m) return null;
+  const mes = MESES.indexOf(m[1]);
+  const finDe = (a: number) => new Date(a, mes + 1, 1).getTime() - 1;
+  const ahora = new Date(ahoraMs);
+  if (m[2] !== undefined) {
+    const f = finDe(Number(m[2]));
+    return f >= ahoraMs ? f : null;
+  }
+  const esteAno = finDe(ahora.getFullYear());
+  return esteAno >= ahoraMs ? esteAno : finDe(ahora.getFullYear() + 1);
+}

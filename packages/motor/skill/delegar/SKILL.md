@@ -48,6 +48,7 @@ especialista **nunca** le pases datos personales del estudiante:
   ni qué tarjetas sabe o le fallan.
 - sus planes de estudio, las fechas de sus pruebas y sus horarios de estudio (cuándo rinde, cuándo estudia, qué bloques tiene).
 - cuánto y cuándo estudia (horas por ramo, su racha, su meta semanal de estudio, sus hábitos de estudio).
+- sus metas de ahorro (para qué junta, cuánto, para cuándo y cuánto lleva apartado): dicen mucho de su vida y su plata.
 - el resumen de su día (qué clases, entregas y pruebas tiene hoy, sus tarjetas de repaso y lo que gasta): es todo lo anterior junto.
 
 Pásale solo el tema de estudio, escrito en general ("explica la derivada de funciones

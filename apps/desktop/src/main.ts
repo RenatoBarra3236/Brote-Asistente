@@ -37,6 +37,7 @@ import type { ResumenEstudio } from "./agente/estadisticas";
 import { debeAvisarTarjetas, claveDia, propuestasRepasoNuevas, textoAvisoPropuestaRepaso, textoAvisoTarjetas, REPASO_VACIO, type EstadoRepaso } from "./agente/repaso";
 import { propuestasNuevas, textoAvisoPropuestas, type PropuestaAgenda } from "./agente/propuestas-agenda";
 import type { Grabaciones } from "./agente/grabaciones-memoria";
+import type { ResumenAhorro } from "./agente/ahorro";
 import type { EstadoPlata } from "./agente/plata";
 import { AVISO_EN_ALA_MS, COLOR_DE, textoCorto, type TipoNovedad } from "./agente/novedades";
 import { debeNotificarAlSistema, leerNotificaciones } from "./agente/notificaciones";
@@ -406,8 +407,9 @@ async function iniciar(): Promise<void> {
       if (!avisar("computador", texto)) personaje.tocar();
     });
     // Brote celebra lo que logras (E3 y E4): un aviso con su texto y un saltito. Pasa aun en concentración.
-    puente.alCelebrar(({ texto }) => {
-      avisar("celebracion", texto);
+    puente.alCelebrar(({ motivo, texto }) => {
+      // Lo del ahorro deja su punto en Plata; lo escolar, en Estudio.
+      avisar(motivo === "ahorro" ? "ahorro" : "celebracion", texto);
       personaje.tocar();
     });
     puente.alCambiarAnimo((animo) => personaje.setAnimo(animo));
@@ -567,6 +569,9 @@ async function iniciar(): Promise<void> {
     puente.alCambiarPlata((estado) => panel.mostrarPlata(estado));
     void puente.consultar<EstadoPlata | null>({ tipo: "plata-estado" }).then((estado) => panel.mostrarPlata(estado), () => {});
     setInterval(() => panel.mostrarPlata(), 60_000);
+    // Metas de ahorro (aviso aparte): aparecen en la tarjeta de Plata.
+    puente.alCambiarAhorro((resumen) => panel.mostrarAhorro(resumen));
+    void puente.consultar<ResumenAhorro | null>({ tipo: "ahorro-estado" }).then((resumen) => panel.mostrarAhorro(resumen), () => {});
     puente.alAvisoPlata((texto) => {
       avisar("plata", texto);
       personaje.tocar();

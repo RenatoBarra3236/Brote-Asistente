@@ -50,6 +50,17 @@
           propuestas: [], deHoy: [], porRamo: [], total: 3, hoy: 2,
         },
         // Datos inventados (A5): nunca tiempos reales.
+        ahorro: {
+          metas: [
+            { id: 1, nombre: "Viaje", monto: 150000, limiteMs: Date.now() + 150 * 86400000, creadaMs: Date.now() - 40 * 86400000, estado: "activa" },
+            { id: 2, nombre: "Notebook", monto: 600000, limiteMs: null, creadaMs: Date.now() - 90 * 86400000, estado: "archivada" },
+          ],
+          aportes: [
+            { id: 1, metaId: 1, monto: 30000, ms: Date.now() - 20 * 86400000 },
+            { id: 2, metaId: 1, monto: 15000, ms: Date.now() - 5 * 86400000 },
+            { id: 3, metaId: 2, monto: 200000, ms: Date.now() - 60 * 86400000 },
+          ],
+        },
         estudio: {
           ramos: [{ id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false }],
           resumen: { totalMin: 320, pasadaMin: 200, porDia: [60, 90, 0, 0, 0, 0, 0], hoy: 2, hoyMin: 0, porRamo: [], racha: 0, desdeSemanaMs: 0, desdeMs: Date.now() - 12 * 86400000, hay: true, totalHistoricoMin: 1260,
@@ -146,6 +157,16 @@
                   sim.estudio.resumen.hay = sim.estudio.resumen.totales.length > 0;
                   sim.estudio.resumen.totalHistoricoMin = sim.estudio.resumen.totales.reduce((a, t) => a + t.totalMin, 0);
                   datos = { borrados: antes - sim.estudio.resumen.totales.length };
+                  break;
+                }
+                case "ahorro-todo":
+                  datos = sim.ahorro;
+                  break;
+                case "ahorro-borrar": {
+                  const antes = sim.ahorro.metas.length;
+                  sim.ahorro.metas = sim.ahorro.metas.filter((m) => !(pedido.meta === null || m.id === pedido.meta));
+                  sim.ahorro.aportes = sim.ahorro.aportes.filter((a) => sim.ahorro.metas.some((m) => m.id === a.metaId));
+                  datos = { borrados: antes - sim.ahorro.metas.length };
                   break;
                 }
                 case "plan-estudio-todo":

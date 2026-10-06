@@ -96,6 +96,7 @@ import {
   type ItemAgenda,
   type VistaAgenda,
 } from "./agente/agenda";
+import { FRASE_NUEVA_META, NOTA_LIBRETA, TEXTO_SIN_METAS_ISLA, TITULO_AHORRO, filaDeMeta, frasePorAporte, type ResumenAhorro } from "./agente/ahorro";
 import { barrasMeses, barrasSemana, cuandoMovimiento, describirProyeccion, formatearMonto, montoCorto, resumenTendencia, textoFrecuente, textoMes, textoProyeccion, textoPuedesHoy, textoVariacion, type EstadoPlata } from "./agente/plata";
 import { icono, type NombreIcono } from "./iconos";
 import { copiarTexto } from "./copiar";
@@ -329,6 +330,7 @@ export class Panel {
   // Plata
   private readonly plata: HTMLDivElement;
   private estadoPlata: EstadoPlata | null = null;
+  private estadoAhorro: ResumenAhorro | null = null;
   /** El mes tocado en el gráfico de tendencia (su clave "2026-09"); se pierde al cambiar de mes. */
   private mesElegido: string | null = null;
   // Grabar: el micrófono, los audios guardados y sus transcripciones
@@ -2172,10 +2174,16 @@ export class Panel {
     cabecera.append(mes, hoy);
     partes.push(cabecera);
 
+    // Con metas de ahorro, la tarjeta va arriba; sin ellas, una invitación discreta al final.
+    const ahorro = this.tarjetaAhorro();
+    const conMetas = (this.estadoAhorro?.metas.length ?? 0) > 0;
+    if (ahorro && conMetas) partes.push(ahorro);
+
     if (estado.mes.cantidad === 0 && estado.ultimos.length === 0) {
       const vacio = crear("p", "vacia-texto");
       vacio.textContent = "Todavía no anotas gastos. Prueba: «gasté 2 lucas en almuerzo».";
       partes.push(vacio);
+      if (ahorro && !conMetas) partes.push(ahorro);
       this.plata.replaceChildren(...partes);
       return;
     }
@@ -2256,7 +2264,92 @@ export class Panel {
       }
       partes.push(frecuentes);
     }
+    if (ahorro && !conMetas) partes.push(ahorro);
     this.plata.replaceChildren(...partes);
+  }
+
+  /** Las metas de ahorro llegan aparte (aviso `ahorro`); se repinta la pestaña con lo último de Plata. */
+  mostrarAhorro(resumen: ResumenAhorro | null): void {
+    this.estadoAhorro = resumen;
+    this.mostrarPlata();
+  }
+
+  /**
+   * «Metas de ahorro»: una fila por meta (barra con el semáforo, montos, cuota y «+ Aporte») y, si se puede, la
+   * línea de holgura y la sugerencia del gasto hormiga. Sin metas, una invitación. Nunca reprocha: si vas lento,
+   * solo dice cuándo llegarías.
+   */
+  private tarjetaAhorro(): HTMLElement | null {
+    const r = this.estadoAhorro;
+    if (!r) return null;
+    const ahora = Date.now();
+    const tarjeta = crear("div", "tarjeta plata-ahorro");
+    const etiqueta = etiquetaTarjeta(TITULO_AHORRO);
+    etiqueta.title = NOTA_LIBRETA;
+    tarjeta.append(etiqueta);
+    if (r.metas.length === 0) {
+      const invita = crear("p", "plata-invita");
+      invita.textContent = TEXTO_SIN_METAS_ISLA;
+      const poner = boton("boton boton-fila", "Poner una meta");
+      poner.addEventListener("click", () => this.escribirEnCampo(FRASE_NUEVA_META));
+      tarjeta.append(invita, poner);
+      return tarjeta;
+    }
+    for (const p of r.metas) {
+      const f = filaDeMeta(p, ahora);
+      const fila = crear("div", "ahorro-meta");
+      const cabecera = crear("div", "ahorro-cabecera");
+      const nombre = crear("span", "fila-nombre");
+      nombre.textContent = `${f.cumplida ? "🎉" : "💰"} ${f.nombre}`;
+      nombre.title = f.nombre;
+      const pct = crear("span", "fila-dato");
+      pct.textContent = `${f.porcentaje} %`;
+      cabecera.append(nombre, pct);
+      // El color sale de una lista cerrada (`verde|ambar|rojo|sin`), nunca de texto de afuera.
+      const barra = crear("div", `avance plata-avance ${f.color}`);
+      const relleno = crear("i", "");
+      relleno.style.width = `${(f.fraccion * 100).toFixed(1)}%`;
+      barra.append(relleno);
+      const montos = crear("div", "tarjeta-detalle");
+      montos.textContent = f.montos;
+      const detalle = crear("div", "tarjeta-detalle");
+      detalle.textContent = f.detalle;
+      detalle.title = f.ritmo ? `${f.detalle}. ${f.ritmo}` : f.detalle;
+      const linea = crear("div", "ahorro-linea");
+      linea.append(montos);
+      fila.append(cabecera, barra, linea, detalle);
+      if (f.ritmo) {
+        const ritmo = crear("div", "tarjeta-detalle ahorro-ritmo");
+        ritmo.textContent = f.ritmo;
+        fila.append(ritmo);
+      }
+      if (!f.cumplida) {
+        const aporte = boton("pildora plata-toque", "");
+        aporte.append(icono("mas"), document.createTextNode(" Aporte"));
+        aporte.title = `Escribe cuánto apartaste para «${f.nombre}»`;
+        aporte.addEventListener("click", () => {
+          const frase = frasePorAporte(f.nombre);
+          this.escribirEnCampo(frase.texto, frase.cursor);
+        });
+        linea.append(aporte);
+      }
+      tarjeta.append(fila);
+    }
+    for (const texto of [r.lineaHolgura, r.sugerencia]) {
+      if (!texto) continue;
+      const linea = crear("div", "tarjeta-detalle ahorro-nota");
+      linea.textContent = texto;
+      tarjeta.append(linea);
+    }
+    return tarjeta;
+  }
+
+  /** Deja una frase a medias en el campo de texto (con el cursor donde se sigue escribiendo). */
+  private escribirEnCampo(texto: string, cursor = texto.length): void {
+    this.entrada.value = texto;
+    this.actualizarBotonEnviar();
+    this.entrada.focus();
+    this.entrada.setSelectionRange(cursor, cursor);
   }
 
   /** "Últimos 6 meses": barras tocables, la línea del presupuesto y "a este ritmo cierras el mes en X". */

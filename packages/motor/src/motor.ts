@@ -29,6 +29,11 @@ import { interpretarPlanEstudio, responderPlanEstudio } from "./plan-estudio-mot
 import type { AccionPlanEstudio } from "./plan-estudio-motor.ts";
 import { EstadisticasEstudio } from "./estadisticas.ts";
 import { interpretarEstadisticas, responderEstadisticas } from "./estadisticas-motor.ts";
+import { interpretarAhorro, responderAhorro } from "./ahorro-motor.ts";
+import type { AccionAhorro } from "./ahorro-motor.ts";
+import type { Ahorro } from "./ahorro.ts";
+import { holguraDelMes, resumirAhorro } from "./ahorro-tipos.ts";
+import type { ResumenAhorro } from "./ahorro-tipos.ts";
 import type { AccionEstadisticas } from "./estadisticas-motor.ts";
 import { textoEmpezarRepaso, textoHayRepaso } from "./repaso-frases.ts";
 import { interpretarNotas, responderNotas } from "./notas-motor.ts";
@@ -39,7 +44,7 @@ import type { DiaAgenda } from "./agenda.ts";
 import { describirSemana } from "./agenda-carga.ts";
 import { armarResumenDelDia, type PlataDelDia, type ResumenDelDia } from "./resumen-dia.ts";
 import { resumirRepaso } from "./repaso-tipos.ts";
-import { describirHoy, describirPresupuestoPuesto, describirProyeccion, describirQueda, presupuestoDelMes, proyectarMes, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
+import { describirHoy, describirPresupuestoPuesto, describirProyeccion, describirQueda, hormigaDelMes, presupuestoDelMes, proyectarMes, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
 
 export interface Resultado {
   intencion: Intencion;
@@ -87,6 +92,7 @@ export type Accion =
   | { intencion: "repaso-empezar"; ramo: string | null }
   | AccionPlanEstudio
   | AccionEstadisticas
+  | AccionAhorro
   | AccionNotas;
 
 /** Cuántos gastos muestra "mis últimos gastos". */
@@ -167,6 +173,12 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "estudio-meta-quitar":
     case "estudio-meta-como":
       return interpretarEstadisticas(intencion, ranuras, originales);
+    case "ahorro-crear":
+    case "ahorro-aportar":
+    case "ahorro-retirar":
+    case "ahorro-como":
+    case "ahorro-archivar":
+      return interpretarAhorro(intencion, ranuras, originales);
     case "estudio-fecha":
     case "estudio-plan":
     case "estudio-hoy":
@@ -233,6 +245,7 @@ export class Motor {
   private readonly repaso: Repaso | null;
   private readonly planes: PlanesEstudio | null;
   private readonly estadisticas: EstadisticasEstudio | null;
+  private readonly ahorro: Ahorro | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -273,6 +286,8 @@ export class Motor {
       planes?: PlanesEstudio;
       /** El tiempo estudiado. Sin esto, esas frases van al agente. */
       estadisticas?: EstadisticasEstudio;
+      /** Las metas de ahorro. Sin esto, esas frases van al agente. */
+      ahorro?: Ahorro;
     } = {},
   ) {
     this.ramos = opciones.ramos ?? null;
@@ -280,6 +295,7 @@ export class Motor {
     this.repaso = opciones.repaso ?? null;
     this.planes = opciones.planes ?? null;
     this.estadisticas = opciones.estadisticas ?? null;
+    this.ahorro = opciones.ahorro ?? null;
     this.uso = opciones.uso ?? null;
     this.transcripciones = opciones.transcripciones ?? null;
     this.activa = opciones.activa ?? (() => true);
@@ -374,6 +390,11 @@ export class Motor {
     if (accion.intencion === "estudio-horas" || accion.intencion === "estudio-racha" || accion.intencion === "estudio-anotar" || accion.intencion.startsWith("estudio-meta-")) {
       if (!this.ramos || !this.estadisticas) return null;
       const texto = responderEstadisticas(accion, { ramos: this.ramos, estadisticas: this.estadisticas, ahoraMs: this.reloj().getTime() });
+      return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
+    }
+    if (accion.intencion.startsWith("ahorro-")) {
+      if (!this.ahorro) return null;
+      const texto = responderAhorro(accion as AccionAhorro, { ahorro: this.ahorro, ahoraMs: this.reloj().getTime(), resumen: () => this.resumenAhorro() });
       return texto === null ? null : { intencion: accion.intencion, plantilla: plantilla.id, texto };
     }
     if (accion.intencion === "estudio-fecha" || accion.intencion === "estudio-plan" || accion.intencion === "estudio-hoy") {
@@ -593,6 +614,18 @@ export class Motor {
   private plataDelDia(ahora: Date): PlataDelDia {
     const p = this.estadoPresupuesto();
     return { mesGastado: p ? p.gastado : this.gastos.total(rangoDe("este mes", ahora)).total, presupuesto: p ? p.monto : null, puedesHoy: p ? p.puedesHoy : null };
+  }
+
+  /** Las metas de ahorro con su avance, la holgura del mes y la sugerencia del gasto hormiga (sin las archivadas). */
+  resumenAhorro(): ResumenAhorro {
+    const ahora = this.reloj();
+    const ms = ahora.getTime();
+    const proy = this.proyeccionDelMes(ahora);
+    const holgura = proy.estado === "ok" ? holguraDelMes(this.gastos.presupuesto(), proy.proyectado) : null;
+    const recientes = this.gastos
+      .entre({ desde: new Date(ms - 31 * 86_400_000), hasta: new Date(ms + 1) })
+      .map((g) => ({ id: g.id, monto: g.monto, categoria: g.categoria, descripcion: g.descripcion, fechaMs: g.fecha.getTime() }));
+    return resumirAhorro(this.ahorro?.metas() ?? [], this.ahorro?.aportes() ?? [], ms, { holgura, hormiga: hormigaDelMes(recientes, ms) });
   }
 
   /** "A este ritmo terminas el mes en X" con los gastos de este mes (hasta ahora). */

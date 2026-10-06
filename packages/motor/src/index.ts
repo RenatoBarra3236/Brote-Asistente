@@ -63,3 +63,8 @@ export { armarResumenDelDia, saludoDelMomento, type EntradaResumen, type PlataDe
 export { HITOS_RACHA, celebracionesDeEstudio, claveDeSemana, leerAvisosEstudio, textoHitoRacha, textoMetaCumplida, type AvisosEstudio, type CelebracionEstudio } from "./estadisticas-metas.ts";
 export { META_MAX, META_MIN, progresoDeMeta, validarMeta, type ProgresoMeta } from "./estadisticas-tipos.ts";
 export { elegirTexto, leerAprobados, ramosPorCelebrar, textoBloqueHecho, textoRamoAprobado, textoTareaHecha } from "./celebraciones.ts";
+export { Ahorro, CLAVE_AVISOS_AHORRO, type ResultadoAporte, type ResultadoMeta } from "./ahorro.ts";
+export { HITOS_AHORRO, MAX_METAS_ACTIVAS, MONTO_MAX_AHORRO, MONTO_MIN_AHORRO, NOMBRE_POR_DEFECTO, buscarMetaAhorro, celebracionesDeAhorro, claveMeta, describirAhorro, describirMetaAhorro, holguraDelMes, juntadoAhorro, leerAvisosAhorro, limpiarNombreMeta, mesesHastaAhorro, progresoDeMetaAhorro, resumirAhorro, textoAvance, textoHitoAhorro, textoLimite, validarMetaAhorro, validarMontoAhorro, type AporteAhorro, type AvisosAhorro, type CelebracionAhorro, type ColorAhorro, type MetaAhorro, type NuevaMeta, type ProgresoMetaAhorro, type ResumenAhorro } from "./ahorro-tipos.ts";
+export { interpretarAhorro, responderAhorro, type AccionAhorro } from "./ahorro-motor.ts";
+export { hormigaDelMes } from "./plata.ts";
+export { leerMes } from "./fechas.ts";

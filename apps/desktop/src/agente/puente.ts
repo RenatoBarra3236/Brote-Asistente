@@ -9,6 +9,7 @@ import type { Decision, Marco, Propuesta, ResultadoEnvio, Transporte } from "./t
 import type { ConfigFunciones } from "./funciones.ts";
 import type { EstadoUso } from "./uso.ts";
 import type { Trabajando } from "./especialistas.ts";
+import type { ResumenAhorro } from "./ahorro.ts";
 import type { EstadoPlata } from "./plata.ts";
 import type { EstadoEstudio, Ramo } from "./estudio.ts";
 import type { BloquePlan, PlanEstudio, PropuestaVista } from "./plan-estudio.ts";
@@ -152,6 +153,7 @@ type Aviso =
   | { tipo: "especialistas"; lista: Trabajando[] }
   | { tipo: "especialistas-aviso"; texto: string }
   | { tipo: "plata"; plata: EstadoPlata | null }
+  | { tipo: "ahorro"; ahorro: ResumenAhorro | null }
   | { tipo: "ramos"; ramos: Ramo[] }
   | { tipo: "notas"; fichas: unknown[] }
   | { tipo: "repaso"; repaso: EstadoRepaso }
@@ -208,6 +210,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesEspecialistas = new Set<(lista: Trabajando[]) => void>();
   private readonly oyentesAvisoEspecialistas = new Set<(texto: string) => void>();
   private readonly oyentesPlata = new Set<(estado: EstadoPlata | null) => void>();
+  private readonly oyentesAhorro = new Set<(resumen: ResumenAhorro | null) => void>();
   private readonly oyentesAvisoPlata = new Set<(texto: string) => void>();
   private readonly oyentesRamos = new Set<(ramos: Ramo[]) => void>();
   private readonly pendientes = new Map<string, Pendiente>();
@@ -392,6 +395,12 @@ export class TransportePuente implements Transporte {
   alAvisoEspecialistas(oyente: (texto: string) => void): () => void {
     this.oyentesAvisoEspecialistas.add(oyente);
     return () => this.oyentesAvisoEspecialistas.delete(oyente);
+  }
+
+  /** Las metas de ahorro: con cada cambio (una frase, la isla o el MCP). `null` = la función está apagada. */
+  alCambiarAhorro(oyente: (resumen: ResumenAhorro | null) => void): () => void {
+    this.oyentesAhorro.add(oyente);
+    return () => this.oyentesAhorro.delete(oyente);
   }
 
   /** La pestaña Plata: el resumen de los gastos, cada vez que cambian (o el presupuesto, o el día). */
@@ -659,6 +668,9 @@ export class TransportePuente implements Transporte {
         return;
       case "plata":
         for (const oyente of this.oyentesPlata) oyente(aviso.plata);
+        return;
+      case "ahorro":
+        for (const oyente of this.oyentesAhorro) oyente(aviso.ahorro);
         return;
       case "plata-aviso":
         for (const oyente of this.oyentesAvisoPlata) oyente(aviso.texto);

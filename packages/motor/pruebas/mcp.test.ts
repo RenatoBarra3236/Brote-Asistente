@@ -48,7 +48,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "estudio_plan", "estudio_hoy", "estudio_estadisticas", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "estudio_plan", "estudio_hoy", "estudio_estadisticas", "ahorro_resumen", "motor_proponer_plantilla"],
     );
   });
 
@@ -342,6 +342,20 @@ describe("servidor MCP de gastos", () => {
     assert.equal((await llamarEsperando("estudio_plan", { ramo: "física", evaluacion: "certamen 1" })).error, true);
     assert.equal((await llamarEsperando("estudio_plan", { ramo: "cálculo", evaluacion: "certamen 9" })).error, true);
     assert.equal((await llamarEsperando("estudio_plan", { ramo: "cálculo" })).error, true);
+  });
+
+  it("ahorro_resumen: lee las metas y lo juntado, sin escribir nada", async () => {
+    const { Ahorro } = await import("../src/ahorro.ts");
+    const a = new Ahorro(gastos);
+    assert.match(JSON.parse(llamar("ahorro_resumen", {}).texto).nota, /no tiene metas/);
+    const v = a.crear({ nombre: "Viaje", monto: 150_000, limiteMs: Date.now() + 90 * 86_400_000 }, Date.now());
+    a.aportar(v.ok ? v.meta.id : 0, 30_000, Date.now());
+    const r = JSON.parse(llamar("ahorro_resumen", {}).texto);
+    assert.equal(r.metas[0].nombre, "Viaje");
+    assert.equal(r.metas[0].juntado, 30_000);
+    assert.equal(r.metas[0].falta, 120_000);
+    assert.equal(r.metas[0].porcentaje, 20);
+    assert.equal(a.aportes().length, 1);
   });
 
   it("estudio_estadisticas: lee el tiempo estudiado por periodo y ramo, sin escribir nada", async () => {

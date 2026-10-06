@@ -13,7 +13,7 @@ import { NOMBRES_DE_CATEGORIA } from "./categorias.ts";
 import { FORMAS_DE_PERIODO } from "./periodos.ts";
 import { normalizarConMapa } from "./texto.ts";
 import { PATRON_DURACION, PATRON_HORA } from "./tiempo.ts";
-import { PATRON_DIA } from "./fechas.ts";
+import { PATRON_DIA, PATRON_MES } from "./fechas.ts";
 
 export type Intencion =
   | "registrar-gasto"
@@ -78,9 +78,14 @@ export type Intencion =
   | "estudio-anotar"
   | "estudio-meta-poner"
   | "estudio-meta-quitar"
-  | "estudio-meta-como";
+  | "estudio-meta-como"
+  | "ahorro-crear"
+  | "ahorro-aportar"
+  | "ahorro-retirar"
+  | "ahorro-como"
+  | "ahorro-archivar";
 
-export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista" | "fecha" | "dia";
+export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista" | "fecha" | "dia" | "mes";
 
 export interface Plantilla {
   id: string;
@@ -114,6 +119,7 @@ const RANURAS: Record<Ranura, string> = {
   hora: PATRON_HORA,
   fecha: PATRON_DIA,
   dia: "ayer|hoy",
+  mes: PATRON_MES,
   // Notas (A2): una nota 1–7 con coma o punto, y un peso en % (la coma entre dígitos no se pierde al normalizar).
   nota: "\\d(?:[.,]\\d{1,2})?",
   peso: "\\d{1,3}(?: ?%| por ciento)?",
@@ -403,6 +409,24 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "ramos-ver-cuales", intencion: "ramos-ver", patron: "(que|cuales) ramos (tengo|estoy viendo|estoy cursando|curso)" },
   { id: "ramos-archivar", intencion: "ramos-archivar", patron: "(quita|quitar|archiva|archivar|elimina|eliminar|saca|sacar|borra|borrar) [el|mi] ramo [de] {cosa}" },
   // Notas (A2). Van al final: las de plan y gastos ganan si calzan. Cada una lleva una palabra fija
+  // Metas de ahorro. Siempre con «juntar», «ahorrar», «aparté»… o la palabra «meta»: «quiero ahorrar» a secas va al agente.
+  { id: "ahorro-crear-mes-cosa", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto} para {mes} para {cosa}" },
+  { id: "ahorro-crear-mes", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto} para {mes}" },
+  { id: "ahorro-crear-cosa-mes", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto} para {cosa} para {mes}" },
+  { id: "ahorro-crear-cosa", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto} para {cosa}" },
+  { id: "ahorro-crear-solo", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto}" },
+  { id: "ahorro-crear-meta-mes", intencion: "ahorro-crear", patron: "mi meta de ahorro (es|sera) [de] {monto} para {mes}" },
+  { id: "ahorro-crear-meta", intencion: "ahorro-crear", patron: "mi meta de ahorro (es|sera) [de] {monto}" },
+  { id: "ahorro-crear-nueva", intencion: "ahorro-crear", patron: "(crea|creame|pon|ponme|agrega|agregame) [una] meta de ahorro de {monto} para {mes}" },
+  { id: "ahorro-crear-nueva-solo", intencion: "ahorro-crear", patron: "(crea|creame|pon|ponme|agrega|agregame) [una] meta de ahorro de {monto}" },
+  { id: "ahorro-aportar-para", intencion: "ahorro-aportar", patron: "(ahorre|aparte|junte|guarde) {monto} para [la meta] [de|del] {cosa}" },
+  { id: "ahorro-aportar-meta", intencion: "ahorro-aportar", patron: "(ahorre|aparte|junte|guarde|meti) {monto} (en|a) la meta [de|del] {cosa}" },
+  { id: "ahorro-aportar-solo", intencion: "ahorro-aportar", patron: "(ahorre|aparte|junte) {monto}" },
+  { id: "ahorro-retirar-meta", intencion: "ahorro-retirar", patron: "(saque|retire|use|ocupe) {monto} (de|del) la meta [de|del] {cosa}" },
+  { id: "ahorro-como-todas", intencion: "ahorro-como", patron: "(como van|como voy con|como vamos con|ver|muestrame|dame) mis metas [de ahorro]" },
+  { id: "ahorro-como-lista", intencion: "ahorro-como", patron: "mis metas de ahorro" },
+  { id: "ahorro-como-meta", intencion: "ahorro-como", patron: "(como voy con|cuanto me falta para|cuanto llevo (en|de)) la meta [de|del] {cosa}" },
+  { id: "ahorro-archivar", intencion: "ahorro-archivar", patron: "(borra|elimina|quita|cancela|archiva) la meta [de ahorro] [de|del] {cosa}" },
   // ("nota", "evaluacion", "ramo"…) o el verbo «me saqué», para no calzar con gastos ni conversación.
   { id: "notas-me-saque", intencion: "notas-anotar", patron: "(me saque|saque|obtuve|tuve|tengo) [un|una] {nota} en {cosa}" },
   { id: "notas-agregar-nota", intencion: "notas-anotar", patron: "(agrega|agregar|anade|anota|anotar|pon|ponme|apunta|apuntar) [una|mi] nota [de] {nota} en {cosa}" },

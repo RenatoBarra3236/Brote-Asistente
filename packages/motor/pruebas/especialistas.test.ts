@@ -228,6 +228,12 @@ describe("privacidad con planes gratuitos", () => {
     assert.match(seccion, /el resumen de su día/);
   });
 
+  it("la skill delegar prohíbe pasar las metas de ahorro a planes gratuitos", () => {
+    const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
+    const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));
+    assert.match(seccion, /sus metas de ahorro \(para qué junta, cuánto, para cuándo y cuánto lleva apartado\)/);
+  });
+
   it("la skill delegar prohíbe pasar transcripciones a planes gratuitos", () => {
     const skill = readFileSync(fileURLToPath(new URL("../skill/delegar/SKILL.md", import.meta.url)), "utf8");
     const seccion = skill.slice(skill.indexOf("## Datos personales: nunca a un plan gratuito"), skill.indexOf("## Cómo hacerlo en pocas vueltas"));

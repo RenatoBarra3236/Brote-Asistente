@@ -8,7 +8,7 @@ const TODOS: TipoNovedad[] = ["claude", "descarga", "temporizador", "calendario"
 
 describe("modo concentración", () => {
   it("pasan el temporizador, la clase, la entrega y el bloque del plan; el resto se calla", () => {
-    assert.deepEqual([...PASAN_EN_CONCENTRACION].sort(), ["aula", "calendario", "celebracion", "estudio", "temporizador"]);
+    assert.deepEqual([...PASAN_EN_CONCENTRACION].sort(), ["ahorro", "aula", "calendario", "celebracion", "estudio", "temporizador"]);
     for (const tipo of TODOS) assert.equal(silenciaEnConcentracion(tipo), !PASAN_EN_CONCENTRACION.includes(tipo), tipo);
     assert.equal(silenciaEnConcentracion("claude"), true);
     assert.equal(silenciaEnConcentracion("calendario"), false);

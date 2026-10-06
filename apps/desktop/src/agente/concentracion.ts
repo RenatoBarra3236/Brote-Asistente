@@ -6,7 +6,7 @@
 import type { TipoNovedad } from "./novedades.ts";
 
 /** Lo que sí suena durante la concentración: el propio temporizador, la clase que empieza, una entrega, el bloque del plan y una celebración. */
-export const PASAN_EN_CONCENTRACION: readonly TipoNovedad[] = ["temporizador", "calendario", "aula", "estudio", "celebracion"];
+export const PASAN_EN_CONCENTRACION: readonly TipoNovedad[] = ["temporizador", "calendario", "aula", "estudio", "celebracion", "ahorro"];
 
 /** ¿Este tipo de aviso se calla durante la concentración? */
 export function silenciaEnConcentracion(tipo: TipoNovedad): boolean {
@@ -34,6 +34,7 @@ const DE: Record<TipoNovedad, string> = {
   estudio: "de estudio",
   resumen: "del resumen",
   celebracion: "de celebraciones",
+  ahorro: "de ahorro",
 };
 
 /** «Mientras estudiabas llegaron 3 avisos: 2 de Claude Code y 1 de plata. Los dejé en Novedades.» */

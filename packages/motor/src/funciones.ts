@@ -230,7 +230,7 @@ export function esDeAgenda(intencion: string): boolean {
 
 /** La función de la que depende una intención del motor (`null`: siempre disponible, como "ver-memoria"). */
 export function funcionDeIntencion(intencion: string): IdFuncion | null {
-  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto|plata-proyeccion)$/.test(intencion) || intencion.startsWith("presupuesto-")) return "gastos";
+  if (/^(registrar-gasto|consultar-gastos|ultimos-gastos|borrar-ultimo-gasto|plata-proyeccion)$/.test(intencion) || intencion.startsWith("presupuesto-") || intencion.startsWith("ahorro-")) return "gastos";
   if (/^(pomodoro|temporizador|cancelar-pomodoro|cancelar-temporizador|consultar-temporizador)$/.test(intencion)) return "temporizadores";
   if (intencion.startsWith("calendario-")) return "calendario";
   if (intencion.startsWith("aula-")) return "aula";
@@ -248,7 +248,7 @@ export function funcionDeIntencion(intencion: string): IdFuncion | null {
 
 /** La función de la que depende una herramienta del servidor MCP (`null`: siempre disponible). */
 export function funcionDeHerramienta(nombre: string): IdFuncion | null {
-  if (nombre.startsWith("gastos_")) return "gastos";
+  if (nombre.startsWith("gastos_") || nombre.startsWith("ahorro_")) return "gastos";
   if (nombre.startsWith("temporizador_")) return "temporizadores";
   if (nombre.startsWith("calendario_")) return "calendario";
   if (nombre === "aula_entregas") return "aula";

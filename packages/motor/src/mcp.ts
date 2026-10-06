@@ -17,6 +17,7 @@ import { proponerPlantilla } from "./aprendizaje.ts";
 import { CATEGORIAS, categoriaDe, type Categoria } from "./categorias.ts";
 import { Gastos, RUTA_BASE } from "./gastos.ts";
 import { Motor } from "./motor.ts";
+import { Ahorro } from "./ahorro.ts";
 import { PLANTILLAS_BASE } from "./plantillas.ts";
 import { POMODORO, Temporizadores } from "./temporizadores.ts";
 import { describirDuracion, reloj } from "./tiempo.ts";
@@ -484,6 +485,15 @@ const HERRAMIENTAS = [
       additionalProperties: false,
     },
     annotations: { title: "Estudio: estadísticas", readOnlyHint: true },
+  },
+  {
+    name: "ahorro_resumen",
+    description:
+      "Las metas de ahorro del usuario: cuánto quiere juntar, cuánto lleva anotado, cuánto falta, la cuota mensual y el semáforo si puso fecha, " +
+      "y si cabe en su presupuesto. Solo lectura. Brote no ve cuentas ni saldos: lo juntado es lo que el usuario dice que apartó (se anota " +
+      "diciendo «aparté 20 lucas para el viaje» en Brote). Son datos personales: úsalos solo para responderle.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Metas de ahorro", readOnlyHint: true },
   },
   {
     name: "motor_proponer_plantilla",
@@ -980,6 +990,32 @@ function usar(gastos: Gastos, nombre: string, args: any): string {
         desdeSeg: trozo.desdeSeg,
         hastaSeg: trozo.hastaSeg,
         texto: trozo.texto,
+      });
+    }
+    case "ahorro_resumen": {
+      const motor = new Motor(gastos, { ahorro: new Ahorro(gastos) });
+      const r = motor.resumenAhorro();
+      const ahora = Date.now();
+      return JSON.stringify({
+        moneda: "CLP",
+        metas: r.metas.map((p) => ({
+          nombre: p.meta.nombre,
+          meta: p.meta.monto,
+          juntado: p.juntado,
+          falta: p.falta,
+          porcentaje: p.porcentaje,
+          cumplida: p.cumplida,
+          fechaLimite: p.meta.limiteMs === null ? null : fechaIso(new Date(p.meta.limiteMs)),
+          mesesQueQuedan: p.mesesQuedan,
+          cuotaMensual: p.cuotaMensual,
+          ritmoMensualReciente: p.ritmoMensual,
+          semaforo: p.color,
+          llegariaEn: p.llegariaMs === null ? null : fechaIso(new Date(p.llegariaMs)),
+        })),
+        cuotaMensualTotal: r.cuotaTotal,
+        holguraDelMesConElPresupuesto: r.holgura,
+        nota: r.metas.length === 0 ? "El usuario no tiene metas de ahorro." : "Lo juntado es lo que el usuario dijo que apartó; Brote no ve cuentas.",
+        consultadoEn: fechaIso(new Date(ahora)),
       });
     }
     case "estudio_estadisticas": {

@@ -139,6 +139,12 @@
 // emparejan por palabra clave), tareas y transcripciones que el usuario les asignó. Nada se crea solo.
 //   aviso { "tipo": "ramos", "ramos": Ramo[] }   al partir y al cambiar la lista (también si lo cambia el MCP)
 //   pedido { "tipo": "ramos-estado" }   → "datos": { ramos, fichas, sugerencias, fuentes: { calendario, aula } }
+//   pedido { "tipo": "documento-agregar", "ruta": "/ruta/Apuntes.pdf", "ramo"?: id }   → "datos": { documento } o error con el motivo (D: Brote lee documentos; solo guarda el TEXTO, nunca el archivo)
+//   pedido { "tipo": "documentos-estado" }   → "datos": DocumentoVista[] (nombre, tipo, páginas, largo, ramo; no depende de la función)
+//   pedido { "tipo": "documento-ramo", "documento": "doc-…", "ramo": id | null }   · { "tipo": "documento-borrar", "que": "documento"|"todo", "documento"?: "doc-…" }
+//   aviso { "tipo": "documentos", "documentos": DocumentoVista[] }   al agregar, asignar o borrar
+//   pedido { "tipo": "ramo-todo", "ramo": id }   → "datos": { ramoId, resumen, items: ItemDeRamo[], fuentes } (C: todo lo de un ramo, por fecha)
+//   pedido { "tipo": "ramos-buscar", "texto": "…" }   → "datos": { resultados: [{ ramoId, total, items }], fuentes } (solo títulos; el texto buscado nunca se registra)
 //   pedido { "tipo": "ramos-todos" }   → "datos": Ramo[] (con los archivados; no depende de la función: «Lo que sé de ti»)
 //   pedido { "tipo": "ramo-crear", "nombre": "…", "alias"?: [...], "color"?: "…" }   → "mensaje", "datos": Ramo
 //   pedido { "tipo": "ramo-editar", "ramo": 3, "nombre"?, "alias"?, "color"? }   → "datos": Ramo
@@ -184,7 +190,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, isAbsolute } from "node:path";
 import { createInterface } from "node:readline";
 import {
   Gastos,
@@ -306,6 +312,17 @@ import {
   armarFichaNotas,
   armarFichas,
   sugerirRamos,
+  agregarDocumento,
+  asignarRamoDocumento,
+  borrarDocumento,
+  borrarTodosLosDocumentos,
+  leerDocumentoGuardado,
+  listarDocumentos,
+  armarTodoDeRamos,
+  buscarEnRamos,
+  fuentesDeBaseDeDatos,
+  resumirRamo,
+  textoResumenRamo,
 } from "@asistente/motor";
 import {
   type Decision,
@@ -363,6 +380,11 @@ const PERMITIDAS_SIN_PREGUNTAR = new Set([
   "mcp__gastos__claude_uso",
   // Solo lectura. `ramos_crear` sí pregunta: escribe en la pestaña Estudio del usuario.
   "mcp__gastos__ramos_listar",
+  // Todo lo de un ramo: solo títulos y fechas, de lectura.
+  "mcp__gastos__ramo_todo",
+  // Documentos del usuario: solo lectura (el texto que Brote ya sacó; nada más del disco).
+  "mcp__gastos__documentos_listar",
+  "mcp__gastos__documentos_leer",
   // Notas: lectura y cálculo. `notas_anotar` sí pregunta: escribe una nota del usuario.
   "mcp__gastos__notas_resumen",
   "mcp__gastos__notas_necesaria",
@@ -488,6 +510,8 @@ const motor = new Motor(gastos, {
   // se vuelve a leer el calendario para que aparezca en la isla.
   crearEvento: (evento) => crearEvento(evento),
   aula: () => entregasAula,
+  // «Todo lo de cálculo»: el resumen de la frase; la lista completa la pide la isla con `ramo-todo`.
+  todoDeRamo: (ramoId) => todoDeRamosAhora(Date.now()).get(ramoId) ?? null,
   // «¿Cómo viene mi semana?»: lo ya leído; sin ninguna fuente prendida no hay nada que decir.
   agenda: () => (FUNCIONES_DE_AGENDA.some((f) => activa(f)) ? agendaDeAhora(Date.now()) : null),
   uso: () => {
@@ -1328,7 +1352,25 @@ function detenerNotas(): void {
 let marcaRepaso = "";
 function estadoRepaso() {
   const ahora = Date.now();
-  return armarEstadoRepaso(repaso.tarjetas(), repaso.propuestas(ahora), repaso.resumenes(), ahora);
+  // Una propuesta que sale de un documento lleva el nombre de su archivo para que la isla lo diga.
+  const propuestas = repaso.propuestas(ahora).map((p) => (p.grabacion.startsWith("doc-") ? { ...p, documento: leerDocumentoGuardado(p.grabacion)?.nombre ?? null } : p));
+  return armarEstadoRepaso(repaso.tarjetas(), propuestas, repaso.resumenes(), ahora);
+}
+
+/** Documentos (D): lo que ve la isla de cada uno. Nunca el texto ni la ruta del archivo original. */
+function documentosVista() {
+  return listarDocumentos().map((d) => ({
+    id: d.id,
+    nombre: d.nombre,
+    tipo: d.tipo,
+    paginas: d.paginas,
+    caracteres: d.caracteres,
+    ramoId: d.ramoId !== null && ramos.obtener(d.ramoId) ? d.ramoId : null,
+    creado: d.creado,
+  }));
+}
+function avisarDocumentos(): void {
+  avisar({ tipo: "documentos", documentos: documentosVista() });
 }
 function revisarRepaso(forzar = false): void {
   const marca = `${repaso.marca()}|${ramos.marca()}|${inicioDeHoy(Date.now())}`;
@@ -1443,6 +1485,23 @@ async function propuestaPlanEstudio(ramoId: number, evaluacionId: number, horas?
     // Lo que el calendario conoce llega hasta DIAS_VENTANA días: más allá se asume libre.
     miraHasta: ahora + DIAS_VENTANA * 86_400_000,
   };
+}
+/** Todo lo de cada ramo con lo ya leído (sin volver a leer el calendario ni el aula). Lo guardado se ve aunque la función se apague. */
+function todoDeRamosAhora(ahora: number) {
+  return armarTodoDeRamos(
+    ramos.listar(),
+    {
+      eventos: activa("calendario") ? eventosCalendario() : [],
+      entregas: activa("aula") && entregasAula ? pendientes(entregasAula, ahora) : [],
+      ...fuentesDeBaseDeDatos({ ramos, notas, planes: planesEstudio, repaso, tareas: tareasAgenda }, ahora),
+    },
+    ahora,
+  );
+}
+async function todoDeRamosLeyendo(ahora: number) {
+  if (activa("calendario")) await leerCalendarios();
+  if (activa("aula")) await leerAulaSiToca();
+  return todoDeRamosAhora(ahora);
 }
 /** La pestaña Estudio: ramos con su ficha y lo que se sugiere agregar. Lee las fuentes solo si su función está prendida. */
 async function estadoEstudio() {
@@ -2021,6 +2080,53 @@ async function atender(pedido: any): Promise<Extra> {
     // «Lo que sé de ti»: lo guardado es del usuario y debe poder verlo y borrarlo aunque apague la función.
     case "ramos-todos":
       return { datos: ramos.listar(true) };
+    case "documento-agregar": {
+      if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
+      if (typeof pedido.ruta !== "string" || pedido.ruta.length === 0 || pedido.ruta.length > 4096 || pedido.ruta.includes("\0") || !isAbsolute(pedido.ruta)) break;
+      const ramoId = pedido.ramo === undefined || pedido.ramo === null ? null : pedido.ramo;
+      if (ramoId !== null && (!Number.isInteger(ramoId) || !ramos.obtener(ramoId))) throw new Error("Ese ramo no existe");
+      const r = await agregarDocumento(pedido.ruta, { ramoId });
+      // Nunca la ruta ni el nombre del archivo en los registros.
+      registrar(r.ok ? "documento: agregado" : "documento: no se pudo agregar");
+      if (!r.ok) throw new Error(r.motivo);
+      avisarDocumentos();
+      return { datos: { documento: documentosVista().find((d) => d.id === r.documento.id) } };
+    }
+    // Lo guardado es del usuario: se ve y se borra aunque la función esté apagada.
+    case "documentos-estado":
+      return { datos: documentosVista() };
+    case "documento-ramo": {
+      if (typeof pedido.documento !== "string" || (pedido.ramo !== null && !Number.isInteger(pedido.ramo))) break;
+      if (pedido.ramo !== null && !ramos.obtener(pedido.ramo)) throw new Error("Ese ramo no existe");
+      if (!asignarRamoDocumento(pedido.documento, pedido.ramo)) throw new Error("Ese documento ya no existe");
+      avisarDocumentos();
+      return {};
+    }
+    case "documento-borrar": {
+      let borrados: string[];
+      if (pedido.que === "documento" && typeof pedido.documento === "string") borrados = borrarDocumento(pedido.documento) ? [pedido.documento] : [];
+      else if (pedido.que === "todo") borrados = borrarTodosLosDocumentos();
+      else break;
+      // Una propuesta de repaso pendiente que salía de él se va; las tarjetas que el usuario ya aceptó se quedan (son suyas).
+      for (const id of borrados) repaso.descartar(id);
+      registrar(`documento: borrados (${borrados.length})`);
+      avisarDocumentos();
+      revisarRepaso(true);
+      return { datos: { borrados: borrados.length } };
+    }
+    case "ramo-todo": {
+      if (!Number.isInteger(pedido.ramo)) break;
+      const ahora = Date.now();
+      const ramo = ramos.obtener(pedido.ramo);
+      if (!ramo) throw new Error("Ese ramo ya no existe");
+      const items = (await todoDeRamosLeyendo(ahora)).get(ramo.id) ?? [];
+      return { datos: { ramoId: ramo.id, resumen: textoResumenRamo(ramo.nombre, resumirRamo(items, ahora), ahora), items, fuentes: { calendario: activa("calendario"), aula: activa("aula") } } };
+    }
+    case "ramos-buscar": {
+      if (typeof pedido.texto !== "string" || pedido.texto.length > 200) break;
+      const resultados = buscarEnRamos(pedido.texto, await todoDeRamosLeyendo(Date.now()));
+      return { datos: { resultados, fuentes: { calendario: activa("calendario"), aula: activa("aula") } } };
+    }
     case "ramo-crear": {
       if (!activa("estudio")) throw new Error("Estudio está apagado: actívalo en Configurar Brote ⚙️");
       const r = ramos.crear({ nombre: pedido.nombre, alias: pedido.alias, color: pedido.color }, Date.now());

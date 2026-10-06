@@ -270,6 +270,8 @@ fn crear_icono_de_barra(app: &tauri::App) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        // Solo para «Agregar documento»: el diálogo de archivos (elegir uno, nunca guardar ni leer desde la ventana).
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // App de accesorio (sin ícono en el Dock): es lo que permite a la ventana aparecer
             // también sobre apps en pantalla completa, como las demás apps de notch.

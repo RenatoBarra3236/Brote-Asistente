@@ -2,6 +2,8 @@
 // (packages/adapter/src/puente.ts). Los pedidos van con el comando `agente_escribir` y
 // los avisos llegan como evento `puente`, una línea JSON cada uno.
 
+import type { DatosBusquedaRamos, DatosRamoTodo } from "./ramo-todo.ts";
+import type { DocumentoVista } from "./documentos.ts";
 import type { PropuestaAgenda } from "./propuestas-agenda.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -18,6 +20,8 @@ import type { DecisionRepaso, EstadoRepaso, Resultado as ResultadoRepaso } from 
 
 /** Cuánto se espera la respuesta del puente a un pedido. */
 const ESPERA_RESPUESTA = 15000;
+/** Leer un documento (un PDF largo) tarda más que cualquier otro pedido. */
+const ESPERA_DOCUMENTO = 120_000;
 
 /** Un temporizador, recordatorio o pomodoro corriendo (lo manda el puente cuando cambian). */
 export interface TemporizadorActivo {
@@ -157,6 +161,7 @@ type Aviso =
   | { tipo: "ramos"; ramos: Ramo[] }
   | { tipo: "notas"; fichas: unknown[] }
   | { tipo: "repaso"; repaso: EstadoRepaso }
+  | { tipo: "documentos"; documentos: DocumentoVista[] }
   | { tipo: "plan-estudio"; planes: PlanEstudio[] }
   | { tipo: "estadisticas-estudio"; resumen: ResumenEstudio }
   | { tipo: "plan-estudio-aviso"; texto: string; bloque: number; ramo: number }
@@ -198,6 +203,7 @@ export class TransportePuente implements Transporte {
   private readonly oyentesPlanEstudio = new Set<(planes: PlanEstudio[]) => void>();
   private readonly oyentesAvisoBloque = new Set<(aviso: { texto: string; bloque: number; ramo: number }) => void>();
   private readonly oyentesRepaso = new Set<(estado: EstadoRepaso) => void>();
+  private readonly oyentesDocumentos = new Set<(lista: DocumentoVista[]) => void>();
   private readonly oyentesPropuestas = new Set<(propuestas: PropuestaAgenda[]) => void>();
   private readonly oyentesTranscripcion = new Set<(aviso: AvisoTranscripcion) => void>();
   private readonly oyentesAula = new Set<(estado: EstadoAula) => void>();
@@ -327,6 +333,12 @@ export class TransportePuente implements Transporte {
   }
 
   /** Propuestas de repaso, tarjetas que vencen y resúmenes (A3): al partir y cada vez que cambian (también si los deja el agente). */
+  /** Los documentos guardados (D), cada vez que cambian. */
+  alCambiarDocumentos(oyente: (lista: DocumentoVista[]) => void): () => void {
+    this.oyentesDocumentos.add(oyente);
+    return () => this.oyentesDocumentos.delete(oyente);
+  }
+
   alCambiarRepaso(oyente: (estado: EstadoRepaso) => void): () => void {
     this.oyentesRepaso.add(oyente);
     return () => this.oyentesRepaso.delete(oyente);
@@ -428,6 +440,30 @@ export class TransportePuente implements Transporte {
 
   async editarRamo(ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }): Promise<void> {
     await this.pedir({ tipo: "ramo-editar", ramo, ...cambios });
+  }
+
+  /** Documentos (D): el puente lee el archivo en el computador y guarda solo su texto. Un PDF grande puede tardar. */
+  async agregarDocumento(ruta: string): Promise<DocumentoVista> {
+    const { datos } = await this.pedir({ tipo: "documento-agregar", ruta }, ESPERA_DOCUMENTO);
+    return (datos as { documento: DocumentoVista }).documento;
+  }
+
+  async documentos(): Promise<DocumentoVista[]> {
+    return this.consultar({ tipo: "documentos-estado" });
+  }
+
+  async asignarRamoDocumento(documento: string, ramo: number | null): Promise<void> {
+    await this.pedir({ tipo: "documento-ramo", documento, ramo });
+  }
+
+  /** Todo lo de un ramo (C): su lista por fecha, con títulos y fechas nada más. */
+  async ramoTodo(ramo: number): Promise<DatosRamoTodo> {
+    return this.consultar({ tipo: "ramo-todo", ramo });
+  }
+
+  /** Busca por títulos (palabras completas) en todos los ramos. */
+  async buscarEnRamos(texto: string): Promise<DatosBusquedaRamos> {
+    return this.consultar({ tipo: "ramos-buscar", texto });
   }
 
   async archivarRamo(ramo: number, archivado = true): Promise<void> {
@@ -547,13 +583,13 @@ export class TransportePuente implements Transporte {
     return datos as T;
   }
 
-  private async pedir(pedido: Record<string, unknown>): Promise<Extras> {
+  private async pedir(pedido: Record<string, unknown>, esperaMs = ESPERA_RESPUESTA): Promise<Extras> {
     const id = `${this.prefijo}-${this.siguienteId++}`;
     const respuesta = new Promise<Extras>((resolver, rechazar) => {
       const plazo = setTimeout(() => {
         this.pendientes.delete(id);
         rechazar(new Error("OpenClaw no respondió a tiempo"));
-      }, ESPERA_RESPUESTA);
+      }, esperaMs);
       this.pendientes.set(id, { resolver, rechazar, plazo });
     });
     try {
@@ -656,6 +692,9 @@ export class TransportePuente implements Transporte {
         return;
       case "repaso":
         for (const oyente of this.oyentesRepaso) oyente(aviso.repaso);
+        return;
+      case "documentos":
+        for (const oyente of this.oyentesDocumentos) oyente(aviso.documentos);
         return;
       case "estadisticas-estudio":
         for (const oyente of this.oyentesEstadisticas) oyente(aviso.resumen);

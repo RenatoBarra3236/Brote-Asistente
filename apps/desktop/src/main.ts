@@ -1,3 +1,7 @@
+import { open as abrirDialogo } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { EXTENSIONES_DOCUMENTO } from "./agente/documentos";
+import type { Ramo } from "./agente/estudio";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -123,6 +127,19 @@ let alPedirGrabarPorFrase: (datos: unknown) => void = () => {};
 let alPedirRepasoPorFrase: (datos: unknown) => void = () => {};
 /** Y para «plan de estudio para el certamen 2…»: la isla arma la propuesta y el usuario confirma. */
 let alPedirPlanPorFrase: (datos: unknown) => void = () => {};
+/** Y para «todo lo de cálculo»: la isla abre la ficha del ramo con su línea de tiempo. */
+let alPedirRamoTodoPorFrase: (datos: unknown) => void = () => {};
+
+/** El diálogo de archivos de «Agregar documento»: solo elegir (nunca leer ni guardar desde la ventana). */
+async function elegirDocumento(): Promise<string | null> {
+  const ruta = await abrirDialogo({
+    multiple: false,
+    directory: false,
+    title: "Elige un documento para que Brote lo lea",
+    filters: [{ name: "Documentos", extensions: [...EXTENSIONES_DOCUMENTO] }],
+  });
+  return typeof ruta === "string" ? ruta : null;
+}
 
 async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente | null }> {
   if ((await invoke<string>("agente_modo")) === "simulado") {
@@ -138,6 +155,7 @@ async function crearAgente(): Promise<{ agente: Agente; puente: TransportePuente
       alPedirGrabarPorFrase(datos);
       alPedirRepasoPorFrase(datos);
       alPedirPlanPorFrase(datos);
+      alPedirRamoTodoPorFrase(datos);
       const descarga = datos as { ruta?: unknown; abrir?: unknown } | undefined;
       if ((intencion === "abrir-ultima-descarga" || intencion === "mostrar-ultima-descarga") && typeof descarga?.ruta === "string") {
         mostrarDescarga(descarga.ruta, descarga.abrir === true);
@@ -195,6 +213,11 @@ async function iniciar(): Promise<void> {
           alCrearRamo: (nombre, alias) => puente.crearRamo(nombre, alias),
           alEditarRamo: (ramo, cambios) => puente.editarRamo(ramo, cambios),
           alArchivarRamo: (ramo) => puente.archivarRamo(ramo),
+          alAgregarDocumento: (ruta) => puente.agregarDocumento(ruta),
+          alElegirDocumento: elegirDocumento,
+          alAsignarRamoDocumento: (documento, ramo) => puente.asignarRamoDocumento(documento, ramo),
+          alPedirRamoTodo: (ramo) => puente.ramoTodo(ramo),
+          alBuscarEnRamos: (texto) => puente.buscarEnRamos(texto),
           alGuardarEvaluacion: (datos) => puente.guardarEvaluacion(datos),
           alBorrarEvaluacion: (evaluacion) => puente.borrarEvaluacion(evaluacion),
           alCambiarAjustesNotas: (ramo, ajustes) => puente.ajustesNotas(ramo, ajustes),
@@ -336,7 +359,12 @@ async function iniciar(): Promise<void> {
     pedirAgenda = () => void puente.consultar<EstadoAgenda>({ tipo: "agenda-estado" }).then((estado) => panel.mostrarAgenda(estado), () => {});
     // Estudio: los ramos llegan por aviso cuando cambian (también si el agente agrega uno); sus fichas se piden al ver la pestaña.
     pedirEstudio = () => void puente.estadoEstudio().then((estado: EstadoEstudio) => panel.mostrarEstudio(estado), () => {});
+    // Los ramos también le sirven a la tarjeta de documentos (elegir de qué ramo es), esté o no abierta la pestaña Estudio.
+    const traerRamosParaDocumentos = () =>
+      void puente.consultar<Ramo[]>({ tipo: "ramos-todos" }).then((lista) => panel.ponerRamosDeDocumentos(lista.filter((r) => !r.archivado)), () => {});
+    traerRamosParaDocumentos();
     puente.alCambiarRamos(() => {
+      traerRamosParaDocumentos();
       if (panel.estudioAbierto) pedirEstudio();
     });
     setInterval(() => (panel.estudioAbierto ? pedirEstudio() : undefined), 5 * 60_000);
@@ -369,6 +397,9 @@ async function iniciar(): Promise<void> {
       }
     };
     puente.alCambiarRepaso((estado) => cambiarRepaso(estado, true));
+    // Documentos (D): los guardados, y lo que pasa al arrastrar un archivo hacia Brote (lentes, hoja y a leer).
+    puente.alCambiarDocumentos((lista) => panel.ponerDocumentos(lista));
+    void puente.documentos().then((lista) => panel.ponerDocumentos(lista), () => {});
     void puente.consultar<EstadoRepaso>({ tipo: "repaso-estado" }).then((estado) => cambiarRepaso(estado, false), () => {});
     // Plan de estudio (A4): los bloques viven en la Agenda; el aviso llega 10 min antes y no abre la isla.
     puente.alCambiarPlanEstudio((planes) => {
@@ -385,6 +416,10 @@ async function iniciar(): Promise<void> {
       if (plan && typeof plan.ramoId === "number" && typeof plan.evaluacionId === "number") panel.iniciarPlanEstudio(plan.ramoId, plan.evaluacionId);
     };
     // Al cambiar el día vencen otras tarjetas: el puente vuelve a avisar solo.
+    alPedirRamoTodoPorFrase = (datos) => {
+      const todo = (datos as { ramoTodo?: { ramoId?: unknown } } | undefined)?.ramoTodo;
+      if (todo && typeof todo.ramoId === "number") panel.abrirRamoTodo(todo.ramoId);
+    };
     alPedirRepasoPorFrase = (datos) => {
       const repaso = (datos as { repaso?: { ramoId?: unknown } } | undefined)?.repaso;
       if (!repaso) return;
@@ -619,6 +654,33 @@ async function iniciar(): Promise<void> {
   });
   agente.conectar();
 
+  // Arrastrar un archivo hacia Brote: se pone lentes (enter), y al soltarlo lo lee (drop). Solo llega si la ventana
+  // no está dejando pasar el ratón, o sea, con el cursor sobre la isla o el panel.
+  try {
+    void getCurrentWebview()
+      .onDragDropEvent((evento) => {
+        const p = evento.payload;
+        if (p.type === "enter") panel.arrastrarDocumento(p.paths);
+        else if (p.type === "over") panel.sigueArrastrando();
+        else if (p.type === "drop") void panel.soltarDocumento(p.paths);
+        else if (p.type === "leave") panel.salirDelArrastre();
+      })
+      .catch(() => {});
+  } catch {
+    // Sin ventana de Tauri (la vista previa del navegador): no hay arrastre real.
+  }
+  // Vista previa del diseño: ?documento=arrastrando|invalido|leyendo|listo|error simula lo que hace el arrastre.
+  {
+    const modo = new URLSearchParams(location.search).get("documento");
+    if (modo === "arrastrando" || modo === "invalido") {
+      panel.arrastrarDocumento([modo === "invalido" ? "/Users/ana/foto.png" : "/Users/ana/Apuntes de cálculo.pdf"]);
+      // En la app real los avisos del arrastre llegan solos; aquí se simulan para que la zona no se retire.
+      setInterval(() => panel.sigueArrastrando(), 1000);
+    }
+    else if (modo === "leyendo" || modo === "listo") void panel.soltarDocumento(["/Users/ana/Apuntes de cálculo.pdf"]);
+    else if (modo === "error") void panel.soltarDocumento(["/Users/ana/virus.exe"]);
+  }
+
   function ajustarTamano(): void {
     const escala = window.devicePixelRatio || 1;
     lienzo.width = Math.round(lienzo.clientWidth * escala);
@@ -644,6 +706,7 @@ async function iniciar(): Promise<void> {
     if (animo !== undefined) personaje.setAnimo(animo);
     // 0 prueba el balanceo con música.
     if (evento.key === "0") personaje.setMusica((probandoMusica = !probandoMusica));
+
   });
 
   // Un clic toca al personaje. En modo flotante, si el mouse se mueve con el botón
@@ -706,6 +769,7 @@ async function iniciar(): Promise<void> {
     const W = lienzo.clientWidth;
     const H = lienzo.clientHeight;
 
+    personaje.setLectura(panel.modoLectura(estadoAgente));
     personaje.actualizar(dt);
     panel.actualizarRelojes();
     // Un aviso que no abre la isla: se lee en el ala izquierda unos segundos.

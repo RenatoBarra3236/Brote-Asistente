@@ -25,6 +25,7 @@ tauri-plugin-notification = "2"
 sha2 = "0.10"
 # Captura del micrófono (sección 8, fase 3). Apache-2.0; sin features extra (sin ASIO/JACK/PipeWire).
 cpal = "0.18"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

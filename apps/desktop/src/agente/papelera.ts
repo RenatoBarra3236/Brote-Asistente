@@ -47,3 +47,21 @@ export function confirmarBorrarTodo(que: QueGrabacion, cuantas: number): string 
   const cosa = que === "audio" ? "audios" : "transcripciones";
   return `¿Seguro? Se borran ${cuantas} ${cosa}`;
 }
+
+// ---- Documentos (D): el texto que Brote sacó de los archivos que le diste (el original nunca se toca) ----
+
+export function pieDocumentos(enMac: boolean): string {
+  return enMac
+    ? "Lo que borras aquí va a la Papelera: sigue en tu Mac hasta que la vacíes. Solo es el texto que Brote sacó: tu archivo original no se toca. Las tarjetas que ya aceptaste de un documento se quedan (se borran en «Repaso»)."
+    : "Lo que borras aquí se borra para siempre (no pasa por la Papelera). Solo es el texto que Brote sacó: tu archivo original no se toca. Las tarjetas que ya aceptaste de un documento se quedan (se borran en «Repaso»).";
+}
+
+export function avisoDocumentoBorrado(enMac: boolean, cuantos: number): string {
+  if (cuantos === 0) return "No había nada que borrar: ya no estaba.";
+  const cosa = cuantos === 1 ? "el documento" : `${cuantos} documentos`;
+  return enMac ? `Borré ${cosa}. Quedó en la Papelera hasta que la vacíes.` : `Borré ${cosa} para siempre.`;
+}
+
+export function confirmarBorrarTodosDocumentos(cuantos: number): string {
+  return `¿Seguro? Se borran ${cuantos} documentos`;
+}

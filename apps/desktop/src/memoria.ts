@@ -7,9 +7,10 @@ import { HEX_RAMO, NOTA_RAMOS, avisoRamoBorrado, type Ramo } from "./agente/estu
 import { NOTA_AHORRO_MEMORIA, avisoAhorroBorrado, lineaDeMetaGuardada, type AporteAhorro, type MetaAhorro } from "./agente/ahorro";
 import { NOTA_ESTADISTICAS_MEMORIA, avisoEstadisticasBorradas, formatearMinutos, lineaDeRamo, textoDesde, type ResumenEstudio } from "./agente/estadisticas";
 import { NOTA_PLAN_MEMORIA, avisoPlanBorrado, describirPrueba as describirPruebaPlan, resumenPlan, type PlanEstudio } from "./agente/plan-estudio";
+import { describirDocumento, type DocumentoVista } from "./agente/documentos";
 import { NOTA_REPASO_MEMORIA, avisoRepasoBorrado, estadoDeTarjeta, fechaDeClase, type EstadoRepaso } from "./agente/repaso";
 import { NOTA_NOTAS_MEMORIA, avisoNotasBorradas, formatearNota, resumenNotas, type FichaNotas } from "./agente/notas";
-import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
+import { avisoDocumentoBorrado, confirmarBorrarTodosDocumentos, pieDocumentos, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar, type QueGrabacion } from "./agente/papelera";
 import {
   textoAviso,
   textoCopiado,
@@ -88,6 +89,8 @@ let estudioGuardado: { ramos: Ramo[]; resumen: ResumenEstudio } | null = null;
 /** Las metas de ahorro y sus aportes (con las archivadas). Se ven y se borran aunque Gastos esté apagado. */
 let ahorroGuardado: { metas: MetaAhorro[]; aportes: AporteAhorro[] } | null = null;
 let notasGuardadas: { ramos: Ramo[]; fichas: FichaNotas[] } | null = null;
+/** Los documentos que el usuario le dio a Brote (`null`: todavía no se leyeron o no se pudo). */
+let documentosGuardados: DocumentoVista[] | null = null;
 /** Las grabaciones guardadas (`null`: todavía no se leyeron o no se pudo). */
 let grabaciones: Grabaciones | null = null;
 /** Lo que se está buscando y los ids que lo mencionan (según el contenido completo, que ve el puente). */
@@ -358,7 +361,8 @@ function tarjetaRepasoClase(grabacion: string, datos: NonNullable<typeof repasoG
   const tarjeta = crear("article", `tarjeta ramo${ramo?.archivado ? " archivado" : ""}`);
   if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
   const cabeza = crear("div", "tarjeta-cabeza");
-  cabeza.append(crear("h3", undefined, `Clase del ${fechaDeClase(grabacion)}`), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
+  const nombreDoc = grabacion.startsWith("doc-") ? (documentosGuardados?.find((d) => d.id === grabacion)?.nombre ?? "un documento que ya borraste") : null;
+  cabeza.append(crear("h3", undefined, nombreDoc !== null ? `Documento «${nombreDoc}»` : `Clase del ${fechaDeClase(grabacion)}`), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
   tarjeta.append(cabeza, crear("p", "meta", `${tarjetas.length} tarjeta${tarjetas.length === 1 ? "" : "s"} · ${temas.length} tema${temas.length === 1 ? "" : "s"}`));
   for (const t of tarjetas) {
     const fila = crear("div", "botones fila-nota");
@@ -512,6 +516,50 @@ function seccionAhorro(datos: NonNullable<typeof ahorroGuardado>): HTMLElement {
   return seccion;
 }
 
+// ---- Documentos (D): lo que Brote leyó de los archivos del usuario; solo su texto, nunca el original ----
+
+async function borrarDocumentos(que: "documento" | "todo", id: string | null): Promise<void> {
+  const { borrados } = await puente.consultar<{ borrados: number }>({ tipo: "documento-borrar", que, ...(id ? { documento: id } : {}) });
+  mostrarAviso(avisoDocumentoBorrado(EN_MAC, borrados));
+  await cargarDocumentos();
+  pintarTodo();
+}
+
+function tarjetaDocumento(d: DocumentoVista): HTMLElement {
+  const ramo = ramosGuardados?.find((r) => r.id === d.ramoId);
+  const tarjeta = crear("article", "tarjeta grabacion documento");
+  if (ramo) tarjeta.style.setProperty("--ramo", HEX_RAMO[ramo.color]);
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("h3", undefined, d.nombre), crear("span", "fecha", ramo ? ramo.nombre : "Sin ramo"));
+  const botones = crear("div", "botones");
+  botones.append(botonOlvidar(() => borrarDocumentos("documento", d.id), "Borrar"));
+  tarjeta.append(cabeza, crear("p", "meta", describirDocumento(d)), botones);
+  return tarjeta;
+}
+
+function seccionDocumentos(lista: DocumentoVista[]): HTMLElement {
+  const seccion = crear("section", "seccion seccion-documentos");
+  const encabezado = crear("h2", undefined, "Documentos");
+  encabezado.append(crear("span", "cuenta", String(lista.length)));
+  seccion.append(
+    encabezado,
+    crear("p", "nota", "Los PDF, Word, PowerPoint y textos que le diste a Brote para que los lea. Guarda solo el texto que sacó, y solo lo usa cuando tú se lo pides."),
+    ...lista.map(tarjetaDocumento),
+  );
+  const fila = crear("div", "botones");
+  fila.append(botonOlvidar(() => borrarDocumentos("todo", null), "Borrar todo", confirmarBorrarTodosDocumentos(lista.length)));
+  seccion.append(fila, crear("p", "nota", pieDocumentos(EN_MAC)));
+  return seccion;
+}
+
+async function cargarDocumentos(): Promise<void> {
+  try {
+    documentosGuardados = await puente.consultar<DocumentoVista[]>({ tipo: "documentos-estado" });
+  } catch {
+    documentosGuardados = null; // un puente más viejo no conoce el pedido: la sección no aparece
+  }
+}
+
 // ---- Grabaciones (sección 8, fase 4): lista, ver el texto y borrar ----
 
 async function borrarGrabaciones(que: QueGrabacion, id: string | null): Promise<void> {
@@ -655,6 +703,7 @@ function pintar(memoria: Memoria): void {
   if (estudioGuardado && estudioGuardado.resumen.hay && !coincidencias) contenido.push(seccionEstadisticas(estudioGuardado));
   if (ahorroGuardado && ahorroGuardado.metas.length > 0 && !coincidencias) contenido.push(seccionAhorro(ahorroGuardado));
   if (grabaciones && !coincidencias) contenido.push(seccionGrabaciones(grabaciones));
+  if (documentosGuardados && documentosGuardados.length > 0 && !coincidencias) contenido.push(seccionDocumentos(documentosGuardados));
   secciones.replaceChildren(...contenido);
 }
 
@@ -662,6 +711,7 @@ async function cargar(): Promise<void> {
   try {
     memoria = await puente.consultar<Memoria>({ tipo: "memoria-listar" });
     await cargarGrabaciones();
+    await cargarDocumentos();
     await cargarRamos();
     await cargarNotas();
     await cargarRepaso();

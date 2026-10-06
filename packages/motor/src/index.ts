@@ -68,3 +68,12 @@ export { HITOS_AHORRO, MAX_METAS_ACTIVAS, MONTO_MAX_AHORRO, MONTO_MIN_AHORRO, NO
 export { interpretarAhorro, responderAhorro, type AccionAhorro } from "./ahorro-motor.ts";
 export { hormigaDelMes } from "./plata.ts";
 export { leerMes } from "./fechas.ts";
+export { MAX_ITEMS_POR_RAMO, MAX_RESULTADOS_POR_RAMO, TIPOS_ITEM_RAMO, armarTodoDeRamos, buscarEnItems, buscarEnRamos, cuandoEs, palabrasDeBusqueda, resumirRamo, textoResumenRamo, tituloDeGrabacion, type EstadoItemRamo, type FuentesRamo, type ItemDeRamo, type ResultadoRamo as ResultadoBusquedaRamo, type ResumenDeRamo, type TipoItemRamo } from "./ramo-todo.ts";
+export { DIAS_ADELANTE_RAMO, DIAS_ATRAS_RAMO, fuentesDeBaseDeDatos } from "./ramo-todo-datos.ts";
+export {
+  EXTENSIONES_DOCUMENTO, MAX_BYTES_DOCUMENTO, MAX_CARACTERES_DOCUMENTO, MAX_CARACTERES_PARTE, MAX_DOCUMENTOS, MAX_NOMBRE_DOCUMENTO, MOTIVOS as MOTIVOS_DOCUMENTO,
+  PATRON_ID_DOCUMENTO, escribirDocumento, fechaDeIdDocumento, idDeDocumento, leerCabeceraDocumento, leerDocumento, limpiarNombreDocumento,
+  normalizarTextoDocumento, partirDocumento, tipoDeArchivo, type CabeceraDocumento, type Documento, type ParteDocumento, type TipoDocumento,
+} from "./documentos-tipos.ts";
+export { extraerTexto, textoDeDiapositiva, textoDeOdt, textoDeWord, type ResultadoExtraccion } from "./documentos-extraer.ts";
+export { agregarDocumento, asignarRamoDocumento, borrarDocumento, borrarTodosLosDocumentos, carpetaDocumentos, leerDocumentoGuardado, listarDocumentos, type ResultadoAgregar } from "./documentos-archivo.ts";

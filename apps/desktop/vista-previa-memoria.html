@@ -205,6 +205,10 @@
                 case "ramo-archivar":
                   datos = {};
                   break;
+                case "documentos-estado":
+                  return responder(id, { datos: parametros.get("documentos") === "con" ? [{ id: "doc-2026-10-05-101500", nombre: "Apuntes de cálculo — derivadas.pdf", tipo: "pdf", paginas: 12, caracteres: 21000, ramoId: null, creado: "2026-10-05T13:15:00.000Z" }] : [] });
+                case "documento-borrar":
+                  return responder(id, { datos: { borrados: 1 } });
                 case "grabaciones-listar":
                   datos = { transcripciones: sim.transcripciones, audios: sim.audios, diasAudio: sim.diasAudio };
                   break;

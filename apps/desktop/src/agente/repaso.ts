@@ -28,7 +28,8 @@ function plural(n: number, uno: string, varios: string): string {
   return `${n} ${n === 1 ? uno : varios}`;
 }
 
-export function tituloPropuesta(p: Pick<PropuestaRepaso, "grabacion">): string {
+export function tituloPropuesta(p: Pick<PropuestaRepaso, "grabacion" | "documento">): string {
+  if (p.grabacion.startsWith("doc-")) return p.documento ? `Brote preparó un repaso de tu documento «${p.documento}»` : "Brote preparó un repaso de un documento tuyo";
   return `Brote preparó un repaso de tu clase del ${fechaDeClase(p.grabacion)}`;
 }
 

@@ -2752,3 +2752,252 @@ button.tarjeta:hover {
   color: var(--texto-2);
   white-space: normal;
 }
+
+/* Todo lo de un ramo (C): buscador de la pestaña Estudio y línea de tiempo dentro de la ficha. */
+.estudio-buscador {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.estudio-buscador-campo {
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+}
+.estudio-buscador-resultados {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.estudio-resultado-ramo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--tarjeta);
+  box-shadow: inset 0 0 0 1px var(--linea);
+}
+.estudio-resultado-cabecera {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.estudio-resultado-cabecera:focus-visible {
+  outline: 2px solid var(--ramo);
+  outline-offset: 2px;
+}
+.ramo-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--linea);
+}
+.ramo-todo-resumen {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+.ramo-todo-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+.ramo-todo-filtro.activa {
+  background: var(--ramo, var(--tarjeta-hover));
+  color: #fff;
+}
+.ramo-todo-grupo {
+  margin-top: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+.ramo-todo-fila {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.ramo-todo-fila:hover {
+  background: var(--tarjeta-hover);
+}
+.ramo-todo-fila:focus-visible {
+  outline: 2px solid var(--ramo, currentColor);
+  outline-offset: 0;
+}
+.ramo-todo-fila.pasado,
+.ramo-todo-fila.hecho {
+  opacity: 0.55;
+}
+.ramo-todo-fila.hecho .ramo-todo-titulo {
+  text-decoration: line-through;
+}
+.ramo-todo-titulo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ramo-todo-aviso {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  opacity: 0.55;
+}
+
+/* Documentos (D): la tarjeta que aparece al arrastrar un archivo hacia Brote y la lista de Estudio. */
+.documento-flotante {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.documento-zona,
+.documento-leyendo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 12px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.documento-zona {
+  border: 2px dashed rgba(122, 178, 255, 0.7);
+  background: rgba(122, 178, 255, 0.08);
+  animation: documento-pulso 1.2s ease-in-out infinite;
+}
+.documento-zona.invalida {
+  border-color: rgba(255, 120, 110, 0.7);
+  background: rgba(255, 120, 110, 0.08);
+  animation: none;
+}
+.documento-zona-icono {
+  font-size: 20px;
+}
+.documento-leyendo {
+  background: linear-gradient(100deg, rgba(122, 178, 255, 0.1) 20%, rgba(122, 178, 255, 0.22) 50%, rgba(122, 178, 255, 0.1) 80%);
+  background-size: 200% 100%;
+  animation: documento-brillo 1.6s linear infinite;
+}
+@keyframes documento-pulso {
+  50% {
+    background: rgba(122, 178, 255, 0.18);
+    transform: scale(1.01);
+  }
+}
+@keyframes documento-brillo {
+  to {
+    background-position: -200% 0;
+  }
+}
+.documento-cabeza,
+.documentos-cabeza {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.documento-cerrar {
+  all: unset;
+  box-sizing: border-box;
+  padding: 2px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.documento-cerrar:hover,
+.documento-cerrar:focus-visible {
+  opacity: 1;
+  background: var(--tarjeta-hover);
+}
+.documento-detalle,
+.documento-nota {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--texto-2);
+}
+.documento-nota {
+  opacity: 0.8;
+}
+.documento-ramo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.documento-ramo .estudio-campo {
+  flex: 0 1 200px;
+}
+.documento-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.documento-accion {
+  max-width: none;
+}
+.documentos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.documento-fila {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.documento-fila:hover,
+.documento-fila.abierta {
+  background: var(--tarjeta-hover);
+}
+.documento-fila:focus-visible {
+  outline: 2px solid var(--texto-2);
+}
+.documento-fila-texto {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.documento-fila-nombre {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.documento-fila-detalle {
+  font-size: 10.5px;
+  opacity: 0.6;
+}
+.documento-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 4px 6px 30px;
+}
+.documento-flotante.error {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}

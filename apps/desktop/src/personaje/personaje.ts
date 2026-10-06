@@ -63,6 +63,9 @@ export interface Apariencia {
 
 export const APARIENCIA_BROTE: Apariencia = { cuerpo: [CREMA_ARRIBA, CREMA_ABAJO], hoja: null, accesorio: null };
 const TINTA = "rgb(58, 40, 30)";
+/** Leer un documento: renglones de la hoja y lo que tarda cada uno. */
+const LINEAS_LECTURA = 6;
+const SEG_POR_LINEA = 1.15;
 const TALLO = "rgb(96, 140, 70)";
 
 const tramo = (valor: number, ms: number, curva: Curva = curvas.salida): Tramo => ({ valor, ms, curva });
@@ -115,12 +118,45 @@ export class Personaje {
   private notas: Nota[] = [];
   private proximaNota = 0;
 
+  // Leer un documento: se pone lentes (caen desde arriba y rebotan), sube una hoja y los ojos la recorren línea por línea.
+  private lecturaModo: "lentes" | "leyendo" | null = null;
+  private lentes = new Resorte(0, 1.6, 0.5);
+  private hojaLectura = new Resorte(0, 1.3, 0.62);
+  private tLectura = 0;
+  private lentesPuestos = false;
+
   /**
    * El ánimo según el computador, independiente del estado del agente (Brote puede estar
    * pensando y a la vez cansado): "cansado" con poca batería, "acalorado" con la CPU al máximo.
    */
   setAnimo(animo: Animo): void {
     this.animo = animo;
+  }
+
+  /**
+   * Leer un documento. `"lentes"`: se pone unos lentes (alguien arrastra un archivo hacia él, o espera a que le digan
+   * qué hacer). `"leyendo"`: además sostiene una hoja y la lee de arriba abajo. `null`: se los saca y baja la hoja.
+   */
+  setLectura(modo: "lentes" | "leyendo" | null): void {
+    if (modo === this.lecturaModo) return;
+    const antes = this.lecturaModo;
+    this.lecturaModo = modo;
+    if (modo !== null && antes === null) {
+      // Se agacha un poquito antes de que le caigan los lentes.
+      this.aplastar();
+      this.lentesPuestos = false;
+    }
+    if (modo === "leyendo" && antes !== "leyendo") this.tLectura = 0;
+    if (modo === null && antes !== null) {
+      this.parpadear();
+      this.hoja.impulsar(4);
+    }
+    this.lentes.objetivo = modo === null ? 0 : 1;
+    this.hojaLectura.objetivo = modo === "leyendo" ? 1 : 0;
+  }
+
+  get leyendo(): boolean {
+    return this.lecturaModo !== null;
   }
 
   /** Si suena música en el computador: Brote se balancea suave y le salen notas. */
@@ -179,6 +215,9 @@ export class Personaje {
       this.particulas.length === 0 &&
       this.etiqueta === null &&
       this.ritmo < 0.01 &&
+      this.lecturaModo === null &&
+      this.lentes.valor < 0.005 &&
+      this.hojaLectura.valor < 0.005 &&
       this.notas.length === 0 &&
       Math.abs(this.hoja.velocidad) < 0.05
     );
@@ -239,13 +278,23 @@ export class Personaje {
 
     const cfg = this.cfg;
     let objetivoX = cfg.mirada === "cursor" ? this.miradaX : cfg.mirada[0];
-    const objetivoY = cfg.mirada === "cursor" ? this.miradaY : cfg.mirada[1];
+    let objetivoY = cfg.mirada === "cursor" ? this.miradaY : cfg.mirada[1];
     if (this.estado === "pensando") objetivoX += Math.sin(this.t * 0.9) * 0.12;
     if (this.estado === "trabajando") objetivoX += Math.sin(this.t * 2.3) * 0.35;
-    this.yaw = acercar(this.yaw, objetivoX * 0.6, dt, 8);
-    this.pitch = acercar(this.pitch, objetivoY * 0.45, dt, 8);
+    // Con la hoja a la vista, los ojos recorren cada línea de izquierda a derecha y bajan a la siguiente.
+    let rapidezMirada = 8;
+    if (this.lecturaModo === "leyendo" && this.hojaLectura.valor > 0.6) {
+      this.tLectura += dt;
+      const m = this.posicionDeLectura();
+      objetivoX = m.x;
+      objetivoY = m.y;
+      rapidezMirada = 14;
+    }
+    this.yaw = acercar(this.yaw, objetivoX * 0.6, dt, rapidezMirada);
+    this.pitch = acercar(this.pitch, objetivoY * 0.45, dt, rapidezMirada);
 
-    const objetivoInclinacion = cfg.inclinacion + (this.estado === "pensando" ? Math.sin(this.t * 1.1) * 0.05 : 0);
+    const objetivoInclinacion =
+      cfg.inclinacion + (this.estado === "pensando" ? Math.sin(this.t * 1.1) * 0.05 : 0) + (this.lecturaModo === "leyendo" ? Math.sin(this.t * 1.9) * 0.035 : 0);
     this.inclinacion = acercar(this.inclinacion, objetivoInclinacion, dt, 5);
     // La hoja de una mascota es la suya en reposo; al trabajar se tiñe a medias con el color del estado.
     const hoja = this.apariencia.hoja;
@@ -263,6 +312,15 @@ export class Personaje {
     this.hoja.impulsar((this.valores.salto - this.saltoAnterior) * 18);
     this.saltoAnterior = this.valores.salto;
     this.hoja.avanzar(dt);
+    this.lentes.avanzar(dt);
+    this.hojaLectura.avanzar(dt);
+    // Cuando los lentes llegan a la cara: parpadeo, saltito y unas chispas.
+    if (this.lecturaModo !== null && !this.lentesPuestos && this.lentes.valor >= 0.98) {
+      this.lentesPuestos = true;
+      this.parpadear();
+      this.hoja.impulsar(7);
+      this.chispas(6);
+    }
 
     if (this.t > this.proximoParpadeo) {
       if (cfg.ojos !== "felices" && cfg.ojos !== "cruz") this.parpadear();
@@ -340,6 +398,8 @@ export class Personaje {
     this.dibujarCara(ctx, rx, ry, R);
     ctx.restore();
     this.dibujarAccesorio(ctx, rx, ry, R);
+    this.dibujarLentes(ctx, rx, ry, R);
+    this.dibujarHojaLectura(ctx, ry, R);
     ctx.restore();
 
     const centroY = suelo + altura - ry;
@@ -622,6 +682,141 @@ export class Personaje {
     ctx.save();
     ctx.translate(desplazamientoX, alturaCara + ry * 0.34);
     this.dibujarBoca(ctx, R);
+    ctx.restore();
+  }
+
+
+  // ── Leer un documento ──────────────────────────────────────────────────────
+
+  /** Dónde va la lectura: línea (0 a LINEAS_LECTURA − 1), avance dentro de la línea (0 a 1) y adónde miran los ojos. */
+  private posicionDeLectura(): { linea: number; avance: number; x: number; y: number } {
+    const ciclo = this.tLectura / SEG_POR_LINEA;
+    const linea = Math.floor(ciclo) % LINEAS_LECTURA;
+    const f = ciclo - Math.floor(ciclo);
+    // 85 % de la línea es leer de izquierda a derecha; el resto, volver rápido al comienzo de la siguiente.
+    const leyendo = f < 0.85;
+    const avance = leyendo ? f / 0.85 : 1;
+    const x = leyendo ? lerp(-0.75, 0.75, avance) : lerp(0.75, -0.75, (f - 0.85) / 0.15);
+    return { linea, avance, x, y: 0.55 + linea * 0.07 };
+  }
+
+  /** Dos aros con su puente y sus patillas, siguiendo la cara; caen desde arriba y rebotan al llegar. */
+  private dibujarLentes(ctx: CanvasRenderingContext2D, rx: number, ry: number, R: number): void {
+    const puestos = this.lentes.valor;
+    if (puestos < 0.01) return;
+    const pitchCara = 0.1 - this.pitch;
+    const cosPitch = Math.cos(pitchCara);
+    const yOjos = -Math.sin(pitchCara) * ry;
+    const caida = (1 - puestos) * -R * 1.5;
+    const radio = R * 0.27;
+    ctx.save();
+    ctx.globalAlpha *= limitar(puestos * 3, 0, 1);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const aros: { x: number; esc: number }[] = [];
+    for (const lado of [-1, 1]) {
+      const yawOjo = lado * 0.36 + this.yaw;
+      const esc = Math.max(0.25, Math.cos(yawOjo));
+      if (Math.cos(yawOjo) * cosPitch < 0.05) continue;
+      const x = Math.sin(yawOjo) * cosPitch * rx;
+      aros.push({ x, esc });
+      ctx.save();
+      ctx.translate(x, yOjos + caida);
+      ctx.scale(esc, Math.max(0.25, cosPitch));
+      ctx.fillStyle = "rgba(190, 225, 255, 0.22)";
+      ctx.beginPath();
+      ctx.arc(0, 0, radio, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgb(58, 40, 30)";
+      ctx.lineWidth = R * 0.055;
+      ctx.stroke();
+      // Un brillo en el vidrio que se pasea de vez en cuando.
+      const brillo = 0.55 + 0.45 * Math.max(0, Math.sin(this.t * 1.1 + lado));
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.8 * brillo})`;
+      ctx.lineWidth = R * 0.04;
+      ctx.beginPath();
+      ctx.arc(0, 0, radio * 0.68, Math.PI * 1.12, Math.PI * 1.45);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.strokeStyle = "rgb(58, 40, 30)";
+    ctx.lineWidth = R * 0.05;
+    if (aros.length === 2) {
+      // El puente sobre la nariz, entre los aros.
+      const [izq, der] = aros;
+      ctx.beginPath();
+      ctx.moveTo(izq.x + radio * izq.esc, yOjos + caida - R * 0.02);
+      ctx.quadraticCurveTo((izq.x + der.x) / 2, yOjos + caida - R * 0.1, der.x - radio * der.esc, yOjos + caida - R * 0.02);
+      ctx.stroke();
+    }
+    // Las patillas, hacia los lados de la cabeza.
+    for (const [i, aro] of aros.entries()) {
+      const lado = aros.length === 2 ? (i === 0 ? -1 : 1) : aro.x < 0 ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(aro.x + lado * radio * aro.esc, yOjos + caida - R * 0.03);
+      ctx.lineTo(lado * rx * 0.97, yOjos + caida - R * 0.07);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Una hoja en blanco con renglones que sostiene con dos manitas; se va marcando lo que lleva leído. */
+  private dibujarHojaLectura(ctx: CanvasRenderingContext2D, ry: number, R: number): void {
+    const subida = this.hojaLectura.valor;
+    if (subida < 0.01) return;
+    const ancho = R * 1.2;
+    const alto = R * 1.05;
+    const arriba = ry * 0.2 + (1 - subida) * R * 1.8;
+    const balanceo = Math.sin(this.t * 1.7) * R * 0.015;
+    ctx.save();
+    ctx.globalAlpha *= limitar(subida * 2, 0, 1);
+    ctx.translate(balanceo, 0);
+    ctx.rotate(-0.04 + Math.sin(this.t * 1.3) * 0.015);
+    // Sombra suave y el papel.
+    ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+    ctx.beginPath();
+    ctx.roundRect(-ancho / 2 + R * 0.03, arriba + R * 0.05, ancho, alto, R * 0.07);
+    ctx.fill();
+    ctx.fillStyle = "rgb(253, 252, 247)";
+    ctx.strokeStyle = "rgb(205, 200, 188)";
+    ctx.lineWidth = R * 0.03;
+    ctx.beginPath();
+    ctx.roundRect(-ancho / 2, arriba, ancho, alto, R * 0.07);
+    ctx.fill();
+    ctx.stroke();
+    // Renglones: los ya leídos se tiñen de azul, el actual se va llenando al ritmo de los ojos.
+    const pos = this.lecturaModo === "leyendo" && subida > 0.6 ? this.posicionDeLectura() : null;
+    const margen = ancho * 0.12;
+    const largoLinea = ancho - margen * 2;
+    for (let i = 0; i < LINEAS_LECTURA; i++) {
+      const y = arriba + alto * 0.16 + i * (alto * 0.7) / (LINEAS_LECTURA - 1);
+      const largo = largoLinea * (i === LINEAS_LECTURA - 1 ? 0.55 : 1 - ((i * 37) % 17) / 100);
+      ctx.lineCap = "round";
+      ctx.lineWidth = R * 0.055;
+      ctx.strokeStyle = "rgb(222, 219, 209)";
+      ctx.beginPath();
+      ctx.moveTo(-ancho / 2 + margen, y);
+      ctx.lineTo(-ancho / 2 + margen + largo, y);
+      ctx.stroke();
+      const leido = pos ? (i < pos.linea ? 1 : i === pos.linea ? pos.avance : 0) : 0;
+      if (leido > 0) {
+        ctx.strokeStyle = "rgba(92, 150, 235, 0.85)";
+        ctx.beginPath();
+        ctx.moveTo(-ancho / 2 + margen, y);
+        ctx.lineTo(-ancho / 2 + margen + largo * leido, y);
+        ctx.stroke();
+      }
+    }
+    // Las manitas del cuerpo, sujetando la hoja por los lados.
+    ctx.fillStyle = rgba(this.apariencia.cuerpo[1]);
+    ctx.strokeStyle = "rgba(120, 90, 60, 0.45)";
+    ctx.lineWidth = R * 0.03;
+    for (const lado of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(lado * ancho * 0.5, arriba + alto * 0.52, R * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

@@ -65,9 +65,14 @@ import {
   textoSugerencia,
   type EstadoEstudio,
   type FichaRamo,
+  type Ramo,
 } from "./agente/estudio";
 import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearNota, resumenNotas, semaforoDe, textoExamenFicha, textoMeta, textoNecesaria } from "./agente/notas";
 import { VistaRepaso } from "./repaso-vista";
+import { VistaRamoTodo } from "./ramo-todo-vista";
+import { VistaDocumento } from "./documento-vista";
+import type { DocumentoVista } from "./agente/documentos";
+import type { DatosBusquedaRamos, DatosRamoTodo, Destino } from "./agente/ramo-todo";
 import { VistaPlanEstudio } from "./plan-estudio-vista";
 import { lineaEstadisticasDeRamo, tarjetaEstadisticas } from "./estadisticas-vista";
 import { tarjetaComparacionNotas } from "./comparacion-notas-vista";
@@ -170,6 +175,13 @@ interface Opciones {
   alCrearRamo?: (nombre: string, alias: string[]) => Promise<string>;
   alEditarRamo?: (ramo: number, cambios: { nombre?: string; alias?: string[]; color?: string }) => Promise<void>;
   alArchivarRamo?: (ramo: number) => Promise<void>;
+  /** Todo lo de un ramo (C): su lista por fecha y la búsqueda por títulos en todos los ramos. */
+  /** Documentos (D): leer el archivo y guardar su texto, elegir uno con el diálogo y asignarle un ramo. */
+  alAgregarDocumento?: (ruta: string) => Promise<DocumentoVista>;
+  alElegirDocumento?: () => Promise<string | null>;
+  alAsignarRamoDocumento?: (documento: string, ramo: number | null) => Promise<void>;
+  alPedirRamoTodo?: (ramo: number) => Promise<DatosRamoTodo>;
+  alBuscarEnRamos?: (texto: string) => Promise<DatosBusquedaRamos>;
   /** Notas (A2): crear o editar una evaluación, borrarla y cambiar los ajustes de un ramo. */
   alGuardarEvaluacion?: (datos: { ramo?: number; evaluacion?: number; nombre?: string; peso?: number; nota?: number | null; fecha?: string | null }) => Promise<void>;
   alBorrarEvaluacion?: (evaluacion: number) => Promise<void>;
@@ -350,6 +362,8 @@ export class Panel {
   private resumenEstudio: ResumenEstudio = RESUMEN_VACIO;
   /** Qué ramo tiene la ficha abierta, cuál se está editando y el mensaje de error del último intento. */
   private ramoAbierto: number | null = null;
+  private readonly ramoTodo: VistaRamoTodo;
+  private readonly documento: VistaDocumento;
   private ramoEditando: number | null = null;
   private errorEstudio = "";
   /** Notas (A2): qué evaluación se edita, si el formulario «+ Evaluación» está abierto y el último error. */
@@ -406,6 +420,32 @@ export class Panel {
         aceptar: (g, d) => (opciones.alAceptarRepaso ? opciones.alAceptarRepaso(g, d) : Promise.reject(new Error("Brote no está conectado"))),
         descartar: (g) => (opciones.alDescartarRepaso ? opciones.alDescartarRepaso(g) : Promise.reject(new Error("Brote no está conectado"))),
         responder: (t, r) => (opciones.alResponderRepaso ? opciones.alResponderRepaso(t, r) : Promise.reject(new Error("Brote no está conectado"))),
+      },
+      () => this.mostrarEstudio(),
+    );
+    this.documento = new VistaDocumento(
+      {
+        agregar: (ruta) => (opciones.alAgregarDocumento ? opciones.alAgregarDocumento(ruta) : Promise.reject(new Error("Brote no está conectado"))),
+        enviar: (texto) => this.enviarTexto(texto),
+        escribirEnCampo: (texto) => {
+          this.elegir("brote");
+          this.entrada.value = texto;
+          this.actualizarBotonEnviar();
+          this.entrada.focus();
+          this.entrada.setSelectionRange(texto.length, texto.length);
+        },
+        asignarRamo: (d, r) => (opciones.alAsignarRamoDocumento ? opciones.alAsignarRamoDocumento(d, r) : Promise.reject(new Error("Brote no está conectado"))),
+        ...(opciones.alElegirDocumento ? { elegirArchivo: opciones.alElegirDocumento } : {}),
+        verRespuesta: () => this.elegir("brote"),
+      },
+      () => this.mostrarEstudio(),
+    );
+    this.ramoTodo = new VistaRamoTodo(
+      {
+        pedirRamo: (r) => (opciones.alPedirRamoTodo ? opciones.alPedirRamoTodo(r) : Promise.reject(new Error("Brote no está conectado"))),
+        buscar: (t) => (opciones.alBuscarEnRamos ? opciones.alBuscarEnRamos(t) : Promise.reject(new Error("Brote no está conectado"))),
+        ir: (destino) => this.irADestino(destino),
+        abrirRamo: (id) => this.abrirRamoTodo(id),
       },
       () => this.mostrarEstudio(),
     );
@@ -666,7 +706,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, inicio, this.plata, this.agenda, this.estudio, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, this.documento.el, inicio, this.plata, this.agenda, this.estudio, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -752,6 +792,47 @@ export class Panel {
     this.repaso.iniciarSesion(ramoId);
   }
 
+  // ---- Documentos (D): arrastrar un archivo hacia Brote ----------------------------------------------------
+
+  /** Algo se arrastra hacia la isla (enter); abre la tarjeta de soltar. */
+  arrastrarDocumento(rutas: readonly string[]): void {
+    this.documento.arrastrar(rutas);
+  }
+  salirDelArrastre(): void {
+    this.documento.salirDelArrastre();
+  }
+  sigueArrastrando(): void {
+    this.documento.sigueArrastrando();
+  }
+  /** Se soltó: Brote lee el primer archivo que pueda. */
+  async soltarDocumento(rutas: readonly string[]): Promise<void> {
+    await this.documento.soltar(rutas);
+  }
+  /** Lo que hace Brote con los lentes y la hoja, según el paso en que va el documento y el agente. */
+  modoLectura(estadoAgente: string): "lentes" | "leyendo" | null {
+    return this.documento.modoLectura(estadoAgente);
+  }
+  /** Los ramos para la tarjeta de documentos («¿de qué ramo es?»). */
+  ponerRamosDeDocumentos(ramos: readonly Ramo[]): void {
+    this.documento.ponerRamos(ramos);
+  }
+  ponerDocumentos(lista: DocumentoVista[]): void {
+    this.documento.ponerDocumentos(lista);
+  }
+
+  /** «Todo lo de cálculo»: abre Estudio con la ficha del ramo y su línea de tiempo. */
+  abrirRamoTodo(ramoId: number): void {
+    this.elegir("estudio");
+    this.ramoAbierto = ramoId;
+    this.ramoEditando = null;
+    this.ramoTodo.abrir(ramoId);
+  }
+
+  private irADestino(destino: Destino): void {
+    if ("repaso" in destino) this.iniciarRepaso(destino.repaso);
+    else this.elegir(destino.pestana);
+  }
+
   /** La isla no debe cerrarse: hay texto escrito, un permiso pendiente o una respuesta por leer. */
   retieneIsla(ahora: number): boolean {
     const c = this.agente.conversacion;
@@ -763,6 +844,8 @@ export class Panel {
       // Repasando o revisando una propuesta: la isla no se cierra a mitad de una tarjeta.
       this.repaso.ocupada ||
       this.planEstudio.ocupada ||
+      this.ramoTodo.activa ||
+      this.documento.activa ||
       // La pregunta a los presentes y los errores del micrófono son decisiones: la isla no se cierra sola.
       (["pregunta", "iniciando", "error"] as const).some((f) => f === this.estadoGrabacion.fase) ||
       this.verTodosActivo ||
@@ -1289,8 +1372,12 @@ export class Panel {
    * y transcripciones); lo que se sugiere agregar sale del aula y del calendario y nada se crea solo.
    */
   mostrarEstudio(estado: EstadoEstudio | null = this.estadoEstudio): void {
+    // Datos nuevos (cambiaron los ramos, el calendario o el aula): lo abierto de «todo lo de un ramo» se vuelve a pedir.
+    const nuevos = estado !== null && this.estadoEstudio !== null && estado !== this.estadoEstudio;
     this.estadoEstudio = estado;
     if (!estado) return;
+    if (nuevos) this.ramoTodo.refrescar();
+    const teniaFoco = this.ramoTodo.conFoco;
     const ahora = Date.now();
     const partes: HTMLElement[] = [];
     const cabecera = crear("div", "agenda-cabecera");
@@ -1298,6 +1385,9 @@ export class Panel {
     titulo.textContent = "Tus ramos";
     cabecera.append(titulo);
     partes.push(cabecera);
+    if (estado.ramos.length > 0) partes.push(this.ramoTodo.buscador(estado.ramos));
+    this.documento.ponerRamos(estado.ramos);
+    partes.push(this.documento.tarjetaEstudio());
 
     if (this.errorEstudio) {
       const error = crear("p", "estudio-error");
@@ -1375,6 +1465,7 @@ export class Panel {
     });
     partes.push(formulario);
     this.estudio.replaceChildren(...partes);
+    this.ramoTodo.devolverFoco(teniaFoco);
   }
 
   private async crearRamoDesde(nombre: string, alias: string[]): Promise<void> {
@@ -1409,12 +1500,15 @@ export class Panel {
     fila.addEventListener("click", () => {
       this.ramoAbierto = abierto ? null : ramo.id;
       this.ramoEditando = null;
+      this.ramoTodo.cerrar();
       this.mostrarEstudio();
     });
     caja.append(fila);
     if (!abierto) return caja;
 
     const cuerpo = crear("div", "estudio-ramo-cuerpo");
+    const todoDelRamo = this.ramoTodo.lineaDeTiempo(ramo);
+    if (todoDelRamo) cuerpo.append(todoDelRamo);
     const lineaTiempo = lineaEstadisticasDeRamo(this.resumenEstudio, ramo.id);
     if (lineaTiempo) cuerpo.append(lineaTiempo);
     const propuestaPlan = this.planEstudio.propuestaDe(ramo.id);
@@ -1511,7 +1605,7 @@ export class Panel {
           this.opciones.alPedirEstudio?.();
         });
       });
-      acciones.append(editar, archivar);
+      acciones.append(this.ramoTodo.boton(ramo.id), editar, archivar);
       cuerpo.append(acciones);
     }
     caja.append(cuerpo);

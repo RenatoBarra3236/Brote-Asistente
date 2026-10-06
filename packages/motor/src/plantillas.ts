@@ -61,6 +61,7 @@ export type Intencion =
   | "ramos-agregar"
   | "ramos-ver"
   | "ramos-archivar"
+  | "ramo-todo"
   | "notas-anotar"
   | "notas-evaluaciones"
   | "notas-agregar-eval"
@@ -408,6 +409,10 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "ramos-ver", intencion: "ramos-ver", patron: "[(muestrame|ver|dame|lista|listame|revisa)] [mis|los|todos mis] ramos" },
   { id: "ramos-ver-cuales", intencion: "ramos-ver", patron: "(que|cuales) ramos (tengo|estoy viendo|estoy cursando|curso)" },
   { id: "ramos-archivar", intencion: "ramos-archivar", patron: "(quita|quitar|archiva|archivar|elimina|eliminar|saca|sacar|borra|borrar) [el|mi] ramo [de] {cosa}" },
+  // Todo lo de un ramo (C). Siempre «lo de {ramo}»: «todo lo de hoy» o «todo lo de la clase» no calzan con ningún ramo y van al agente.
+  { id: "ramo-todo-todo", intencion: "ramo-todo", patron: "[(muestrame|ver|dame|dime)] todo lo (de|del|sobre) {cosa}" },
+  { id: "ramo-todo-que-tengo", intencion: "ramo-todo", patron: "que tengo (de|del) {cosa}" },
+  { id: "ramo-todo-lo-de", intencion: "ramo-todo", patron: "(muestrame|ver|dame|dime) lo (de|del) {cosa}" },
   // Notas (A2). Van al final: las de plan y gastos ganan si calzan. Cada una lleva una palabra fija
   // Metas de ahorro. Siempre con «juntar», «ahorrar», «aparté»… o la palabra «meta»: «quiero ahorrar» a secas va al agente.
   { id: "ahorro-crear-mes-cosa", intencion: "ahorro-crear", patron: "(quiero|voy a|necesito|me gustaria) (juntar|ahorrar) {monto} para {mes} para {cosa}" },

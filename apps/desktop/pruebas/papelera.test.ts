@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { describe, test } from "node:test";
-import { avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, pieGrabaciones, pieOlvidar } from "../src/agente/papelera.ts";
+import { describe, it, test } from "node:test";
+import { avisoDocumentoBorrado, avisoGrabacionBorrada, avisoOlvidado, avisoTemaOlvidado, confirmarBorrarTodo, confirmarBorrarTodosDocumentos, pieDocumentos, pieGrabaciones, pieOlvidar } from "../src/agente/papelera.ts";
 
 describe("textos de olvidar", () => {
   test("en Mac avisa que sigue en la Papelera hasta vaciarla", () => {
@@ -36,5 +36,16 @@ describe("textos de borrar grabaciones", () => {
   });
   test("el segundo toque de «Borrar todo» dice cuántas", () => {
     assert.equal(confirmarBorrarTodo("transcripcion", 4), "¿Seguro? Se borran 4 transcripciones");
+  });
+});
+
+describe("documentos en la papelera", () => {
+  it("avisa distinto en Mac y fuera de Mac, y dice que el original no se toca", () => {
+    assert.match(pieDocumentos(true), /Papelera.*tu archivo original no se toca/);
+    assert.match(pieDocumentos(false), /para siempre.*tu archivo original no se toca/);
+    assert.equal(avisoDocumentoBorrado(true, 1), "Borré el documento. Quedó en la Papelera hasta que la vacíes.");
+    assert.equal(avisoDocumentoBorrado(false, 3), "Borré 3 documentos para siempre.");
+    assert.equal(avisoDocumentoBorrado(true, 0), "No había nada que borrar: ya no estaba.");
+    assert.equal(confirmarBorrarTodosDocumentos(4), "¿Seguro? Se borran 4 documentos");
   });
 });

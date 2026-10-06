@@ -262,6 +262,26 @@
                   return responder(id, { datos: window.__agenda() });
                 case "ramos-estado":
                   return responder(id, { datos: window.__estudio.estado() });
+                case "ramos-todos":
+                  return responder(id, { datos: window.__estudio.ramos });
+                case "documentos-estado":
+                  return responder(id, { datos: window.__documentos.lista });
+                case "documento-agregar": {
+                  const nombre = String(pedido.ruta).split("/").pop();
+                  const doc = { id: `doc-2026-10-06-15${String(window.__documentos.lista.length).padStart(2, "0")}00`, nombre, tipo: nombre.split(".").pop().toLowerCase(), paginas: 12, caracteres: 21000, ramoId: null, creado: new Date().toISOString() };
+                  window.__documentos.lista = [doc, ...window.__documentos.lista];
+                  setTimeout(() => emitir({ tipo: "documentos", documentos: window.__documentos.lista }), 150);
+                  return responder(id, { datos: { documento: doc } });
+                }
+                case "documento-ramo": {
+                  const d = window.__documentos.lista.find((x) => x.id === pedido.documento);
+                  if (d) d.ramoId = pedido.ramo;
+                  return responder(id, {});
+                }
+                case "ramo-todo":
+                  return responder(id, { datos: window.__ramoTodo.ramo(pedido.ramo) });
+                case "ramos-buscar":
+                  return responder(id, { datos: window.__ramoTodo.buscar(pedido.texto) });
                 case "ramo-crear": {
                   const r = window.__estudio.crear(pedido.nombre, pedido.alias ?? []);
                   if (typeof r === "string") return emitir({ tipo: "respuesta", id, ok: false, error: r });
@@ -1014,6 +1034,87 @@
         },
         presupuesto: (monto) => (datos.presupuesto = monto),
       };
+    </script>
+    <script>
+      // Documentos (D): ?documentos=con deja dos documentos ya guardados (uno con ramo).
+      window.__documentos = {
+        lista:
+          new URLSearchParams(location.search).get("documentos") === "con"
+            ? [
+                { id: "doc-2026-10-05-101500", nombre: "Apuntes de cálculo — derivadas.pdf", tipo: "pdf", paginas: 12, caracteres: 21000, ramoId: 1, creado: "2026-10-05T13:15:00.000Z" },
+                { id: "doc-2026-10-04-090000", nombre: "Clase 3 Física.pptx", tipo: "pptx", paginas: 24, caracteres: 9000, ramoId: null, creado: "2026-10-04T12:00:00.000Z" },
+              ]
+            : [],
+      };
+    </script>
+    <script type="module">
+      // Todo lo de un ramo (C): las mismas funciones del motor sobre datos de ejemplo.
+      // ?pestana=estudio&todo=1 (línea de tiempo del primer ramo) | todo=buscar (búsqueda «certamen») | todo=vacio (un ramo sin nada)
+      import { armarTodoDeRamos, buscarEnRamos, resumirRamo, textoResumenRamo } from "/../../packages/motor/src/ramo-todo.ts";
+      const parametros = new URLSearchParams(location.search);
+      const modo = parametros.get("todo");
+      const hoy = new Date();
+      const en = (dias, hora, min = 0) => new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias, hora, min).getTime();
+      const armar = () =>
+        armarTodoDeRamos(
+          window.__estudio.ramos,
+          {
+            eventos: [
+              { titulo: "Cálculo II · clase", inicioMs: en(0, 15), finMs: en(0, 16, 30) },
+              { titulo: "calc ayudantía", inicioMs: en(2, 10), finMs: en(2, 11) },
+              { titulo: "Física General", inicioMs: en(1, 8, 30), finMs: en(1, 10) },
+            ],
+            entregas: [{ curso: "Física General", titulo: "Informe 2: péndulo", entregaMs: en(3, 23, 59), entregada: false }],
+            pruebas: [
+              { id: 1, ramoId: 1, titulo: "Certamen 2", inicioMs: en(6, 15) },
+              { id: 2, ramoId: 2, titulo: "Control 1", inicioMs: en(9, 10) },
+            ],
+            bloques: [
+              { id: 1, ramoId: 1, titulo: "Estudiar Cálculo II", inicioMs: en(2, 17), hecho: false },
+              { id: 2, ramoId: 1, titulo: "Estudiar Cálculo II", inicioMs: en(-1, 17), hecho: true },
+            ],
+            tareas: [
+              { id: 1, titulo: "Guía 3 de integrales", venceMs: en(1, 23, 59), hecha: false },
+              { id: 2, titulo: "Leer capítulo 4", venceMs: en(-2, 23, 59), hecha: true },
+            ],
+            ramoDeTarea: new Map([["1", 1], ["2", 1]]),
+            repasoHoy: new Map([[1, 4]]),
+            grabaciones: [
+              { id: "2026-10-03-143000", ramoId: 1, ms: en(-3, 14, 30) },
+              { id: "2026-10-02-080000", ramoId: 2, ms: en(-4, 8) },
+            ],
+          },
+          Date.now(),
+        );
+      const fuentes = { calendario: true, aula: modo !== "sin-aula" };
+      window.__ramoTodo = {
+        ramo(id) {
+          const ramo = window.__estudio.ramos.find((r) => r.id === id);
+          const items = armar().get(id) ?? [];
+          return { ramoId: id, resumen: textoResumenRamo(ramo.nombre, resumirRamo(items, Date.now()), Date.now()), items, fuentes };
+        },
+        buscar(texto) {
+          return { resultados: buscarEnRamos(texto, armar()), fuentes };
+        },
+      };
+      if (modo) {
+        // Espera a que la pestaña Estudio ya tenga sus ramos pintados (en la vista previa llegan con retraso).
+        let intentos = 0;
+        const espera = setInterval(() => {
+          const cabeceras = document.querySelectorAll(".estudio-ramo-cabecera");
+          if (++intentos > 60) return clearInterval(espera);
+          if (cabeceras.length === 0 || (parametros.has("abrir") && !document.querySelector(".estudio-ramo.abierto"))) return;
+          clearInterval(espera);
+          if (modo === "buscar") {
+            const campo = document.querySelector(".estudio-buscador-campo");
+            campo.value = "certamen";
+            campo.dispatchEvent(new Event("input"));
+            return;
+          }
+          if (!parametros.has("abrir")) cabeceras[modo === "vacio" ? 2 : 0].click();
+          setTimeout(() => [...document.querySelectorAll(".estudio-acciones .pildora")].find((b) => b.textContent === "Ver todo")?.click(), 200);
+        }, 200);
+      }
     </script>
     <script type="module" src="/src/main.ts"></script>
   </head>

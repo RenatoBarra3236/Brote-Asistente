@@ -11,7 +11,8 @@ import type { DecisionRepaso, Kit, PropuestaRepaso, Resultado, ResumenGuardado, 
 
 /** Tope de tarjetas guardadas: un repaso que nadie puede terminar no sirve. */
 export const MAX_TARJETAS = 2000;
-const FORMA_ID_GRABACION = /^\d{4}-\d{2}-\d{2}-\d{6}$/;
+/** Una grabación (`AAAA-MM-DD-HHMMSS`) o un documento (`doc-AAAA-MM-DD-HHMMSS`): de ahí salen las propuestas de repaso. */
+const FORMA_ID_GRABACION = /^(doc-)?\d{4}-\d{2}-\d{2}-\d{6}$/;
 
 interface FilaTarjeta {
   id: number;
@@ -97,7 +98,7 @@ export class Repaso {
 
   /** Guarda lo que propuso el agente para una grabación (reemplaza una propuesta pendiente anterior). */
   proponer(grabacion: string, entrada: unknown, ramoId: number | null, ahoraMs: number): ResultadoProponer {
-    if (!FORMA_ID_GRABACION.test(grabacion)) return { ok: false, motivo: "«grabacion» no es un id de grabación", rechazadas: [] };
+    if (!FORMA_ID_GRABACION.test(grabacion)) return { ok: false, motivo: "«grabacion» no es un id de grabación ni de documento", rechazadas: [] };
     const v = validarKit(entrada);
     if (!v.ok) return { ok: false, motivo: v.motivo ?? "Nada que proponer", rechazadas: v.rechazadas };
     if (ramoId !== null && !this.existeRamo(ramoId)) ramoId = null;

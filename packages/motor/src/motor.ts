@@ -24,6 +24,8 @@ import type { CabeceraTranscripcion } from "./transcripciones.ts";
 import { Ramos } from "./ramos.ts";
 import { Notas } from "./notas.ts";
 import { Repaso } from "./repaso.ts";
+import { resumirRamo, textoResumenRamo } from "./ramo-todo.ts";
+import type { ItemDeRamo } from "./ramo-todo.ts";
 import { PlanesEstudio } from "./plan-estudio.ts";
 import { interpretarPlanEstudio, responderPlanEstudio } from "./plan-estudio-motor.ts";
 import type { AccionPlanEstudio } from "./plan-estudio-motor.ts";
@@ -88,6 +90,7 @@ export type Accion =
   | { intencion: "grabar-iniciar" | "grabar-detener" | "grabar-estado" | "transcripciones-ver" | "transcripciones-hoy" }
   | { intencion: "ramos-agregar" | "ramos-archivar"; nombre: string }
   | { intencion: "ramos-ver" }
+  | { intencion: "ramo-todo"; ramo: string }
   | { intencion: "repaso-hay" }
   | { intencion: "repaso-empezar"; ramo: string | null }
   | AccionPlanEstudio
@@ -183,6 +186,10 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "estudio-plan":
     case "estudio-hoy":
       return interpretarPlanEstudio(intencion, ranuras, originales);
+    case "ramo-todo": {
+      const ramo = originales.cosa ? limpiarTexto(sinArticulo(originales.cosa.trim()), MAX_NOMBRE_RAMO) : "";
+      return ramo ? { intencion, ramo } : null;
+    }
     case "repaso-hay":
       return { intencion };
     case "repaso-empezar": {
@@ -243,6 +250,7 @@ export class Motor {
   private readonly ramos: Ramos | null;
   private readonly notas: Notas | null;
   private readonly repaso: Repaso | null;
+  private readonly todoRamo: ((ramoId: number) => ItemDeRamo[] | null) | null;
   private readonly planes: PlanesEstudio | null;
   private readonly estadisticas: EstadisticasEstudio | null;
   private readonly ahorro: Ahorro | null;
@@ -282,6 +290,8 @@ export class Motor {
       notas?: Notas;
       /** Las tarjetas de repaso. Sin esto (o sin ramos), esas frases van al agente. */
       repaso?: Repaso;
+      /** Todo lo de un ramo (clases, tareas, pruebas…) ya armado por el puente. Sin esto, «todo lo de cálculo» va al agente. */
+      todoDeRamo?: (ramoId: number) => ItemDeRamo[] | null;
       /** Los planes de estudio. Sin esto, «¿qué estudio hoy?» va al agente (la fecha y el plan solo necesitan ramos y notas). */
       planes?: PlanesEstudio;
       /** El tiempo estudiado. Sin esto, esas frases van al agente. */
@@ -293,6 +303,7 @@ export class Motor {
     this.ramos = opciones.ramos ?? null;
     this.notas = opciones.notas ?? null;
     this.repaso = opciones.repaso ?? null;
+    this.todoRamo = opciones.todoDeRamo ?? null;
     this.planes = opciones.planes ?? null;
     this.estadisticas = opciones.estadisticas ?? null;
     this.ahorro = opciones.ahorro ?? null;
@@ -367,6 +378,15 @@ export class Motor {
     if (accion.intencion === "ramos-agregar" || accion.intencion === "ramos-archivar" || accion.intencion === "ramos-ver") {
       if (!this.ramos) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: this.ramear(accion) };
+    }
+    if (accion.intencion === "ramo-todo") {
+      // Nunca se adivina el ramo: sin uno que calce (o con empate) la frase va al agente.
+      if (!this.ramos || !this.todoRamo) return null;
+      const ramo = emparejarRamo(accion.ramo, this.ramos.listar());
+      const items = ramo ? this.todoRamo(ramo.id) : null;
+      if (!ramo || !items) return null;
+      const texto = textoResumenRamo(ramo.nombre, resumirRamo(items, this.reloj().getTime()), this.reloj().getTime());
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto, datos: { ramoTodo: { ramoId: ramo.id } } };
     }
     if (accion.intencion === "repaso-hay" || accion.intencion === "repaso-empezar") {
       if (!this.ramos || !this.repaso) return null;

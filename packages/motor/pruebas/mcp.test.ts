@@ -8,6 +8,9 @@ import { Gastos } from "../src/gastos.ts";
 import { MENSAJE_APAGADA_MCP } from "../src/funciones.ts";
 import { atender } from "../src/mcp.ts";
 import { guardarTranscripcion } from "../src/transcripciones-archivo.ts";
+import { Notas } from "../src/notas.ts";
+import { agregarDocumento } from "../src/documentos-archivo.ts";
+import { armarDocx } from "./ayuda-documentos.ts";
 import { Ramos } from "../src/ramos.ts";
 import { Repaso } from "../src/repaso.ts";
 
@@ -23,11 +26,15 @@ process.env.ASISTENTE_FUNCIONES = join(CARPETA, "funciones.json");
 process.env.ASISTENTE_PLAN = join(CARPETA, "plan.json");
 // Y sus propias transcripciones, nunca las del computador.
 process.env.ASISTENTE_TRANSCRIPCIONES = join(CARPETA, "transcripciones");
+// Y sus propios documentos.
+process.env.ASISTENTE_DOCUMENTOS = join(CARPETA, "documentos");
 writeFileSync(process.env.ASISTENTE_FUNCIONES, JSON.stringify({ activas: Object.fromEntries(["gastos", "temporizadores", "calendario", "aula", "musica", "descargas", "equipo", "programador", "uso-del-plan", "grabaciones"].map((id) => [id, true])) }));
 after(() => rmSync(CARPETA, { recursive: true, force: true }));
 
 beforeEach(() => {
   gastos = new Gastos(":memory:");
+  // Cada prueba parte sin documentos guardados (la base es nueva y los ids de ramo se repiten).
+  rmSync(process.env.ASISTENTE_DOCUMENTOS!, { recursive: true, force: true });
 });
 
 function llamar(name: string, args: object): { texto: string; error: boolean } {
@@ -48,7 +55,7 @@ describe("servidor MCP de gastos", () => {
     const lista = atender(gastos, { jsonrpc: "2.0", id: 2, method: "tools/list" }) as any;
     assert.deepEqual(
       lista.result.tools.map((t: any) => t.name),
-      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "estudio_plan", "estudio_hoy", "estudio_estadisticas", "ahorro_resumen", "motor_proponer_plantilla"],
+      ["gastos_anotar", "gastos_listar", "gastos_resumen", "gastos_presupuesto", "temporizador_crear", "temporizador_listar", "temporizador_cancelar", "equipo_estado", "descargas_recientes", "transcripciones_listar", "transcripciones_leer", "documentos_listar", "documentos_leer", "musica_estado", "musica_control", "calendario_proximos", "calendario_crear", "programador_sesiones", "aula_entregas", "claude_uso", "ramos_listar", "ramo_todo", "ramos_crear", "notas_resumen", "notas_necesaria", "notas_anotar", "agenda_proponer", "repaso_proponer", "estudio_plan", "estudio_hoy", "estudio_estadisticas", "ahorro_resumen", "motor_proponer_plantilla"],
     );
   });
 
@@ -277,6 +284,34 @@ describe("servidor MCP de gastos", () => {
     assert.equal(llamar("agenda_proponer", { grabacion: "../x", propuestas: [] }).error, true);
   });
 
+  it("documentos: lista y lee por partes lo que Brote ya sacó, con ramo; ids raros se rechazan; repaso_proponer acepta el id del documento", async () => {
+    llamar("ramos_crear", { nombre: "Cálculo" });
+    const parrafos = Array.from({ length: 60 }, (_, i) => `Párrafo ${i}: ${"derivada ".repeat(30)}`);
+    const archivo = join(CARPETA, "Apuntes.docx");
+    writeFileSync(archivo, armarDocx(parrafos));
+    const agregado = await agregarDocumento(archivo, { ramoId: new Ramos(gastos).listar()[0]?.id ?? null, ahora: new Date(2026, 9, 6, 11, 0, 0) });
+    assert.ok(agregado.ok);
+    const id = agregado.documento.id;
+    const lista = JSON.parse(llamar("documentos_listar", {}).texto).documentos;
+    assert.equal(lista.length, 1);
+    assert.deepEqual([lista[0].id, lista[0].nombre, lista[0].tipo], [id, "Apuntes.docx", "docx"]);
+    assert.ok(lista[0].partes >= 2);
+    const primera = JSON.parse(llamar("documentos_leer", { id }).texto);
+    assert.equal(primera.parte, 1);
+    assert.equal(primera.totalPartes, lista[0].partes);
+    assert.match(primera.texto, /^Párrafo 0: derivada/);
+    assert.ok(JSON.parse(llamar("documentos_leer", { id, parte: primera.totalPartes }).texto).texto.includes("Párrafo 59"));
+    assert.equal(llamar("documentos_leer", { id, parte: 99 }).error, true);
+    assert.equal(llamar("documentos_leer", { id: "doc-2026-01-01-000000" }).error, true);
+    assert.equal(llamar("documentos_leer", { id: "../../etc/passwd" }).error, true);
+    assert.equal(llamar("documentos_leer", {}).error, true);
+    // El resultado trae el texto y nada más del disco: ni la ruta del usuario.
+    assert.equal(llamar("documentos_listar", {}).texto.includes(CARPETA), false);
+    const kit = { glosario: [{ termino: "Derivada", definicion: "Tasa de cambio instantánea" }] };
+    assert.match(llamar("repaso_proponer", { grabacion: id, ...kit }).texto, /Propuesta guardada/);
+    assert.equal(llamar("repaso_proponer", { grabacion: "doc-2026-01-01-000000", ...kit }).error, true);
+  });
+
   it("repaso_proponer: deja una propuesta pendiente, dice qué dejó fuera y no guarda tarjetas", () => {
     const kit = { temas: [{ titulo: "Límites", puntos: ["Se acerca a un valor"] }], glosario: [{ termino: "Límite", definicion: "Valor al que se acerca la función" }], preguntas: [{ pregunta: "¿" + "a".repeat(250) + "?", respuesta: "x" }] };
     const ok = llamar("repaso_proponer", { grabacion: "2026-10-04-103000", ...kit });
@@ -403,6 +438,24 @@ describe("servidor MCP de gastos", () => {
     assert.equal(JSON.parse(llamar("notas_resumen", { ramo: "cálculo" }).texto).evaluaciones[0].nota, 4.2);
   });
 
+  it("ramo_todo: lista por ramo solo títulos y fechas, busca por palabras completas y dice qué no pudo mirar", async () => {
+    llamar("ramos_crear", { nombre: "Cálculo", alias: ["calc"] });
+    llamar("ramos_crear", { nombre: "Física" });
+    llamar("notas_anotar", { ramo: "cálculo", evaluacion: "Certamen 2", peso: 30 });
+    const notas = new Notas(gastos, new Ramos(gastos));
+    const ev = notas.listar().find((e) => e.nombre === "Certamen 2")!;
+    assert.ok(notas.editar(ev.id, { fecha: "2099-01-10" }).ok);
+    const r = JSON.parse((await llamarEsperando("ramo_todo", { ramo: "calc" })).texto);
+    assert.deepEqual(r.ramos.map((x: any) => x.ramo), ["Cálculo"]);
+    assert.deepEqual(r.ramos[0].items.map((i: any) => [i.tipo, i.titulo, i.estado]), [["prueba", "Certamen 2", "pendiente"]]);
+    assert.match(r.calendario, /no pude mirarlo/);
+    assert.match(r.aula, /no pude mirarla/);
+    const todos = JSON.parse((await llamarEsperando("ramo_todo", { buscar: "CERTAMEN" })).texto);
+    assert.deepEqual(todos.ramos.map((x: any) => x.ramo), ["Cálculo"]);
+    assert.deepEqual(JSON.parse((await llamarEsperando("ramo_todo", { buscar: "certam" })).texto).ramos, []);
+    assert.equal((await llamarEsperando("ramo_todo", { ramo: "química" })).error, true);
+  });
+
   it("notas: lo inválido se rechaza", () => {
     llamar("ramos_crear", { nombre: "Física" });
     assert.equal(llamar("notas_anotar", { ramo: "química", evaluacion: "Control", peso: 20 }).error, true);
@@ -420,6 +473,7 @@ describe("servidor MCP de gastos", () => {
       writeFileSync(ruta, JSON.stringify({ activas: { estudio: false } }));
       assert.equal(llamar("ramos_listar", {}).texto, MENSAJE_APAGADA_MCP);
       assert.equal(llamar("ramos_crear", { nombre: "Historia" }).texto, MENSAJE_APAGADA_MCP);
+      assert.equal((await llamarEsperando("ramo_todo", {})).texto, MENSAJE_APAGADA_MCP);
       assert.equal(llamar("notas_resumen", {}).texto, MENSAJE_APAGADA_MCP);
       assert.equal(llamar("notas_anotar", { ramo: "x", evaluacion: "y" }).texto, MENSAJE_APAGADA_MCP);
     } finally {

@@ -60,7 +60,10 @@ export interface ResumenGuardado {
   creadoMs: number;
 }
 export interface PropuestaRepaso {
+  /** El id de la grabación o, si empieza con «doc-», del documento de donde sale la propuesta. */
   grabacion: string;
+  /** Solo si sale de un documento: el nombre de su archivo (lo agrega el puente; no se guarda aquí). */
+  documento?: string | null;
   ramoId: number | null;
   kit: Kit;
   creadaMs: number;

@@ -34,6 +34,8 @@ const tarjeta = (id: number, dias = 0, ramoId: number | null = null): Tarjeta =>
 describe("propuesta de repaso en la isla", () => {
   it("el título lleva la fecha de la clase y el resumen cuenta lo que hay", () => {
     assert.equal(tituloPropuesta({ grabacion: "2026-10-04-103000" }), "Brote preparó un repaso de tu clase del dom 4 oct · 10:30");
+    assert.equal(tituloPropuesta({ grabacion: "doc-2026-10-04-103000", documento: "Apuntes.pdf" }), "Brote preparó un repaso de tu documento «Apuntes.pdf»");
+    assert.equal(tituloPropuesta({ grabacion: "doc-2026-10-04-103000", documento: null }), "Brote preparó un repaso de un documento tuyo");
     assert.equal(fechaDeClase("raro"), "raro");
     assert.equal(resumenPropuesta(kit), "2 temas · 1 término · 2 preguntas");
     assert.equal(resumenPropuesta({ temas: [], glosario: [], preguntas: [] }), "");

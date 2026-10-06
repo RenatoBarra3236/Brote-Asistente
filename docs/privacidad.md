@@ -21,6 +21,7 @@ diciembre de 2026).
 | Lo que Brote recuerda de ti y las conversaciones guardadas | la carpeta de OpenClaw (`~/.openclaw/workspace`) y la memoria de Claude Code de ese espacio |
 | Registros de OpenClaw | `~/Library/Logs/openclaw/gateway.log` (Mac). Pueden caer respuestas de los agentes; Brote las quita solo (al abrir y cada hora). El registro propio de OpenClaw está en `/tmp/openclaw` y se borra a las 24 h |
 | Grabaciones y sus transcripciones (solo si prendes **Grabar y transcribir**, apagada de fábrica) | Audio en `~/.asistente-prototipo/grabaciones/`, que se borra solo a los 7 días (a la Papelera en Mac); texto en `~/.asistente-prototipo/transcripciones/`, que se queda hasta que lo borres. Separado de la memoria de OpenClaw |
+| Documentos que le das a Brote (PDF, Word, PowerPoint, texto) | Solo el **texto** que Brote saca, en `~/.asistente-prototipo/documentos/` (hasta 20 documentos, hasta que lo borres). El archivo original nunca se copia, mueve ni borra: sigue donde estaba. El texto lo saca Brote en tu computador, sin red; llega a Claude (tu plan) solo cuando le pides algo del documento, y nunca a un especialista de plan gratuito |
 | Modelos de transcripción y ajustes de Grabar y transcribir (modelo, días del audio, si aceptaste el aviso) | Modelos en `~/.asistente-prototipo/modelos/` (`ggml-<modelo>.bin`, entre 148 MB y 1,6 GB), que puedes borrar cuando quieras; ajustes en `~/.asistente-prototipo/grabaciones.json` |
 | Tus sesiones de Claude Code (si prendes el modo programador o el uso del plan) | `~/.claude/projects`: Brote lee solo la cantidad de tokens y el modelo, no el texto |
 
@@ -38,6 +39,7 @@ cifrar el disco (FileVault en Mac, BitLocker en Windows; ver "Tus datos" en `doc
 
 ## Cómo borrar tus datos
 
+- **Documentos**: Lo que sé de ti → Documentos. Ves cada documento (nombre, tipo, ramo) y lo borras de a uno o con «Borrar todo». En Mac van a la Papelera; en Windows y Linux se borran para siempre. Borrar el texto no toca tu archivo original. Las tarjetas que aceptaste de un documento se quedan hasta que las borres en «Repaso». Esa lista sale aunque apagues Estudio.
 - **Grabaciones y transcripciones**: Lo que sé de ti → Grabaciones. Ahí ves cada transcripción (fecha, duración, si avisaste a los presentes) y su texto, ves los audios que esperan borrarse, y puedes borrar de a una o con «Borrar todo». En Mac van a la Papelera (siguen en tu disco hasta que la vacíes); en Windows y Linux se borran para siempre. Esa lista sale aunque apagues Grabar y transcribir: lo ya guardado es tuyo.
 - **Lo que Brote recuerda**: Lo que sé de ti → Olvidar (o "olvidar todo sobre «tema»"). En Mac va a la Papelera y sigue en tu disco hasta que la vacíes; en Windows se borra de inmediato.
 - **Todo lo de Brote**: cierra la app y borra `~/.asistente-prototipo`. La memoria y los registros de OpenClaw están en `~/.openclaw` y se borran aparte (o desinstalando OpenClaw).

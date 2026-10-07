@@ -2,6 +2,8 @@
 
 Resumen de lo decidido y de lo que sigue abierto. El detalle y las fuentes están en `docs/modelo-de-negocio.md`, `docs/plan-sin-ia.md` y `docs/plan-multiplataforma.md` (este último, en pausa y sin aprobar).
 
+**Actualización 6-10-2026:** el plan de la versión móvil está en `docs/plan-movil.md` (propuesta sin aprobar: herramientas, sincronización, aparato, tiendas, fases y decisiones). Cambia un punto de `docs/plan-multiplataforma.md`: el celular escribe en su propia base y se sincroniza con el PC, en vez de ser un cliente de pedidos.
+
 ## Principios decididos
 1. **El software de Brote es gratis, sin suscripciones.** Las ganancias vendrán **solo del Brote físico**.
 2. **La IA no se vende.** Cada persona usa la suya (hoy, su cuenta de Claude en el PC). Nunca se promete «Claude incluido».

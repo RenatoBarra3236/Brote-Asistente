@@ -13,7 +13,7 @@
 | | Para qué |
 |---|---|
 | **Un Mac con chip Apple (M1 o posterior)** o **un PC con Windows 10 u 11** | En el Mac, Brote vive en el notch; en Windows, arriba al centro de la pantalla |
-| **Claude Code con tu cuenta Pro o Max** ([claude.com/claude-code](https://claude.com/claude-code)) | Es la IA con la que Brote conversa. **Opcional al empezar**: sin ella, Brote funciona igual con lo que resuelve sin IA ⚡ y la activas cuando quieras |
+| **Claude Code con tu cuenta Pro o Max** ([claude.com/claude-code](https://claude.com/claude-code)); Claude pide tener **18 años o más** | Es la IA con la que Brote conversa. **Opcional al empezar**: sin ella, Brote funciona igual con lo que resuelve sin IA ⚡ y la activas cuando quieras |
 | **Node 24 o superior** ([nodejs.org](https://nodejs.org/es/download), versión LTS) | **Solo para activar la IA** (la instalación de OpenClaw lo usa). Brote trae su propio Node para todo lo demás; con Homebrew, la ventana de configuración instala Node por ti |
 
 ## 1. Descargar

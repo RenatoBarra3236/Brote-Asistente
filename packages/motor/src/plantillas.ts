@@ -84,7 +84,14 @@ export type Intencion =
   | "ahorro-aportar"
   | "ahorro-retirar"
   | "ahorro-como"
-  | "ahorro-archivar";
+  | "ahorro-archivar"
+  | "saludo"
+  | "gracias"
+  | "despedida"
+  | "ayuda"
+  | "confirmar"
+  | "elegir-monto"
+  | "no-entendi";
 
 export type Ranura = "monto" | "cosa" | "periodo" | "categoria" | "tiempo" | "hora" | "nota" | "peso" | "evaluacion" | "ramo" | "objetivo" | "lista" | "fecha" | "dia" | "mes";
 
@@ -379,6 +386,9 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "evento-agenda-en", intencion: "calendario-crear", patron: `(${AGENDAR}) {cosa} en {tiempo}` },
   { id: "evento-manana", intencion: "calendario-crear-manana", patron: `(${CREAR}) [un|una] (${EVENTO}) [(${NOMBRADO}) {cosa}] manana a las {hora}` },
   { id: "evento-agenda-manana", intencion: "calendario-crear-manana", patron: `(${AGENDAR}) {cosa} manana a las {hora}` },
+  // Con un día de la semana o una fecha («el viernes a las 9», «el 14 de octubre a las 15:30»). Después de «mañana a las» y «hoy a las».
+  { id: "evento-dia", intencion: "calendario-crear", patron: `(${CREAR}) [un|una] {cosa} [el] {fecha} a las {hora}` },
+  { id: "evento-agenda-dia", intencion: "calendario-crear", patron: `(${AGENDAR}) {cosa} [el] {fecha} a las {hora}` },
   { id: "evento-hora", intencion: "calendario-crear", patron: `(${CREAR}) [un|una] (${EVENTO}) [(${NOMBRADO}) {cosa}] [hoy] a las {hora}` },
   { id: "evento-agenda-hora", intencion: "calendario-crear", patron: `(${AGENDAR}) {cosa} [hoy] a las {hora}` },
   { id: "calendario-proximo", intencion: "calendario-proximo", patron: `[(cual es|cuando es|a que hora es|donde es)] [mi|la] (proxima|siguiente) (${ACTIVIDAD})` },
@@ -484,4 +494,21 @@ export const PLANTILLAS_BASE: Plantilla[] = [
   { id: "notas-borrar", intencion: "notas-borrar", patron: "(borra|borrar|elimina|eliminar|quita|quitar) [la] nota (del|de la|de el|de) {cosa}" },
   { id: "notas-ajuste-aprobacion", intencion: "notas-ajuste", patron: "la nota de aprobacion (de|en) [el|la|mi] [ramo] {ramo} es [un|una] {nota}" },
   { id: "notas-ajuste-examen", intencion: "notas-ajuste", patron: "el examen (de|en) [el|la|mi] [ramo] {ramo} vale {peso}" },
+  // Lo básico de conversar (capa E del plan sin IA). Van al final: nada de lo anterior cambia.
+  { id: "saludo", intencion: "saludo", patron: "(hola|holi|holis|holaa|hey|ey|alo|saludos|buenas|que tal|que onda|como estas|como andas|como estai|como te va) [brote]" },
+  { id: "saludo-tardes", intencion: "saludo", patron: "(buenas|buenos) (tardes|noches) [brote]" },
+  { id: "saludo-como", intencion: "saludo", patron: "(hola|holi|hey|buenas) [brote] [que tal|como estas|como andas|como estai]" },
+  { id: "gracias", intencion: "gracias", patron: "[(muchas|muchisimas|mil|ok|vale|genial|perfecto|listo|super|excelente|bueno)] gracias [(brote|por todo|por la ayuda|totales|infinitas)]" },
+  { id: "gracias-agradezco", intencion: "gracias", patron: "te (agradezco|lo agradezco|agradeci)" },
+  { id: "despedida", intencion: "despedida", patron: "(chao|chau|adios|bye|hasta luego|hasta pronto|hasta manana|nos vemos|nos vemos luego|me voy|me tengo que ir) [brote]" },
+  { id: "despedida-voy", intencion: "despedida", patron: "me voy a (dormir|descansar|estudiar|almorzar)" },
+  { id: "ayuda", intencion: "ayuda", patron: "(ayuda|ayudame|auxilio|socorro|help|ayudita|necesito ayuda) [brote] [por favor]" },
+  { id: "ayuda-que-puedes", intencion: "ayuda", patron: "(que|que cosas) (puedes|sabes|haces) (hacer|hacer por mi)" },
+  { id: "ayuda-para-que", intencion: "ayuda", patron: "para que sirves [brote]" },
+  { id: "ayuda-como-funciona", intencion: "ayuda", patron: "como (funciona|funcionas|te uso|se usa|uso) [esto|brote|la app|el asistente|este asistente]" },
+  { id: "ayuda-comandos", intencion: "ayuda", patron: "que (comandos|frases|cosas) (hay|entiendes|puedo decirte|puedo pedirte)" },
+  { id: "ayuda-no-se", intencion: "ayuda", patron: "no se (que decirte|que decir|que pedirte|que preguntar)" },
+  { id: "ayuda-ejemplos", intencion: "ayuda", patron: "[(dame|muestrame|quiero)] ejemplos" },
+  { id: "ayuda-con", intencion: "ayuda", patron: "ayuda (con|de|sobre|para) [los|las|el|la|mis|mi] {cosa}" },
+  { id: "ayuda-como-hago", intencion: "ayuda", patron: "como (anoto|registro|agrego|pongo|creo|uso) [un|una|el|la|mis|mi] {cosa}" },
 ].map((plantilla) => ({ ...plantilla, intencion: plantilla.intencion as Intencion, origen: "base" as const }));

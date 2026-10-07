@@ -44,6 +44,22 @@ import {
 } from "./agente/grabaciones-memoria";
 import { TransportePuente } from "./agente/puente";
 import { copiarTexto } from "./copiar";
+import {
+  AVISO_PERMISO_ACTIVADO,
+  AVISO_PERMISO_DESACTIVADO,
+  NOTA_FRASES_CONFIRMADAS,
+  NOTA_NO_ENTENDIDAS,
+  TEXTO_PERMISO_NO_ENTENDIDAS,
+  TITULO_NO_ENTENDIDAS,
+  VACIO_NO_ENTENDIDAS,
+  VACIO_NO_ENTENDIDAS_APAGADO,
+  avisoCopiadas,
+  lineaDeVeces,
+  textoDeFraseConfirmada,
+  textoParaCopiar,
+  type FraseConfirmada,
+  type FraseNoEntendida,
+} from "./agente/frases-memoria";
 
 type TipoRecuerdo = "brote" | "conversacion" | "importado";
 
@@ -98,6 +114,9 @@ const temaTexto = document.querySelector<HTMLSpanElement>("#tema-texto")!;
 const temaOlvidar = document.querySelector<HTMLButtonElement>("#tema-olvidar")!;
 
 let memoria: Memoria | null = null;
+/** Las frases que el usuario confirmó con un toque (capa D del plan sin IA) y las que no se entendieron (solo con su permiso). */
+let frasesConfirmadas: FraseConfirmada[] = [];
+let noEntendidas: { activo: boolean; frases: FraseNoEntendida[] } | null = null;
 /** Los ramos guardados, con los archivados (`null`: todavía no se leyeron o no se pudo). */
 let ramosGuardados: Ramo[] | null = null;
 /** Las notas guardadas, por ramo (con los archivados). Se ven y se borran aunque la función Estudio esté apagada. */
@@ -248,6 +267,86 @@ function tarjetaFrase(frase: Frase): HTMLElement {
 }
 
 
+function tarjetaFraseConfirmada(f: FraseConfirmada): HTMLElement {
+  const tarjeta = crear("article", "tarjeta frase");
+  const { entrada, destino } = textoDeFraseConfirmada(f);
+  const texto = crear("p", "tarjeta-texto");
+  texto.append(crear("strong", undefined, `«${entrada}»`), document.createTextNode(` → «${destino}» · ${lineaDeVeces(f.veces)}`));
+  const botones = crear("div", "botones");
+  botones.append(
+    botonOlvidar(async () => {
+      await puente.consultar({ tipo: "frase-aprendida-olvidar", forma: f.forma });
+      mostrarAviso("Listo, ya no uso esa frase. La próxima vez te voy a preguntar.");
+      await cargar();
+    }),
+  );
+  tarjeta.append(texto, botones);
+  return tarjeta;
+}
+
+function tarjetaNoEntendida(f: FraseNoEntendida): HTMLElement {
+  const tarjeta = crear("article", "tarjeta frase");
+  const cabeza = crear("div", "tarjeta-cabeza");
+  cabeza.append(crear("span", "tarjeta-texto", `«${f.frase}»`), crear("span", "fecha", new Date(f.ms).toLocaleDateString("es-CL", { day: "numeric", month: "short" })));
+  const botones = crear("div", "botones");
+  botones.append(
+    botonOlvidar(async () => {
+      await puente.consultar({ tipo: "no-entendida-borrar", frase: f.id });
+      mostrarAviso("Listo, la borré.");
+      await cargar();
+    }),
+  );
+  tarjeta.append(cabeza, botones);
+  return tarjeta;
+}
+
+/** «Frases que no entendí»: el permiso (apagado de fábrica), las frases, «Copiar las que no entendí» y «Borrar todo». */
+function seccionNoEntendidas(estado: { activo: boolean; frases: FraseNoEntendida[] }): HTMLElement {
+  const lista = estado.frases.filter((f) => coincide(buscado, f.frase));
+  const hijos: HTMLElement[] = [];
+  const permiso = crear("label", "permiso-guardar");
+  const casilla = crear("input") as HTMLInputElement;
+  casilla.type = "checkbox";
+  casilla.checked = estado.activo;
+  casilla.addEventListener("change", async () => {
+    casilla.disabled = true;
+    try {
+      await puente.consultar({ tipo: "no-entendidas-permiso", activo: casilla.checked });
+      mostrarAviso(casilla.checked ? AVISO_PERMISO_ACTIVADO : AVISO_PERMISO_DESACTIVADO);
+      await cargar();
+    } catch (error) {
+      casilla.checked = !casilla.checked;
+      casilla.disabled = false;
+      mostrarAviso(`No pude cambiarlo: ${mensajeDe(error)}`, true);
+    }
+  });
+  permiso.append(casilla, document.createTextNode(` ${TEXTO_PERMISO_NO_ENTENDIDAS}`));
+  if (buscado === "") hijos.push(permiso);
+  if (lista.length === 0) hijos.push(crear("p", "vacio", estado.activo ? VACIO_NO_ENTENDIDAS : VACIO_NO_ENTENDIDAS_APAGADO));
+  else {
+    hijos.push(...lista.map(tarjetaNoEntendida));
+    if (buscado === "") {
+      const fila = crear("div", "botones");
+      const copiar = crear("button", "boton", "Copiar las que no entendí");
+      copiar.type = "button";
+      copiar.addEventListener("click", async () => {
+        const ok = await copiarTexto(textoParaCopiar(lista)).catch(() => false);
+        mostrarAviso(avisoCopiadas(ok === true, lista.length), ok !== true);
+      });
+      fila.append(
+        copiar,
+        botonOlvidar(async () => {
+          await puente.consultar({ tipo: "no-entendidas-borrar-todas" });
+          mostrarAviso("Listo, borré todas las frases que no entendí.");
+          await cargar();
+        }, "Borrar todo", "¿Borrar todas?"),
+      );
+      hijos.push(fila);
+    }
+  }
+  return envolver("noentendidas", TITULO_NO_ENTENDIDAS, String(lista.length), NOTA_NO_ENTENDIDAS, hijos);
+}
+
 // ---- Secciones plegables ----
 
 /** Una sección con su cuenta, la etiqueta de cómo se borra (Papelera o definitivo) y su nota detrás de un ⓘ. */
@@ -313,10 +412,17 @@ function seccionesBrote(m: Memoria): HTMLElement[] {
   for (const { tipo, seccion, titulo, nota, vacio } of SECCIONES) {
     const tarjetas =
       tipo === "frases"
-        ? m.frases.filter((f) => coincide(buscado, f.ejemplo)).map(tarjetaFrase)
+        ? [
+            ...m.frases.filter((f) => coincide(buscado, f.ejemplo)).map(tarjetaFrase),
+            ...frasesConfirmadas.filter((f) => coincide(buscado, f.forma, f.destino)).map(tarjetaFraseConfirmada),
+          ]
         : m.recuerdos.filter((r) => r.tipo === tipo && pasaRecuerdo(r)).map(tarjetaRecuerdo);
     if (buscado !== "" && tarjetas.length === 0) continue;
-    hechas.push(envolver(seccion, titulo, String(tarjetas.length), nota, tarjetas.length > 0 ? tarjetas : [crear("p", "vacio", vacio)]));
+    const nota2 = tipo === "frases" ? NOTA_FRASES_CONFIRMADAS : nota;
+    hechas.push(envolver(seccion, titulo, String(tarjetas.length), nota2, tarjetas.length > 0 ? tarjetas : [crear("p", "vacio", vacio)]));
+    // «Frases que no entendí» va justo después de las aprendidas; se queda aunque esté vacía porque trae el permiso.
+    if (tipo === "frases" && noEntendidas && buscado === "") hechas.push(seccionNoEntendidas(noEntendidas));
+    else if (tipo === "frases" && noEntendidas && noEntendidas.frases.some((f) => coincide(buscado, f.frase))) hechas.push(seccionNoEntendidas(noEntendidas));
   }
   return hechas;
 }
@@ -768,7 +874,8 @@ function conteos(): Conteos {
   const repaso = repasoGuardado;
   return {
     brote: recuerdos("brote"),
-    frases: memoria?.frases.length ?? 0,
+    frases: (memoria?.frases.length ?? 0) + frasesConfirmadas.length,
+    noEntendidas: noEntendidas?.frases.length ?? 0,
     conversacion: recuerdos("conversacion"),
     importado: recuerdos("importado"),
     ramos: ramosGuardados?.length ?? 0,
@@ -909,9 +1016,20 @@ async function cargar(): Promise<void> {
     await cargarPlanes();
     await cargarEstadisticas();
     await cargarAhorro();
+    await cargarFrasesLocales();
     await filtrar();
   } catch (error) {
     mostrarAviso(`No pude leer la memoria: ${mensajeDe(error)}`, true);
+  }
+}
+
+async function cargarFrasesLocales(): Promise<void> {
+  try {
+    frasesConfirmadas = await puente.consultar<FraseConfirmada[]>({ tipo: "frases-aprendidas" });
+    noEntendidas = await puente.consultar<{ activo: boolean; frases: FraseNoEntendida[] }>({ tipo: "no-entendidas-estado" });
+  } catch {
+    frasesConfirmadas = []; // un puente más viejo no conoce los pedidos: las secciones no aparecen
+    noEntendidas = null;
   }
 }
 

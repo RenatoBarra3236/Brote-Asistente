@@ -4,6 +4,7 @@
 
 import type { Estado } from "../personaje/estados.ts";
 import type { Aprobacion, Suceso } from "./traduccion.ts";
+import type { OpcionLocal } from "./opciones-locales.ts";
 import type { Propuesta } from "./transporte.ts";
 
 export interface HerramientaEnCurso {
@@ -42,11 +43,14 @@ export interface Conversacion {
   sinIA: boolean;
   /** Una plantilla que el motor podría aprender, esperando que el usuario decida. */
   propuesta: PropuestaPendiente | null;
+  /** Botones de la respuesta del motor: «¿Anoto…?» Sí / No, sugerencias, ayuda (capas C, D y E del plan sin IA). */
+  opciones: OpcionLocal[];
 }
 
 /** Sucesos que no vienen del Gateway sino de la propia interfaz. */
 export type SucesoLocal =
-  | { tipo: "resuelto-sin-ia"; texto: string }
+  | { tipo: "resuelto-sin-ia"; texto: string; opciones?: OpcionLocal[] }
+  | { tipo: "opciones-usadas" }
   | { tipo: "propuesta"; propuesta: Propuesta }
   | { tipo: "decidiendo"; id: number }
   | { tipo: "decision-fallida"; id: number }
@@ -66,6 +70,7 @@ export const CONVERSACION_INICIAL: Conversacion = {
   error: null,
   sinIA: false,
   propuesta: null,
+  opciones: [],
 };
 
 /** El agente está ocupado con una ejecución: todavía no conviene enviarle otro mensaje. */
@@ -171,7 +176,11 @@ export function aplicar(c: Conversacion, suceso: Suceso | SucesoLocal): Conversa
         respuesta: suceso.texto,
         terminada: true,
         sinIA: true,
+        opciones: suceso.opciones ?? [],
       };
+
+    case "opciones-usadas":
+      return c.opciones.length === 0 ? c : { ...c, opciones: [] };
 
     case "propuesta":
       return { ...c, propuesta: { ...suceso.propuesta, decidiendo: false } };

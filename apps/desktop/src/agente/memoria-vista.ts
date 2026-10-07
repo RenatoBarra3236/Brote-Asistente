@@ -10,6 +10,7 @@ export type GrupoConDatos = Exclude<GrupoId, "resumen">;
 export type SeccionId =
   | "brote"
   | "frases"
+  | "noentendidas"
   | "conversacion"
   | "importado"
   | "ramos"
@@ -32,7 +33,7 @@ export const GRUPOS: { id: GrupoId; titulo: string; icono: string }[] = [
 
 /** En qué grupo vive cada sección: todas en uno solo, y en el orden en que se muestran. */
 export const SECCIONES_DE: Record<GrupoConDatos, SeccionId[]> = {
-  brote: ["brote", "frases", "conversacion", "importado"],
+  brote: ["brote", "frases", "noentendidas", "conversacion", "importado"],
   estudio: ["ramos", "notas", "repaso", "planes", "estadisticas", "documentos"],
   plata: ["ahorro"],
   grabaciones: ["transcripciones", "audios"],
@@ -61,6 +62,8 @@ export function almacenamientosDeGrupo(grupo: GrupoConDatos, enMac: boolean): Al
 export interface Conteos {
   brote: number;
   frases: number;
+  /** Frases que no entendió sin IA (solo hay si el usuario dio permiso para guardarlas). */
+  noEntendidas: number;
   conversacion: number;
   importado: number;
   ramos: number;
@@ -85,7 +88,7 @@ export function plural(n: number, uno: string, varios: string): string {
 export function totalDeGrupo(grupo: GrupoConDatos, c: Conteos): number {
   switch (grupo) {
     case "brote":
-      return c.brote + c.frases + c.conversacion + c.importado;
+      return c.brote + c.frases + c.noEntendidas + c.conversacion + c.importado;
     case "estudio":
       return c.ramos + c.notas + c.repaso + c.planes + (c.estadisticas ? 1 : 0) + c.documentos;
     case "plata":
@@ -103,6 +106,7 @@ export function lineaDeGrupo(grupo: GrupoConDatos, c: Conteos): string {
       ? [
           c.brote > 0 ? plural(c.brote, "recuerdo", "recuerdos") : null,
           c.frases > 0 ? plural(c.frases, "frase aprendida", "frases aprendidas") : null,
+          c.noEntendidas > 0 ? plural(c.noEntendidas, "frase que no entendí", "frases que no entendí") : null,
           c.conversacion > 0 ? plural(c.conversacion, "conversación", "conversaciones") : null,
           c.importado > 0 ? `${c.importado} de otros proyectos` : null,
         ]

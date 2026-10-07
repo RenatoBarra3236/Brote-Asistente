@@ -110,7 +110,7 @@ describe("funciones.json", () => {
   it("todas las intenciones del motor (salvo ver la memoria) dependen de una función", () => {
     const intenciones = new Set(PLANTILLAS_BASE.map((p) => p.intencion));
     for (const intencion of intenciones) {
-      if (intencion === "ver-memoria") assert.equal(funcionDeIntencion(intencion), null);
+      if (["ver-memoria", "saludo", "gracias", "despedida", "ayuda"].includes(intencion)) assert.equal(funcionDeIntencion(intencion), null);
       else assert.ok(funcionDeIntencion(intencion), intencion);
     }
     assert.equal(funcionDeIntencion("musica-pausa"), "musica");

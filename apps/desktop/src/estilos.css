@@ -3162,3 +3162,80 @@ button.tarjeta:hover {
 .vista-brote.con-equipo > .anteriores {
   display: none !important;
 }
+
+/* Plan sin IA: botones de la respuesta del motor, autocompletado y el formulario «+ Gasto». */
+.burbuja-opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.burbuja-opciones .sugerencia[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sugerencia.opcion-local.destacada {
+  background: rgba(125, 220, 150, 0.2);
+  border-color: rgba(125, 220, 150, 0.6);
+  color: rgb(185, 240, 200);
+}
+
+.autocompletado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 6px;
+}
+
+.autocompletado[hidden] {
+  display: none;
+}
+
+.gasto-form {
+  margin-bottom: 8px;
+}
+
+.gasto-form-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gasto-form-cuerpo[hidden],
+.gasto-form-mensaje[hidden] {
+  display: none;
+}
+
+.gasto-form-fila {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gasto-form-fila .gasto-monto {
+  width: 38%;
+}
+
+.gasto-form-fila .gasto-descripcion {
+  flex: 1;
+}
+
+.gasto-form-fila .gasto-categoria {
+  flex: 1;
+}
+
+.gasto-form-mensaje {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgb(185, 240, 200);
+}
+
+.gasto-form-mensaje.error {
+  color: rgb(255, 160, 150);
+}

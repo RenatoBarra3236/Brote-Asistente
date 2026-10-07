@@ -6,6 +6,14 @@ import { NOMBRES_DE_CATEGORIA, categoriaDe, type Categoria } from "./categorias.
 import type { Gastos } from "./gastos.ts";
 import { leerMonto } from "./montos.ts";
 import { FORMAS_DE_PERIODO, fechaCorta, rangoDe, type Periodo } from "./periodos.ts";
+import { FrasesAprendidas, FrasesNoEntendidas } from "./frases-locales.ts";
+import { sugerir, todosLosEjemplos } from "./sugerir.ts";
+import { leerDia } from "./fechas.ts";
+import { areaDeAyuda, respuestaDeCortesia, textoDeAyuda } from "./ayuda.ts";
+import { montosAmbiguos, proponer } from "./piezas-reglas.ts";
+import { aplicarJerga, armarVocabulario, corregirFrase, palabrasDePatron, type Vocabulario } from "./corregir.ts";
+import { FORMAS_DE_PERIODO as PERIODOS_PARA_VOCABULARIO } from "./periodos.ts";
+import { NOMBRES_DE_CATEGORIA as CATEGORIAS_PARA_VOCABULARIO, PALABRAS_DE_CATEGORIA } from "./categorias.ts";
 import { PLANTILLAS_BASE, coincidir, type Coincidencia, type Intencion, type Plantilla } from "./plantillas.ts";
 import { describirDescargas, explorador, sePuedeAbrir, type Descarga } from "./descargas.ts";
 import { describirCreacion, describirDia, describirProximo, type EventoCalendario, type NuevoEvento, type ResultadoCreacion } from "./calendario.ts";
@@ -48,6 +56,9 @@ import { armarResumenDelDia, type PlataDelDia, type ResumenDelDia } from "./resu
 import { resumirRepaso } from "./repaso-tipos.ts";
 import { describirHoy, describirPresupuestoPuesto, describirProyeccion, describirQueda, hormigaDelMes, presupuestoDelMes, proyectarMes, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
 
+/** Unidades y palabras sueltas que las plantillas dejan a las ranuras (para que el corrector las conozca). */
+const PALABRAS_DE_UNIDADES = ["hora", "horas", "minuto", "minutos", "segundos", "lucas", "luca", "mil", "palo", "palos", "semana", "semanas", "mes", "meses", "dia", "dias", "ano", "media", "medio", "manana", "tarde", "noche", "certamen", "prueba", "control", "examen", "tarea", "trabajo", "informe", "ensayo"];
+
 export interface Resultado {
   intencion: Intencion;
   /** La plantilla que lo resolvió. */
@@ -57,6 +68,35 @@ export interface Resultado {
   /** Lo que la isla necesita para terminar el pedido (por ejemplo, qué descarga abrir). */
   datos?: unknown;
 }
+
+/** Una acción entendida «más o menos»: no se ejecuta hasta que el usuario toque «Sí». */
+export interface Confirmacion {
+  pregunta: string;
+  /** La frase en la forma de la guía que se ejecuta si dice que sí. */
+  frase: string;
+  /** Lo que escribió el usuario (para recordar que quiso decir `frase`). */
+  original: string;
+}
+
+/** Cuándo el motor puede dejar una frase al agente: con IA conectada, lo dudoso se le pasa. */
+export interface OpcionesResolver {
+  /** Activa la vía aproximada (lo aprendido, corregir la escritura, piezas, sugerencias). Sin esto, solo las plantillas. */
+  aproximar?: boolean;
+  conIA?: boolean;
+  /** Por qué no hay IA (se agrega al «No te entendí»). */
+  motivoSinIA?: "sin-ia" | "desconectada";
+}
+
+/** Acciones que cambian algo del usuario: por una vía aproximada, SIEMPRE piden confirmación (decisión 2 del plan sin IA). */
+export const REQUIEREN_CONFIRMAR = new Set<string>([
+  "registrar-gasto", "borrar-ultimo-gasto", "presupuesto-poner", "presupuesto-quitar",
+  "calendario-crear", "calendario-crear-manana", "ramos-agregar", "ramos-archivar",
+  "notas-anotar", "notas-agregar-eval", "notas-borrar", "notas-ajuste", "notas-evaluaciones",
+  "estudio-anotar", "estudio-fecha", "estudio-meta-poner", "estudio-meta-quitar",
+  "ahorro-crear", "ahorro-aportar", "ahorro-retirar", "ahorro-archivar",
+  "cancelar-pomodoro", "cancelar-temporizador", "abrir-ultima-descarga",
+]);
+
 
 /** Lo que el motor entendió de una frase, antes de hacer nada. */
 export type Accion =
@@ -80,7 +120,7 @@ export type Accion =
       intencion: "calendario-crear" | "calendario-crear-manana";
       titulo: string;
       /** Dentro de cuánto ("en 12 minutos") o a qué hora ("a las 15:30"). */
-      cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean };
+      cuando: { enMs: number } | { horas: number; minutos: number; manana: boolean; /** «viernes», «14 de octubre»: se resuelve con el reloj al agendar. */ dia?: string };
     }
   | { intencion: "programador-sesiones" }
   | { intencion: "aula-entregas" | "aula-semana" }
@@ -96,7 +136,18 @@ export type Accion =
   | AccionPlanEstudio
   | AccionEstadisticas
   | AccionAhorro
-  | AccionNotas;
+  | AccionNotas
+  | { intencion: "saludo" | "gracias" | "despedida" }
+  | { intencion: "ayuda"; tema: string | null };
+
+/** Cómo se entendió una frase: tal cual (`exacta`), tras corregir la escritura (`corregida`) o por sus piezas (`piezas`). */
+export interface Comprension {
+  via: "exacta" | "corregida" | "piezas";
+  plantilla: Plantilla;
+  accion: Accion;
+  /** La frase que sí calza con una plantilla (la corregida o la armada por piezas). */
+  frase: string;
+}
 
 /** Cuántos gastos muestra "mis últimos gastos". */
 const ULTIMOS = 5;
@@ -161,6 +212,15 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
     case "transcripciones-hoy":
     case "ramos-ver":
       return { intencion };
+    case "saludo":
+    case "gracias":
+    case "despedida":
+      return { intencion };
+    case "ayuda": {
+      // «ayuda con los gastos»: solo si lo que sigue nombra un área; «ayuda con mi tarea de cálculo» va al agente.
+      const tema = ranuras.cosa ?? null;
+      return tema === null ? { intencion, tema: null } : areaDeAyuda(tema) ? { intencion, tema } : null;
+    }
     case "notas-anotar":
     case "notas-evaluaciones":
     case "notas-agregar-eval":
@@ -216,7 +276,8 @@ function interpretar(intencion: Intencion, { ranuras, originales }: Coincidencia
       }
       const hora = ranuras.hora === undefined ? null : leerHora(ranuras.hora);
       if (!hora) return null;
-      return { intencion, titulo: capitalizar(titulo), cuando: { ...hora, manana: intencion === "calendario-crear-manana" } };
+      const dia = ranuras.fecha === undefined ? undefined : ranuras.fecha.replace(/^el /, "");
+      return { intencion, titulo: capitalizar(titulo), cuando: { ...hora, manana: intencion === "calendario-crear-manana", ...(dia ? { dia } : {}) } };
     }
     case "pomodoro": {
       const estudioMs = ranuras.tiempo === undefined ? POMODORO.estudioMs : leerDuracion(ranuras.tiempo);
@@ -254,6 +315,8 @@ export class Motor {
   private readonly planes: PlanesEstudio | null;
   private readonly estadisticas: EstadisticasEstudio | null;
   private readonly ahorro: Ahorro | null;
+  private readonly frasesAprendidas: FrasesAprendidas | null;
+  private readonly frasesNoEntendidas: FrasesNoEntendidas | null;
 
   /** `plantillas` puede ser una función, para incluir las aprendidas que se activen después. */
   constructor(
@@ -298,8 +361,14 @@ export class Motor {
       estadisticas?: EstadisticasEstudio;
       /** Las metas de ahorro. Sin esto, esas frases van al agente. */
       ahorro?: Ahorro;
+      /** Las frases que el usuario confirmó (capa D). Sin esto, no se recuerda nada. */
+      frasesAprendidas?: FrasesAprendidas;
+      /** Las frases que no se entendieron, si el usuario dio permiso para guardarlas. */
+      frasesNoEntendidas?: FrasesNoEntendidas;
     } = {},
   ) {
+    this.frasesAprendidas = opciones.frasesAprendidas ?? null;
+    this.frasesNoEntendidas = opciones.frasesNoEntendidas ?? null;
     this.ramos = opciones.ramos ?? null;
     this.notas = opciones.notas ?? null;
     this.repaso = opciones.repaso ?? null;
@@ -334,12 +403,180 @@ export class Motor {
     return null;
   }
 
-  resolver(texto: string): Resultado | null {
+  /** Las palabras que conoce el motor (plantillas, categorías, periodos, ramos): lo que usa el corrector. */
+  private vocabulario(): Vocabulario {
+    const plantillas = this.plantillas();
+    const extras = [
+      ...PALABRAS_DE_CATEGORIA,
+      ...Object.keys(CATEGORIAS_PARA_VOCABULARIO),
+      ...Object.keys(PERIODOS_PARA_VOCABULARIO),
+      ...PALABRAS_DE_UNIDADES,
+      ...(this.ramos?.listar().map((r) => r.nombre) ?? []),
+    ];
+    return armarVocabulario(plantillas.map((p) => palabrasDePatron(p.patron).join(" ")), extras);
+  }
+
+  /**
+   * Qué entiende el motor de una frase aunque no esté escrita como la guía: primero tal cual, después
+   * corrigiendo errores de escritura y, por último, por sus piezas. No hace nada: solo interpreta.
+   */
+  comprender(texto: string): Comprension | null {
+    const exacta = this.entender(texto);
+    if (exacta) return { via: "exacta", plantilla: exacta.plantilla, accion: exacta.accion, frase: texto };
+    // Un texto largo es una conversación, no una orden: no se corrige ni se descompone (y cuesta más).
+    if (texto.length > 300) return null;
+    const vocabulario = this.vocabulario();
+    for (const c of corregirFrase(texto, vocabulario)) {
+      const e = this.entender(c.frase);
+      if (e) return { via: "corregida", plantilla: e.plantilla, accion: e.accion, frase: c.frase };
+    }
+    // Por piezas: sobre la frase tal cual y sobre sus mejores correcciones.
+    const contexto = { ramos: this.ramos?.listar().map((r) => r.nombre) ?? [], metas: this.ahorro?.metas().filter((m) => m.estado === "activa").map((m) => m.nombre) ?? [] };
+    const base = [aplicarJerga(texto), ...corregirFrase(texto, vocabulario, 6).map((c) => c.frase)];
+    for (const variante of base) {
+      for (const frase of proponer(variante, contexto)) {
+        const e = this.entender(frase);
+        if (e) return { via: "piezas", plantilla: e.plantilla, accion: e.accion, frase };
+      }
+    }
+    return null;
+  }
+
+  /** ¿La función de esta intención está apagada? */
+  private estaApagada(intencion: string): boolean {
+    const funcion = funcionDeIntencion(intencion);
+    return esDeAgenda(intencion) ? !(intencion === "resumen-dia" ? FUNCIONES_DE_RESUMEN : FUNCIONES_DE_AGENDA).some((f) => this.activa(f)) : funcion !== null && !this.activa(funcion);
+  }
+
+  /**
+   * Resuelve una frase sin IA. Primero tal cual está en la guía; si no, con lo que Brote aprendió de ti, corrigiendo
+   * la escritura o por sus piezas. Una consulta aproximada se responde directo; una acción aproximada pide
+   * confirmación con botones. Con IA conectada, lo que no se entiende devuelve `null` (va al agente); sin IA,
+   * se responde «No te entendí» con sugerencias, nunca un error.
+   */
+  resolver(texto: string, opciones: OpcionesResolver = {}): Resultado | null {
+    // Entendida tal cual: es la vía de siempre (puede devolver null si falta una fuente de datos: va al agente).
+    const exacta = this.entender(texto);
+    // Con IA conectada, los saludos y los gracias los responde Brote con su personalidad (el agente), no el motor.
+    if (exacta && opciones.conIA && ["saludo", "gracias", "despedida"].includes(exacta.accion.intencion)) return null;
+    if (exacta || !opciones.aproximar) return this.resolverExacto(texto);
+
+    // Lo que el usuario confirmó antes: se entiende sola, pero una acción igual pregunta (ejecutar sin preguntar molesta).
+    const aprendida = this.frasesAprendidas?.buscar(texto) ?? null;
+    if (aprendida) {
+      const e = this.entender(aprendida);
+      if (e && REQUIEREN_CONFIRMAR.has(e.accion.intencion)) {
+        if (this.estaApagada(e.accion.intencion)) return this.resolverExacto(aprendida);
+        return this.pedirConfirmacion(texto, { via: "piezas", plantilla: e.plantilla, accion: e.accion, frase: aprendida }, { ...opciones, conIA: false });
+      }
+      if (e && !this.estaApagada(e.accion.intencion)) {
+        const r = this.resolverExacto(aprendida);
+        if (r) return r;
+      }
+    }
+
+    const c = this.comprender(texto);
+    if (c) {
+      if (REQUIEREN_CONFIRMAR.has(c.accion.intencion)) {
+        if (this.estaApagada(c.accion.intencion)) return this.resolverExacto(c.frase);
+        return this.pedirConfirmacion(texto, c, opciones);
+      }
+      const r = this.resolverExacto(c.frase);
+      return r ? { ...r, texto: `Entendí «${c.frase}». ${r.texto}` } : null;
+    }
+    // «Gasté 5 lucas y 3 mil en el almuerzo»: hay dos montos y no se adivina; se pregunta cuál (con IA, lo ve el agente).
+    const duda = opciones.conIA ? null : this.dudaDeMonto(texto);
+    if (duda) return duda;
+    if (opciones.conIA) return null;
+    return this.respuestaSinIA(texto, opciones);
+  }
+
+  /** Dos montos en una frase de gasto: «¿Cuál es el monto?» con un botón por monto. Nunca elige uno solo. */
+  dudaDeMonto(texto: string): Resultado | null {
+    if (texto.length > 300 || !this.activa("gastos")) return null;
+    const base = [...corregirFrase(texto, this.vocabulario(), 6).map((c) => c.frase), texto];
+    for (const variante of base) {
+      const duda = montosAmbiguos(variante);
+      if (!duda) continue;
+      const opciones = duda.filter((d) => this.entender(d.frase)?.accion.intencion === "registrar-gasto");
+      if (opciones.length < 2) continue;
+      const pregunta = "¿Cuál es el monto?";
+      return { intencion: "elegir-monto", plantilla: "elegir-monto", texto: pregunta, datos: { elegirMonto: { pregunta, opciones: opciones.map((o) => ({ etiqueta: o.etiqueta, frase: o.frase })), original: texto } } };
+    }
+    return null;
+  }
+
+  private pedirConfirmacion(texto: string, c: Comprension, opciones: OpcionesResolver): Resultado | null {
+    // Con IA, una acción dudosa la hace el agente (que sabe preguntar mejor); sin IA, se pregunta aquí.
+    if (opciones.conIA) return null;
+    const pregunta = this.preguntaDe(c);
+    return { intencion: "confirmar", plantilla: c.plantilla.id, texto: pregunta, datos: { confirmar: { pregunta, frase: c.frase, original: texto } satisfies Confirmacion } };
+  }
+
+  /** «¿Anoto $5.000 en almuerzo?»: la pregunta con lo que se haría, para que el usuario vea si entendimos bien. */
+  private preguntaDe({ accion, frase }: Comprension): string {
+    switch (accion.intencion) {
+      case "registrar-gasto":
+        return `¿Anoto ${formatearMonto(accion.monto)}${accion.descripcion ? ` en ${accion.descripcion}` : ""}?`;
+      case "borrar-ultimo-gasto": {
+        const ultimo = this.gastos.ultimos(1)[0];
+        return ultimo ? `¿Borro tu último gasto (${formatearMonto(ultimo.monto)}${ultimo.descripcion ? ` en ${ultimo.descripcion}` : ""})?` : "¿Borro tu último gasto?";
+      }
+      case "presupuesto-poner":
+        return `¿Pongo tu presupuesto del mes en ${formatearMonto(accion.monto)}?`;
+      case "presupuesto-quitar":
+        return "¿Quito tu presupuesto del mes?";
+      case "ramos-agregar":
+        return `¿Agrego el ramo ${capitalizar(accion.nombre)}?`;
+      case "ramos-archivar":
+        return `¿Quito el ramo ${capitalizar(accion.nombre)}?`;
+      case "cancelar-pomodoro":
+        return "¿Detengo el pomodoro?";
+      case "cancelar-temporizador":
+        return "¿Cancelo tus temporizadores y recordatorios?";
+      case "abrir-ultima-descarga":
+        return "¿Abro tu última descarga?";
+      case "calendario-crear":
+      case "calendario-crear-manana": {
+        const hora = "enMs" in accion.cuando ? "" : `a las ${accion.cuando.horas}:${String(accion.cuando.minutos).padStart(2, "0")}`;
+        let cuando: string;
+        if ("enMs" in accion.cuando) cuando = `en ${describirDuracion(accion.cuando.enMs)}`;
+        else if (accion.cuando.dia) {
+          const diaMs = leerDia(accion.cuando.dia, this.reloj().getTime());
+          cuando = `${diaMs === null ? `el ${accion.cuando.dia}` : new Date(diaMs).toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })} ${hora}`;
+        } else cuando = `${accion.cuando.manana ? "mañana " : ""}${hora}`;
+        return `¿Agendo «${accion.titulo}» ${cuando}?`;
+      }
+      default:
+        return `¿Quisiste decir «${frase}»?`;
+    }
+  }
+
+  /** Lo que se responde cuando no hay IA (o no está conectada) y la frase no se entendió: sugerencias, nunca un error. */
+  respuestaSinIA(texto: string, opciones: OpcionesResolver = {}): Resultado {
+    this.frasesNoEntendidas?.guardar(texto, this.reloj().getTime());
+    const sugeridas = sugerir(texto, todosLosEjemplos(), this.activa).map((s) => s.frase);
+    const nota = opciones.motivoSinIA === "sin-ia" ? " Para conversar más libre, activa la IA en 🌱 → Configurar Brote → Estado." : opciones.motivoSinIA === "desconectada" ? " Mi IA no está conectada ahora." : "";
+    const cuerpo = sugeridas.length > 0 ? "No te entendí. ¿Quisiste decir…?" : `No te entendí. Prueba con: «gasté 5 lucas en almuerzo», «qué tengo hoy» o «pomodoro de 30».`;
+    return { intencion: "no-entendi", plantilla: "no-entendi", texto: `${cuerpo}${nota}`, datos: { noEntendi: { sugerencias: sugeridas, original: texto } } };
+  }
+
+  /**
+   * El usuario tocó «Sí» (o una sugerencia): se ejecuta `frase` (que tiene que calzar tal cual con una plantilla) y
+   * se recuerda en su computador que `original` quiere decir lo mismo.
+   */
+  confirmarFrase(frase: string, original: string | null): Resultado | null {
+    if (!this.entender(frase)) return null;
+    const r = this.resolverExacto(frase);
+    if (r && original && original.trim() && this.frasesAprendidas) this.frasesAprendidas.recordar(original, frase, this.reloj().getTime());
+    return r;
+  }
+
+  private resolverExacto(texto: string): Resultado | null {
     const entendido = this.entender(texto);
     if (!entendido) return null;
     // Una frase de una función apagada no va al agente: se le dice al usuario dónde prenderla.
-    const funcion = funcionDeIntencion(entendido.accion.intencion);
-    const apagada = esDeAgenda(entendido.accion.intencion) ? !(entendido.accion.intencion === "resumen-dia" ? FUNCIONES_DE_RESUMEN : FUNCIONES_DE_AGENDA).some((f) => this.activa(f)) : funcion !== null && !this.activa(funcion);
+    const apagada = this.estaApagada(entendido.accion.intencion);
     if (apagada) {
       return { intencion: entendido.accion.intencion, plantilla: entendido.plantilla.id, texto: MENSAJE_APAGADA };
     }
@@ -347,6 +584,15 @@ export class Motor {
     if (!this.temporizadores && esDeTemporizador(entendido.accion)) return null;
     if (entendido.accion.intencion === "estado-equipo" && !this.equipo?.()) return null;
     const { plantilla, accion } = entendido;
+    if (accion.intencion === "saludo" || accion.intencion === "gracias" || accion.intencion === "despedida") {
+      const ahora = this.reloj();
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: respuestaDeCortesia(accion.intencion, ahora.getMinutes(), ahora.getHours(), normalizar(texto)) };
+    }
+    if (accion.intencion === "ayuda") {
+      const area = accion.tema ? areaDeAyuda(accion.tema)?.id ?? null : null;
+      const ayuda = textoDeAyuda(area, this.activa);
+      return { intencion: accion.intencion, plantilla: plantilla.id, texto: ayuda.texto, datos: { ayuda: { area: ayuda.area, areas: ayuda.areas, ejemplos: ayuda.ejemplos } } };
+    }
     if (accion.intencion === "programador-sesiones") {
       if (!this.sesionesClaude) return null;
       return { intencion: accion.intencion, plantilla: plantilla.id, texto: describirSesiones(this.sesionesClaude()) };
@@ -470,11 +716,19 @@ export class Motor {
     if ("enMs" in accion.cuando) {
       inicioMs = ahora.getTime() + accion.cuando.enMs;
     } else {
-      const { horas, minutos, manana } = accion.cuando;
-      const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + (manana ? 1 : 0), horas, minutos);
-      // "A las 9" cuando ya pasaron las 9: es mañana.
-      if (!manana && fecha.getTime() < ahora.getTime() - UNIDADES.MINUTO) fecha.setDate(fecha.getDate() + 1);
-      inicioMs = fecha.getTime();
+      const { horas, minutos, manana, dia } = accion.cuando;
+      if (dia) {
+        // «El viernes a las 9»: el próximo viernes (nunca una fecha pasada).
+        const diaMs = leerDia(dia, ahora.getTime());
+        if (diaMs === null) return `No pude entender qué día es «${dia}». Prueba con «el viernes» o «el 14 de octubre».`;
+        const f = new Date(diaMs);
+        inicioMs = new Date(f.getFullYear(), f.getMonth(), f.getDate(), horas, minutos).getTime();
+      } else {
+        const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + (manana ? 1 : 0), horas, minutos);
+        // "A las 9" cuando ya pasaron las 9: es mañana.
+        if (!manana && fecha.getTime() < ahora.getTime() - UNIDADES.MINUTO) fecha.setDate(fecha.getDate() + 1);
+        inicioMs = fecha.getTime();
+      }
     }
     const evento: NuevoEvento = { titulo: accion.titulo, lugar: null, inicioMs, finMs: inicioMs + UNIDADES.HORA };
     const resultado = this.crearEvento!(evento);
@@ -657,9 +911,9 @@ export class Motor {
   }
 
   /** Anota un gasto como lo haría la frase "gasté {monto} en {descripcion}" (los botones de un toque de la pestaña Plata). */
-  anotarGasto(monto: number, descripcion: string | null): string {
+  anotarGasto(monto: number, descripcion: string | null, categoria?: Categoria): string {
     const limpia = descripcion?.trim() ? descripcion.trim().slice(0, 200) : null;
-    return this.registrar(monto, limpia ? categoriaDe(normalizar(sinArticulo(limpia))) : "otros", limpia);
+    return this.registrar(monto, categoria ?? (limpia ? categoriaDe(normalizar(sinArticulo(limpia))) : "otros"), limpia);
   }
 
   private registrar(monto: number, categoria: Categoria, descripcion: string | null): string {

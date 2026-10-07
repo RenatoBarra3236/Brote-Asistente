@@ -17,9 +17,9 @@ import {
 } from "../src/agente/memoria-vista.ts";
 import { etiquetaAlmacenamiento, explicacionAlmacenamiento } from "../src/agente/papelera.ts";
 
-const VACIO: Conteos = { brote: 0, frases: 0, conversacion: 0, importado: 0, ramos: 0, notas: 0, repaso: 0, planes: 0, estadisticas: null, documentos: 0, ahorro: 0, transcripciones: 0, audios: 0 };
+const VACIO: Conteos = { brote: 0, frases: 0, noEntendidas: 0, conversacion: 0, importado: 0, ramos: 0, notas: 0, repaso: 0, planes: 0, estadisticas: null, documentos: 0, ahorro: 0, transcripciones: 0, audios: 0 };
 
-const TODAS: SeccionId[] = ["brote", "frases", "conversacion", "importado", "ramos", "notas", "repaso", "planes", "estadisticas", "documentos", "ahorro", "transcripciones", "audios"];
+const TODAS: SeccionId[] = ["brote", "frases", "noentendidas", "conversacion", "importado", "ramos", "notas", "repaso", "planes", "estadisticas", "documentos", "ahorro", "transcripciones", "audios"];
 
 test("cada sección está en un solo grupo y no falta ninguna", () => {
   const vistas = Object.values(SECCIONES_DE).flat();
@@ -34,7 +34,7 @@ test("el borrado va a la Papelera solo en Mac y solo lo que vive en archivos", (
     assert.equal(almacenamientoDe(s, true), "papelera", s);
     assert.equal(almacenamientoDe(s, false), "definitivo", s);
   }
-  for (const s of ["frases", "ramos", "notas", "repaso", "planes", "estadisticas", "ahorro"] as SeccionId[]) {
+  for (const s of ["frases", "noentendidas", "ramos", "notas", "repaso", "planes", "estadisticas", "ahorro"] as SeccionId[]) {
     assert.equal(almacenamientoDe(s, true), "definitivo", s);
   }
   assert.deepEqual(almacenamientosDeGrupo("estudio", true), ["papelera", "definitivo"]);

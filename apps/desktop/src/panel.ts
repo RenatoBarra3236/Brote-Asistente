@@ -79,6 +79,9 @@ import {
 } from "./agente/estudio";
 import { HEX_SEMAFORO, leerCampoNota, leerCampoPeso, posicionEnBarra, formatearNota, resumenNotas, semaforoDe, textoExamenFicha, textoMeta, textoNecesaria } from "./agente/notas";
 import { VistaRepaso } from "./repaso-vista";
+import { FormularioGasto } from "./gasto-vista";
+import { autocompletar } from "./agente/autocompletar";
+import type { OpcionLocal } from "./agente/opciones-locales";
 import { VistaRamoTodo } from "./ramo-todo-vista";
 import { VistaDocumento } from "./documento-vista";
 import type { DocumentoVista } from "./agente/documentos";
@@ -214,6 +217,10 @@ interface Opciones {
   alResponderRepaso?: (tarjeta: number, resultado: ResultadoRepaso) => Promise<void>;
   /** Un botón de un toque de la pestaña Plata. */
   alAnotarFrecuente?: (monto: number, descripcion: string) => void;
+  /** El formulario «+ Gasto» de la pestaña Plata: devuelve lo que dice Brote. */
+  alAnotarGasto?: (monto: number, descripcion: string | null, categoria: string) => Promise<string>;
+  /** Se anotó un gasto desde el formulario (para que Brote se alegre). */
+  alAvisarGasto?: (texto: string) => void;
   /** La conversación de un especialista no trae pasos ni respuesta: se pide su historial al Gateway. */
   alPedirHistorial?: (sesion: string) => void;
   /** 🎙: el usuario quiere grabar (la isla pregunta primero si avisó a los presentes). */
@@ -334,6 +341,13 @@ export class Panel {
   private readonly herramienta: HTMLParagraphElement;
   private readonly herramientaTexto: HTMLSpanElement;
   private readonly sinIA: HTMLParagraphElement;
+  /** Los botones de la respuesta del motor («¿Anoto…?» Sí / No, sugerencias, ayuda). */
+  private readonly opcionesLocales: HTMLDivElement;
+  private opcionesPintadas = "";
+  /** Autocompletado mientras se escribe (capa F del plan sin IA). */
+  private readonly autocompletado: HTMLDivElement;
+  private nombresDeRamos: string[] = [];
+  private readonly formularioGasto: FormularioGasto | null = null;
   private readonly aprobacion: HTMLDivElement;
   private readonly aprobacionTitulo: HTMLParagraphElement;
   private readonly aprobacionDetalle: HTMLElement;
@@ -606,7 +620,9 @@ export class Panel {
     this.sinIA = crear("p", "burbuja-sin-ia");
     this.sinIA.textContent = "⚡ sin IA";
     this.sinIA.title = "Lo resolvió el motor de comandos, sin usar el agente";
-    this.burbuja.append(this.usuario, this.respuesta, this.herramienta, this.sinIA);
+    this.opcionesLocales = crear("div", "burbuja-opciones");
+    this.opcionesLocales.hidden = true;
+    this.burbuja.append(this.usuario, this.respuesta, this.herramienta, this.sinIA, this.opcionesLocales);
 
     this.aprobacion = crear("div", "aprobacion");
     this.aprobacionTitulo = crear("p", "aprobacion-titulo");
@@ -728,6 +744,12 @@ export class Panel {
     this.franjaGrabacion = crear("div", "franja-grabacion");
     this.franjaGrabacion.hidden = true;
     formulario.append(this.entrada, this.microfono, this.enviar);
+    this.autocompletado = crear("div", "autocompletado");
+    this.autocompletado.hidden = true;
+    this.autocompletado.setAttribute("role", "listbox");
+    if (opciones.alAnotarGasto) {
+      this.formularioGasto = new FormularioGasto(opciones.alAnotarGasto, (texto) => opciones.alAvisarGasto?.(texto));
+    }
 
     if (opciones.flotante) this.raiz.append(this.barra);
     else contenedor.append(this.barra);
@@ -742,7 +764,7 @@ export class Panel {
     cabeceraTodos.append(tituloTodos, volverTodos);
     const filaColumnas = crear("div", "todos-columnas");
     this.vistaTodos.append(cabeceraTodos, filaColumnas);
-    this.raiz.append(this.avisoDestacado, this.listaNovedades, this.documento.el, inicio, this.plata, this.agenda, this.estudio, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, formulario);
+    this.raiz.append(this.avisoDestacado, this.listaNovedades, this.documento.el, inicio, this.plata, this.agenda, this.estudio, this.grabar, codigo, equipo, this.vistaTodos, this.franjaGrabacion, this.autocompletado, formulario);
     contenedor.append(this.raiz);
 
     formulario.addEventListener("submit", (evento) => {
@@ -754,10 +776,14 @@ export class Panel {
       }
       this.enviarTexto(this.entrada.value);
     });
-    this.entrada.addEventListener("input", () => this.actualizarBotonEnviar());
+    this.entrada.addEventListener("input", () => {
+      this.actualizarBotonEnviar();
+      this.pintarAutocompletado();
+    });
     this.entrada.addEventListener("keydown", (evento) => {
       if (evento.key === "Escape") {
         this.entrada.value = "";
+        this.pintarAutocompletado();
         this.entrada.blur();
         this.actualizarBotonEnviar();
       }
@@ -851,6 +877,7 @@ export class Panel {
   /** Los ramos para la tarjeta de documentos («¿de qué ramo es?»). */
   ponerRamosDeDocumentos(ramos: readonly Ramo[]): void {
     this.documento.ponerRamos(ramos);
+    this.nombresDeRamos = ramos.map((r) => r.nombre);
   }
   ponerDocumentos(lista: DocumentoVista[]): void {
     this.documento.ponerDocumentos(lista);
@@ -877,6 +904,9 @@ export class Panel {
       c.aprobacion !== null ||
       this.hayPermisoClaude ||
       c.propuesta !== null ||
+      // Una pregunta del motor («¿Anoto $5.000?») o un gasto a medio escribir en el formulario.
+      c.opciones.length > 0 ||
+      (this.formularioGasto?.ocupado ?? false) ||
       // Repasando o revisando una propuesta: la isla no se cierra a mitad de una tarjeta.
       this.repaso.ocupada ||
       this.planEstudio.ocupada ||
@@ -1423,6 +1453,7 @@ export class Panel {
     partes.push(cabecera);
     if (estado.ramos.length > 0) partes.push(this.ramoTodo.buscador(estado.ramos));
     this.documento.ponerRamos(estado.ramos);
+    this.nombresDeRamos = estado.ramos.map((r) => r.nombre);
     partes.push(this.documento.tarjetaEstudio());
 
     if (this.errorEstudio) {
@@ -2260,6 +2291,7 @@ export class Panel {
     }
     const ahora = Date.now();
     const partes: HTMLElement[] = [];
+    if (this.formularioGasto) partes.push(this.formularioGasto.el);
 
     // Este mes y "puedes gastar hoy".
     const cabecera = crear("div", "plata-cabecera");
@@ -3122,6 +3154,7 @@ export class Panel {
     void this.agente.enviar(texto).then((enviado) => {
       if (enviado && this.entrada.value === texto) this.entrada.value = "";
       this.actualizarBotonEnviar();
+      this.pintarAutocompletado();
     });
   }
 
@@ -3240,6 +3273,7 @@ export class Panel {
     this.herramientaTexto.textContent = c.herramienta?.etiqueta ?? "";
     this.herramienta.hidden = !c.herramienta;
     this.sinIA.hidden = !c.sinIA;
+    this.pintarOpciones(c.opciones);
     // La respuesta va llegando de a poco: se mantiene a la vista el final.
     this.burbuja.scrollTop = this.burbuja.scrollHeight;
 
@@ -3279,11 +3313,57 @@ export class Panel {
     if (this.verTodosActivo) this.pintarTodos();
   }
 
+  /** Hasta 3 frases de la guía (o con el ramo completo) mientras se escribe; tocar una la deja en el campo. */
+  private pintarAutocompletado(): void {
+    const sugeridas = ocupado(this.agente.conversacion) ? [] : autocompletar(this.entrada.value, (f) => this.funciones.activas[f], this.nombresDeRamos);
+    this.autocompletado.replaceChildren(
+      ...sugeridas.map((frase) => {
+        const b = boton("sugerencia autocompletar-frase", frase);
+        b.setAttribute("role", "option");
+        // mousedown y no click: así el campo no pierde el foco antes de recibir la frase.
+        b.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          this.entrada.value = frase;
+          this.actualizarBotonEnviar();
+          this.pintarAutocompletado();
+          this.entrada.focus();
+        });
+        return b;
+      }),
+    );
+    this.autocompletado.hidden = sugeridas.length === 0;
+  }
+
+  /** Los botones de la respuesta del motor. Se repintan solo si cambian, para no perder el foco. */
+  private pintarOpciones(opciones: OpcionLocal[]): void {
+    const clave = JSON.stringify(opciones);
+    if (clave === this.opcionesPintadas) return;
+    this.opcionesPintadas = clave;
+    this.opcionesLocales.replaceChildren(
+      ...opciones.map((o) => {
+        const b = boton(`sugerencia opcion-local${o.destacada ? " destacada" : ""}`, o.etiqueta);
+        b.addEventListener("click", () => {
+          // Se desactivan al tiro: un segundo toque no repite la acción.
+          for (const otro of this.opcionesLocales.querySelectorAll("button")) otro.disabled = true;
+          void this.agente.elegir(o);
+        });
+        return b;
+      }),
+    );
+    this.opcionesLocales.hidden = opciones.length === 0;
+  }
+
+  /** Los nombres de tus ramos, para completarlos mientras escribes. */
+  ponerNombresDeRamos(nombres: readonly string[]): void {
+    this.nombresDeRamos = [...nombres];
+  }
+
   private actualizarEntrada(): void {
     const c = this.agente.conversacion;
     if (ocupado(c)) this.entrada.placeholder = "Espera a que termine…";
     else this.entrada.placeholder = this.sinConexion ? textoCampoSinConexion(this.funciones.sinIA) : "Escríbeme algo…";
     this.actualizarBotonEnviar();
+    this.pintarAutocompletado();
   }
 
   private actualizarBotonEnviar(): void {

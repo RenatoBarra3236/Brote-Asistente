@@ -1,8 +1,8 @@
-# Plan: perfeccionar Brote sin IA (PROPUESTA del 6-10-2026, sin aprobar)
+# Plan: perfeccionar Brote sin IA (propuesta del 6-10-2026; **aprobado y hecho el 6-10-2026**, ver secciones 8 a 10)
 
 Pedido del usuario: el apartado sin IA está limitado a comandos escritos casi textuales; con un pequeño error gramatical no entiende, y si el usuario no tiene IA, la app «simplemente no hace nada». Hay que perfeccionar todas las secciones débiles sin IA. Con la decisión de que el software es gratis (docs/modelo-de-negocio.md), la parte sin IA pasa a ser **el producto principal para quien no tiene Claude**, y hay que tratarla así.
 
-Método de siempre: este documento es una **propuesta**; se aprueban las decisiones (sección 5) antes de programar. Nada de esto toca la parte con IA.
+Método de siempre: este documento fue una **propuesta**; el usuario aprobó las 9 decisiones recomendadas de la sección 5 (6-10-2026, sin la capa G ni el modelo local) y se implementó (secciones 8 a 10). Nada de esto toca la parte con IA.
 
 ## 1. Cómo entiende hoy el motor (leído en el código)
 
@@ -141,3 +141,54 @@ Pregunta del usuario: ¿puede Brote traer (o descargar) un modelo muy liviano so
 - [Gemini Nano en Android](https://developer.android.com/ai/gemini-nano).
 - [Asistente de voz local en Raspberry Pi 5](https://bmdpat.com/blog/raspberry-pi-5-local-voice-ai-2026).
 
+
+## 8. Decisiones aprobadas (6-10-2026)
+
+El usuario aprobó **las 9 decisiones recomendadas de la sección 5**: capas A, B, C, D, E y F (sin G); consultas aproximadas se responden directo y acciones aproximadas siempre piden confirmación (los montos nunca se corrigen ni se adivinan); frases que no entendió guardadas **solo con permiso explícito** (apagado de fábrica); metas sobre un corpus de ~400 frases (exactas 100 %, typos ≥ 85 %, otra forma ≥ 75 %, 0 falsos positivos, ningún área bajo 70 %); orden por áreas; lo confirmado con un toque se recuerda localmente; formulario «+ Gasto» y autocompletado; «No te entendí. Prueba con…» + «Ver ayuda»; sin cambios en la parte con IA ni en las plantillas actuales (siguen siendo la primera vía).
+
+## 9. Lo que quedó hecho
+
+**Cómo entiende ahora una frase** (`Motor.resolver(texto, { aproximar, conIA, motivoSinIA })`, en `packages/motor/src/motor.ts`; el puente lo llama con `aproximar: true`):
+1. **Plantillas tal cual** (vía de siempre, sin cambios). Si calzan, se resuelve como antes (incluida la regla de que, si falta una fuente de datos, la frase va al agente).
+2. **Lo que el usuario confirmó antes** (`FrasesAprendidas`, `frases-locales.ts`; tabla `frases_confirmadas`): vale para él, con el monto cambiado por un hueco (así «almuerzo 8 lucas» también sirve). Lo destructivo aprendido igual pregunta.
+3. **Capa A, corregir la escritura** (`corregir.ts`, puro): jerga («lukas», «oy», «q»…), «e gastado» → «he gastado», palabras a 1 letra (2 si tienen 11 o más; las de 3 solo si empiezan igual, con b y v iguales) del vocabulario del motor (palabras de las plantillas, categorías, periodos, unidades y nombres de tus ramos). Prueba hasta 3 candidatas por palabra y todas las combinaciones, de la que más cambia a la que menos; nunca toca números ni montos; conserva tildes y mayúsculas de lo que no cambia.
+4. **Capa B, entender por piezas** (`piezas.ts` + `piezas-reglas.ts`, puros): saca monto, periodo, categoría, duración, hora, mes y nombres de ramos y metas, decide la intención por palabras clave y devuelve una **frase en la forma de la guía** («gaste 5 lucas en almuerzo») que pasa por las plantillas de siempre: así hay una sola lógica de interpretar y ejecutar. El monto sale tal cual lo escribió el usuario; con dos montos no adivina. Las reglas son de «mundo cerrado» donde hacía falta (por ejemplo, «presupuesto» solo si todas las palabras son de consulta) y bloquean palabras ajenas.
+5. **Capa C, confirmación**: una **consulta** aproximada se responde directo con «Entendí «…»»; una **acción** (`REQUIEREN_CONFIRMAR`: anotar, borrar, agendar, presupuesto, ramos, notas, metas de ahorro, cancelar…) devuelve `intencion: "confirmar"` con la pregunta («¿Anoto $5.000 en almuerzo?», «¿Borro tu último gasto ($3.500 en café)?») y **no hace nada** hasta que la isla manda `confirmar-frase`. Con la IA conectada, una acción dudosa va al agente.
+6. **Capa D, cuando no entiende**: sin IA, `intencion: "no-entendi"` con hasta 3 frases parecidas como botones (`sugerir.ts`; llevan el monto del usuario) y «Ver ayuda»; sin sugerencias, «No te entendí. Prueba con: …». Nunca un error técnico (antes, sin OpenClaw, el usuario veía «OpenClaw no está conectado…»). Con IA conectada la frase va al agente como hoy. Tocar una sugerencia o «Sí» **recuerda** lo que escribió el usuario.
+7. **Capa E**: plantillas nuevas al final (saludo, gracias, despedida, ayuda; ninguna anterior cambió) y `ayuda.ts`: «ayuda» lista las áreas de las funciones prendidas, «ayuda con los gastos» da 3 ejemplos tocables. Con IA conectada, saludos/gracias/despedida van al agente (Brote responde con su personalidad); la ayuda es siempre local.
+8. **Capa F**: formulario **«+ Gasto»** en la pestaña Plata (`gasto-vista.ts` + `agente/gasto-formulario.ts`; pedido `gasto-anotar`: monto entero 1–100 millones, descripción ≤ 200, categoría de la lista o «elegir sola») y **autocompletado** mientras se escribe (`agente/autocompletar.ts`: hasta 3 frases de la guía o el nombre de tu ramo completo; tocar una la deja en el campo, no la envía).
+
+**Frases que no entendió** (decisión 3): `FrasesNoEntendidas` (tabla `frases_no_entendidas`, ≤ 200, ≤ 200 letras cada una), **apagado de fábrica**; el interruptor, la lista, «Copiar las que no entendí» y «Borrar todo» están en «Lo que sé de ti → Frases que no entendí»; ver y borrar no dependen del permiso; solo se guarda cuando no hay IA (con IA, la frase se la queda el agente). Las confirmadas se ven y se borran en «Frases que aprendí». La skill `delegar` prohíbe pasar ambas a planes gratuitos (con prueba) y `docs/privacidad.md` las describe. Nada de esto va a los registros.
+
+**Medición** (corpus `packages/motor/pruebas/corpus-frases.ts`, 519 frases inventadas con su intención esperada, 77 de ellas de control, más `corpus-validacion.ts`, 152 frases **nuevas escritas después de las reglas** (43 de control), que es la cifra honesta; `corpus.test.ts` falla bajo las metas; a mano: `node packages/motor/pruebas/medir.ts [exacta] [fallas]` y `medir-validacion.ts`):
+
+| | Exactas | Con typos | Otra forma | Control (falsos +) |
+|---|---|---|---|---|
+| Línea base (solo plantillas) | 100 % | 15 % | 35 % | 0 |
+| + A (corregir) | 100 % | 86 % | 35 % | 0 |
+| + B (piezas) | 100 % | 88 % | 85 % | 0 |
+| + E (saludos y ayuda) y afinar | 100 % | 98 % | 100 % | 0 |
+| **Validación** (frases nuevas) | — | 100 % (18/18) | 99 % (90/91) | 0 de 43 |
+
+Lo que sigue sin entenderse: «mil quinientos» (números compuestos en palabras) y typos que cambian la primera letra («kito»). Ojo con la cifra del corpus de ajuste: las reglas se afinaron con él, así que su 100 % es optimista; la validación (escrita después, y con una segunda ronda cuando una frase obligó a tocar una regla) dice que generaliza a ~97–99 % **con frases escritas por la misma persona que las reglas**, no por usuarios reales. La medición real será la de las pruebas con personas y, si el usuario lo permite, las frases que guarde la sección «Frases que no entendí».
+
+**Pruebas**: motor 787 (+ corpus, corregir, piezas, frases locales, aproximado), adapter 188 (`sin-ia-puente.test.ts`, el puente real con HOME aislado), desktop 272 (opciones, autocompletar, formulario, `Agente.elegir`, memoria) y `pnpm --dir apps/desktop tipos` limpio. Vista previa: `?escribe=almuerzo 5 lucas` (confirmar), `?escribe=zzz qqq` (no entendí; `&sin-sugerencias=1`), `?escribe=ayuda`, `?escribe=gast&sin-enviar=1` (autocompletado), `?pestana=plata` (botón «+ Gasto») y `vista-previa-memoria.html?grupo=brote&abrir=todo&permiso=1` (`&frases=sin`).
+
+## 10. Pruebas pendientes (en un Mac real, con la app empaquetada)
+1. Escribir de verdad frases sueltas y con errores (sin OpenClaw y con OpenClaw) y ver que: las acciones preguntan, las consultas responden con «Entendí…», lo que no entiende sugiere, y con IA conectada una frase que no es de Brote llega al agente.
+2. Tocar «Sí» → que anote → repetir con otro monto → que se entienda sola; borrar en «Frases que aprendí».
+3. Activar el permiso de «Frases que no entendí», escribir tonteras, ver la lista, copiar y borrar; apagarlo y comprobar que no guarda más.
+4. El formulario «+ Gasto» con teclado (Enter, Tab) y el autocompletado sobre el campo con el notch real (que la fila de sugerencias no tape nada y la isla no se cierre a mitad de un gasto).
+5. Latencia con la app real (en pruebas: ~4 ms una frase típica, ~60 ms un texto de 1.000 letras; textos de más de 300 letras no se corrigen).
+6. Pruebas con 3–5 personas: anotar qué frases usan y no se entienden (la semana 1 de `docs/demo/pauta-pruebas.md`) y agregarlas al corpus.
+
+## 11. Decisiones del usuario sobre los límites (6-10-2026) y lo que queda
+Resueltas el mismo día:
+1. **Lo aprendido pregunta igual.** Una frase que el usuario confirmó antes se entiende sola, pero si es una acción («¿Anoto $8.000 en almuerzo?») sigue pidiendo el Sí (también con IA conectada); solo las consultas aprendidas se responden directo. Ejecutar sin preguntar molestaba.
+2. **Dos montos se preguntan.** «Gasté 5 lucas y 3 mil en el almuerzo» → «¿Cuál es el monto?» con un botón por monto (`intencion: "elegir-monto"`, `Motor.dudaDeMonto`, `montosAmbiguos` en `piezas-reglas.ts`); tocar uno anota solo ese gasto. Exige verbo de gasto, montos distintos y ninguna palabra de otra área; con IA conectada lo ve el agente. De paso, la jerga («lukas») ahora se arregla siempre antes de entender, no solo cuando ayuda.
+3. **Eventos con día de la semana o fecha.** «Tengo prueba de física el viernes a las 9», «agenda estudiar el 14 de octubre a las 15:30», «reunión de grupo el lunes a las 18:00» se entienden (plantillas `evento-dia` y `evento-agenda-dia`, `Accion.cuando.dia`, resuelto con `leerDia`: el próximo viernes, nunca una fecha pasada), preguntan con la fecha ya resuelta («¿Agendo «Prueba de física» viernes, 9 de octubre a las 9:00?») y agendan una hora en el Calendario del Mac (o dejan solo la pregunta si no hay calendario). Siguen sin hacerse: eventos sin hora, y «estoy ahorrando para un notebook» (una meta necesita monto). Falsos positivos que la prueba atrapó y quedaron cubiertos: «tengo clases el viernes a las nueve de la mañana, qué hago» (la «mañana» de «de la mañana» no es mañana).
+
+Quedan abiertas:
+- **Más frases**: el corpus es mío; conviene que el usuario (o los testers) sumen frases reales. La capa G (modelo local) sigue sin aprobarse.
+- **Horas en palabras** («a las nueve») y números compuestos («mil quinientos») no se leen.
+- **Celular y aparato**: las capas A–F son TypeScript puro (corregir, piezas, sugerir, ayuda) y se reutilizan tal cual; lo único atado a Node es el almacenamiento de `frases-locales.ts` (SQLite), que irá detrás de la capa de almacenamiento de la versión móvil.

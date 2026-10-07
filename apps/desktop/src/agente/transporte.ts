@@ -34,6 +34,8 @@ export interface Propuesta {
 export interface Transporte {
   /** Envía un mensaje del usuario (en el Gateway real, `chat.send`). Termina cuando el Gateway lo acepta. */
   enviar(texto: string): Promise<ResultadoEnvio | void>;
+  /** El usuario tocó «Sí» o una sugerencia: se ejecuta la frase en la forma de la guía y se recuerda lo que escribió. */
+  confirmarFrase?(frase: string, original: string | null): Promise<ResultadoEnvio>;
   /** Responde una solicitud de permiso (en el Gateway real, `approval.resolve { id, kind, decision }`). */
   resolverAprobacion(id: string, kind: string, decision: Decision): Promise<void>;
   /** Escucha los eventos que llegan. Devuelve la función para dejar de escuchar. */

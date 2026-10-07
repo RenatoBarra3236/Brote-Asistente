@@ -48,6 +48,7 @@ especialista **nunca** le pases datos personales del estudiante:
   ni qué tarjetas sabe o le fallan.
 - sus planes de estudio, las fechas de sus pruebas y sus horarios de estudio (cuándo rinde, cuándo estudia, qué bloques tiene).
 - cuánto y cuándo estudia (horas por ramo, su racha, su meta semanal de estudio, sus hábitos de estudio).
+- las frases que Brote no entendió sin IA y las que el usuario le confirmó para entenderlo mejor (son lo que escribió, palabra por palabra: pueden traer nombres, montos y cosas privadas).
 - sus metas de ahorro (para qué junta, cuánto, para cuándo y cuánto lleva apartado): dicen mucho de su vida y su plata.
 - todo lo que tiene de un ramo (la lista por fecha de sus clases, entregas, pruebas, tareas, tarjetas y grabaciones): es su agenda de estudio entera.
 - los documentos que le dio a Brote (PDF, Word, PowerPoint, apuntes), sus nombres de archivo y todo lo que salga de ellos (resúmenes, tarjetas, preguntas de práctica): son sus apuntes y trabajos, y pueden tener datos de otras personas.

@@ -245,6 +245,10 @@ export class TransportePuente implements Transporte {
     return this.pedir({ tipo: "enviar", texto });
   }
 
+  confirmarFrase(frase: string, original: string | null): Promise<ResultadoEnvio> {
+    return this.pedir({ tipo: "confirmar-frase", frase, original });
+  }
+
   async resolverAprobacion(id: string, kind: string, decision: Decision): Promise<void> {
     await this.pedir({ tipo: "resolver", aprobacion: id, kind, decision });
   }
@@ -502,6 +506,12 @@ export class TransportePuente implements Transporte {
   async anotarFrecuente(monto: number, descripcion: string): Promise<string> {
     const { mensaje } = await this.pedir({ tipo: "plata-anotar", monto, descripcion });
     return mensaje ?? "Anotado.";
+  }
+
+  /** El formulario «+ Gasto» de la pestaña Plata: anota un gasto con su monto, descripción y categoría. */
+  async anotarGasto(monto: number, descripcion: string | null, categoria: string): Promise<string> {
+    const r = await this.pedir({ tipo: "gasto-anotar", monto, descripcion: descripcion ?? "", categoria });
+    return r.local?.texto ?? "Anotado.";
   }
 
   /** Pone (o quita, con `null`) el presupuesto mensual. */

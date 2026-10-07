@@ -424,6 +424,11 @@
                 }
                 case "especialistas-estado":
                   return responder(id, { datos: { lista: [], frenado: parametros.has("freno") } });
+                case "confirmar-frase":
+                  return responder(id, { local: { texto: "Anotado: $5.000 en almuerzo (comida). Este mes llevas $28.500.", intencion: "registrar-gasto" } });
+                case "gasto-anotar":
+                  setTimeout(() => emitir({ tipo: "plata", plata: window.__plata.estado() }), 150);
+                  return responder(id, { local: { texto: `Anotado: $${Number(pedido.monto).toLocaleString("es-CL")}${pedido.descripcion ? ` en ${pedido.descripcion}` : ""} (${pedido.categoria === "auto" ? "otros" : pedido.categoria}). Este mes llevas $33.500.`, intencion: "registrar-gasto" } });
                 case "enviar":
                   // Con ?delegar=1 Brote le pasa la pregunta a su equipo (así lo dejaría el puente): las
                   // mascotas salen de detrás de Brote, piensan, buscan, escriben y celebran al terminar.
@@ -511,6 +516,22 @@
                     );
                     return;
                   }
+                  // El motor sin IA (plan-sin-ia): una acción aproximada pregunta, lo que no entiende sugiere, la ayuda tiene botones.
+                  if (/^almuerzo\b/i.test(pedido.texto ?? "")) {
+                    return responder(id, { local: { texto: "¿Anoto $5.000 en almuerzo?", intencion: "confirmar", datos: { confirmar: { pregunta: "¿Anoto $5.000 en almuerzo?", frase: "gaste 5 lucas en almuerzo", original: pedido.texto } } } });
+                  }
+                  if (/^(zzz|no entiendo)/i.test(pedido.texto ?? "")) {
+                    return responder(id, { local: { texto: "No te entendí. ¿Quisiste decir…?", intencion: "no-entendi", datos: { noEntendi: { original: pedido.texto, sugerencias: parametros.has("sin-sugerencias") ? [] : ["gasté 5 lucas en almuerzo", "cuánto he gastado esta semana", "qué tengo hoy"] } } } });
+                  }
+                  if (/^ayuda$/i.test(pedido.texto ?? "")) {
+                    const areas = [["gastos", "💸", "Gastos y presupuesto", "gasto"], ["estudio", "📚", "Estudio y notas", "estudio"], ["agenda", "📅", "Agenda y entregas", "agenda"], ["tiempo", "🍅", "Pomodoro y recordatorios", "pomodoro"], ["ahorro", "🎯", "Metas de ahorro", "ahorro"], ["musica", "♪", "Música", "musica"]].map(([id, emoji, titulo, p]) => ({ id, emoji, titulo, frase: `ayuda con ${p}` }));
+                    return responder(id, { local: { texto: "Esto sé hacer sin IA ⚡ (toca un tema para ver ejemplos):\n💸 Gastos y presupuesto\n📚 Estudio y notas\n📅 Agenda y entregas\n🍅 Pomodoro y recordatorios\n🎯 Metas de ahorro\n♪ Música\nEscríbeme como te salga: si no te entiendo, te sugiero qué quisiste decir 🌱", intencion: "ayuda", datos: { ayuda: { area: null, areas, ejemplos: [] } } } });
+                  }
+                  if (/^ayuda con/i.test(pedido.texto ?? "")) {
+                    const ejemplos = ["gasté 5 lucas en almuerzo", "cuánto he gastado esta semana", "mi presupuesto es 200 lucas"];
+                    return responder(id, { local: { texto: `💸 Gastos y presupuesto: puedes decirme, por ejemplo,\n${ejemplos.map((e) => `• ${e}`).join("\n")}\nToca uno para probarlo. Entiendo varias formas de decirlo, y si dudo te pregunto antes de anotar algo 🌱`, intencion: "ayuda", datos: { ayuda: { area: "gastos", areas: [], ejemplos } } } });
+                  }
+                  if (/^hola\b/i.test(pedido.texto ?? "")) return responder(id, { local: { texto: "¡Hola! 🌱 ¿Qué hacemos hoy?", intencion: "saludo" } });
                   // "mi presupuesto es 200 lucas": como lo haría el motor, sin IA.
                   const presupuesto = /presupuesto es\s*(\d+)\s*(lucas|mil|k)?/i.exec(pedido.texto ?? "");
                   if (presupuesto) {
@@ -732,6 +753,15 @@
 
       // La pestaña pedida: se elige con un clic, como lo haría el usuario.
       const pestana = parametros.get("pestana");
+      // ?escribe=almuerzo 5 lucas: manda esa frase como si el usuario la escribiera (el motor simulado responde con botones).
+      if (parametros.has("escribe")) {
+        setTimeout(() => {
+          const entrada = document.querySelector(".entrada");
+          entrada.value = parametros.get("escribe");
+          entrada.dispatchEvent(new Event("input"));
+          if (!parametros.has("sin-enviar")) document.querySelector(".formulario").requestSubmit();
+        }, 700);
+      }
       if (pestana || parametros.has("permiso") || parametros.has("delegar")) {
         setTimeout(() => {
           const titulos = { brote: "Brote", plata: "Plata", agenda: "Agenda", estudio: "Estudio", grabar: "Grabar", claude: "Claude", equipo: "Equipo" };

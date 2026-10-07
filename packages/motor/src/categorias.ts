@@ -27,6 +27,9 @@ const PALABRAS: Record<Exclude<Categoria, "otros">, string[]> = {
   cuentas: ["luz", "agua", "gas", "internet", "arriendo", "plan", "celular", "telefono", "cuenta", "gastos comunes"],
 };
 
+/** Todas las palabras que delatan una categoría (para el vocabulario del corrector). */
+export const PALABRAS_DE_CATEGORIA: string[] = Object.values(PALABRAS).flat();
+
 /** Cómo se puede nombrar cada categoría al consultar ("¿cuánto llevo en carrete?"). */
 export const NOMBRES_DE_CATEGORIA: Record<string, Categoria> = {
   comida: "comida",

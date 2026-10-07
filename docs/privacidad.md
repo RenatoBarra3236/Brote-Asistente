@@ -15,6 +15,7 @@ diciembre de 2026).
 | Qué | Dónde (en tu computador) |
 |---|---|
 | Tus gastos, tu presupuesto, las frases que Brote aprendió, los temporizadores y cuántas veces respondió sin IA (sin el texto de tus mensajes) | `~/.asistente-prototipo/asistente.db` |
+| Las frases que confirmaste con un toque para que Brote te entienda mejor («almuerzo 5 lucas» → «gasté 5 lucas en almuerzo»; el monto no se guarda, solo un hueco) y, **solo si lo permites** (apagado de fábrica), lo que Brote no logró entender sin IA, palabra por palabra | La misma base, `asistente.db`. Las ves y las borras (de a una o todas) en **Lo que sé de ti → Frases que aprendí / Frases que no entendí**; ahí mismo está el interruptor del permiso y «Copiar las que no entendí». Nada sale solo: si quieres ayudar a mejorar Brote, tú decides si copias esas frases y se las mandas a quien lo desarrolla. No se pasan a especialistas de planes gratuitos |
 | Qué funciones tienes prendidas, el equipo y sus avisos | `~/.asistente-prototipo/` |
 | Token del aula y dirección secreta de tu calendario iCal | En el Llavero de macOS / Administrador de credenciales de Windows (los archivos aula.json y calendario.json dicen solo `enLlavero`). Sin Llavero (Linux o si falla) quedan en esos archivos, solo legibles por tu usuario |
 | Qué conectores tienes conectados (sin secretos) | `~/.asistente-prototipo/conectores.json` |

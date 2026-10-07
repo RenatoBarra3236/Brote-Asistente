@@ -1,6 +1,7 @@
 // Une un transporte con el modelo de la conversación y avisa a quien escuche cada cambio.
 
 import { CONVERSACION_INICIAL, aplicar, ocupado, type Conversacion, type SucesoLocal } from "./conversacion.ts";
+import { TEXTO_RECHAZADO, opcionesDe, type OpcionLocal } from "./opciones-locales.ts";
 import { traducir, type Suceso } from "./traduccion.ts";
 import type { Decision, Transporte } from "./transporte.ts";
 
@@ -121,12 +122,37 @@ export class Agente {
     try {
       const resultado = await this.transporte.enviar(limpio);
       if (resultado?.local) {
-        this.aplicar({ tipo: "resuelto-sin-ia", texto: resultado.local.texto });
-        this.alResolverSinIA?.(resultado.local.intencion, resultado.local.datos);
+        this.mostrarLocal(resultado.local);
       }
       return true;
     } catch (error) {
       this.aplicar({ tipo: "error", mensaje: `No pude enviar el mensaje: ${mensajeDe(error)}` });
+      return false;
+    }
+  }
+
+  private mostrarLocal(local: { texto: string; intencion: string; datos?: unknown }): void {
+    this.aplicar({ tipo: "resuelto-sin-ia", texto: local.texto, opciones: opcionesDe(local.intencion, local.datos) });
+    this.alResolverSinIA?.(local.intencion, local.datos);
+  }
+
+  /** El usuario tocó un botón de la respuesta del motor («Sí», una sugerencia, un tema de la ayuda). */
+  async elegir(opcion: OpcionLocal): Promise<boolean> {
+    if (ocupado(this.actual)) return false;
+    const { accion } = opcion;
+    this.aplicar({ tipo: "opciones-usadas" });
+    if (accion.tipo === "rechazar") {
+      this.aplicar({ tipo: "resuelto-sin-ia", texto: TEXTO_RECHAZADO });
+      return true;
+    }
+    if (accion.tipo === "enviar") return this.enviar(accion.texto);
+    try {
+      if (!this.transporte.confirmarFrase) throw new Error("este transporte no confirma frases");
+      const resultado = await this.transporte.confirmarFrase(accion.frase, accion.original);
+      if (resultado?.local) this.mostrarLocal(resultado.local);
+      return true;
+    } catch (error) {
+      this.aplicar({ tipo: "error", mensaje: `No pude hacerlo: ${mensajeDe(error)}` });
       return false;
     }
   }

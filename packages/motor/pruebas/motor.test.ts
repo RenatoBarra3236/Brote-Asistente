@@ -89,7 +89,7 @@ describe("consultar gastos", () => {
 
 describe("lo que no es del motor", () => {
   for (const texto of [
-    "hola, ¿cómo andas?",
+    "hola, ¿me explicas qué es una derivada?",
     "lee el archivo USER.md y resúmelo",
     "ejecuta el comando date",
     "gasté la tarde estudiando",

@@ -127,6 +127,11 @@
 //   aviso { "tipo": "plata-aviso", "texto": "👀 Ojo: ya llevas el 80 %…" }   80 % y 100 % del presupuesto, una vez cada uno por mes
 //   pedido { "tipo": "plata-estado" }   → "datos": EstadoPlata | null
 //   pedido { "tipo": "plata-anotar", "monto": 1500, "descripcion": "café" }   → "mensaje"; solo uno de los botones de un toque
+//   pedido { "tipo": "gasto-anotar", "monto": 3500, "descripcion"?: "café", "categoria"?: "comida" | "auto" }   → "local": { texto } (el formulario «+ Gasto»)
+//   pedido { "tipo": "confirmar-frase", "frase": "gaste 5 lucas en almuerzo", "original"?: "almuerzo 5 lucas" }   → "local" (el usuario tocó «Sí» o una sugerencia; se recuerda lo que escribió)
+//   pedido { "tipo": "frases-aprendidas" }   → "datos": [{ forma, destino, veces, ms }] · { "tipo": "frase-aprendida-olvidar", "forma": "almuerzo {monto}" } · { "tipo": "frases-aprendidas-olvidar-todas" }
+//   pedido { "tipo": "no-entendidas-estado" }   → "datos": { activo, frases: [{ id, frase, ms }] } (las que no entendió sin IA; solo se guardan con el permiso del usuario)
+//   pedido { "tipo": "no-entendidas-permiso", "activo": true }   · { "tipo": "no-entendida-borrar", "frase": id }   · { "tipo": "no-entendidas-borrar-todas" }
 //   pedido { "tipo": "presupuesto-poner", "monto": 200000 | null }   → "datos": EstadoPlata (null quita el presupuesto)
 //   aviso { "tipo": "ahorro", "ahorro": ResumenAhorro | null }   metas de ahorro con su avance, la holgura del mes y la sugerencia; al cambiar las metas, los gastos o el día
 //   pedido { "tipo": "ahorro-estado" }   → "datos": ResumenAhorro | null
@@ -325,6 +330,10 @@ import {
   fuentesDeBaseDeDatos,
   resumirRamo,
   textoResumenRamo,
+  FrasesAprendidas,
+  FrasesNoEntendidas,
+  CATEGORIAS,
+  type Categoria,
 } from "@asistente/motor";
 import {
   type Decision,
@@ -498,7 +507,12 @@ const planesEstudio = new PlanesEstudio(gastos, notas);
 const estadisticas = new EstadisticasEstudio(gastos, ramos);
 /** Las metas de ahorro (libreta de lo que el usuario dice que apartó; Brote no ve cuentas). */
 const libretaAhorro = new Ahorro(gastos);
+/** Lo que el usuario confirmó con un toque y las frases que no se entendieron (solo con su permiso); todo local. */
+const frasesAprendidas = new FrasesAprendidas(gastos);
+const frasesNoEntendidas = new FrasesNoEntendidas(gastos);
 const motor = new Motor(gastos, {
+  frasesAprendidas,
+  frasesNoEntendidas,
   plantillas: () => [...PLANTILLAS_BASE, ...gastos.plantillasActivas()],
   temporizadores,
   equipo: () => lecturaEquipo,
@@ -1854,31 +1868,71 @@ function alEventoDeBrote(marco: any): void {
 /** Lo que se agrega a la respuesta: con `local`, el motor resolvió el pedido sin IA. */
 type Extra = { local?: { texto: string; intencion: string; datos?: unknown }; mensaje?: string; datos?: unknown };
 
+/** Lo que hace falta después de que el motor resolvió algo sin IA: contar el uso y refrescar lo que cambió. */
+function entregarLocal(resuelto: { intencion: string; plantilla: string; texto: string; datos?: unknown }): Extra {
+  // Una pregunta de confirmación o un «no te entendí» no son un pedido resuelto: no cuentan como uso sin IA.
+  if (resuelto.intencion === "confirmar" || resuelto.intencion === "elegir-monto" || resuelto.intencion === "no-entendi") {
+    registrar(`sin IA: ${resuelto.intencion}`);
+    return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
+  }
+  gastos.registrarUso("motor", resuelto.intencion, new Date());
+  registrar(`resuelto sin IA (${resuelto.plantilla})`);
+  // Lo anotado (o el presupuesto nuevo) aparece al tiro en la pestaña Plata.
+  if (activa("gastos")) {
+    revisarPlata();
+    revisarAhorro();
+  }
+  if (activa("estudio")) revisarNotas();
+  return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
+}
+
+/** Sin IA (no activada o desconectada) nunca se muestra un error técnico: se sugiere qué decir. */
+function motivoSinIA(): "sin-ia" | "desconectada" {
+  return funciones.sinIA ? "sin-ia" : "desconectada";
+}
+
 async function atender(pedido: any): Promise<Extra> {
   if (pedido?.tipo === "enviar" && typeof pedido.texto === "string" && pedido.texto.trim()) {
     const texto = pedido.texto.trim();
-    const resuelto = motor.resolver(texto);
-    if (resuelto) {
-      gastos.registrarUso("motor", resuelto.intencion, new Date());
-      registrar(`resuelto sin IA (${resuelto.plantilla})`);
-      // Lo anotado (o el presupuesto nuevo) aparece al tiro en la pestaña Plata.
-      if (activa("gastos")) {
-        revisarPlata();
-        revisarAhorro();
-      }
-      if (activa("estudio")) revisarNotas();
-      return { local: { texto: resuelto.texto, intencion: resuelto.intencion, datos: resuelto.datos } };
-    }
-    if (!conectado) throw new Error(
-        funciones.sinIA
-          ? "La IA no está activada: eso lo responde la IA. Las frases con ⚡ (gastos, pomodoro, notas…) funcionan igual; para activarla, 🌱 → Configurar Brote → Estado"
-          : "OpenClaw no está conectado; sin él solo funcionan las frases sin IA (gastos, pomodoro, notas…)",
-      );
+    const conIA = conectado && !funciones.sinIA;
+    const resuelto = motor.resolver(texto, { aproximar: true, conIA, motivoSinIA: motivoSinIA() });
+    if (resuelto) return entregarLocal(resuelto);
+    if (!conectado) return entregarLocal(motor.respuestaSinIA(texto, { motivoSinIA: motivoSinIA() }));
     ultimoMensajeAlAgente = texto;
     anotacionesDelTurno.clear();
     await enviarMensaje(cliente!, texto);
     gastos.registrarUso("agente", null, new Date());
     return {};
+  }
+  // El usuario tocó «Sí» en «¿Anoto $5.000 en almuerzo?» o una sugerencia: se ejecuta la frase y se recuerda.
+  if (pedido?.tipo === "confirmar-frase" && typeof pedido.frase === "string") {
+    const original = typeof pedido.original === "string" ? pedido.original.slice(0, 200) : null;
+    const resuelto = motor.confirmarFrase(pedido.frase.slice(0, 300), original);
+    if (!resuelto) throw new Error("Esa frase ya no se puede hacer");
+    return entregarLocal(resuelto);
+  }
+  switch (pedido?.tipo) {
+    // «Lo que sé de ti → Frases que aprendí» (las que confirmó el usuario; nunca se registran en el log).
+    case "frases-aprendidas":
+      return { datos: frasesAprendidas.listar().map((f) => ({ forma: f.forma, destino: f.destino, veces: f.veces, ms: f.ms })) };
+    case "frase-aprendida-olvidar":
+      if (typeof pedido.forma !== "string") break;
+      return { datos: { borradas: frasesAprendidas.olvidar(pedido.forma) ? 1 : 0 } };
+    case "frases-aprendidas-olvidar-todas":
+      return { datos: { borradas: frasesAprendidas.olvidarTodas() } };
+    // Las frases que no se entendieron: ver y borrar no dependen del permiso; guardar sí.
+    case "no-entendidas-estado":
+      return { datos: { activo: frasesNoEntendidas.activo(), frases: frasesNoEntendidas.listar() } };
+    case "no-entendidas-permiso":
+      if (typeof pedido.activo !== "boolean") break;
+      frasesNoEntendidas.ponerActivo(pedido.activo);
+      registrar(`frases no entendidas: guardar ${pedido.activo ? "activado" : "desactivado"}`);
+      return { datos: { activo: frasesNoEntendidas.activo(), frases: frasesNoEntendidas.listar() } };
+    case "no-entendida-borrar":
+      if (!Number.isInteger(pedido.frase)) break;
+      return { datos: { borradas: frasesNoEntendidas.borrar(pedido.frase) ? 1 : 0 } };
+    case "no-entendidas-borrar-todas":
+      return { datos: { borradas: frasesNoEntendidas.borrarTodas() } };
   }
   if (
     pedido?.tipo === "resolver" &&
@@ -1996,6 +2050,19 @@ async function atender(pedido: any): Promise<Extra> {
       gastos.registrarUso("motor", "registrar-gasto", new Date());
       revisarPlata();
       return { mensaje };
+    }
+    // El formulario «+ Gasto» de la pestaña Plata (capa F del plan sin IA): monto en pesos, qué fue y la categoría.
+    case "gasto-anotar": {
+      if (!activa("gastos")) throw new Error("Los gastos están apagados: actívalos en Configurar Brote ⚙️");
+      const monto = pedido.monto;
+      if (!Number.isInteger(monto) || monto < 1 || monto > 100_000_000) throw new Error("Escribe un monto válido (en pesos, hasta 100 millones)");
+      const descripcion = typeof pedido.descripcion === "string" ? pedido.descripcion.trim().slice(0, 200) : "";
+      const categoria = pedido.categoria === "auto" || pedido.categoria === undefined ? undefined : (CATEGORIAS as readonly string[]).includes(pedido.categoria) ? (pedido.categoria as Categoria) : null;
+      if (categoria === null) throw new Error("Esa categoría no existe");
+      const texto = motor.anotarGasto(monto, descripcion || null, categoria);
+      gastos.registrarUso("motor", "registrar-gasto", new Date());
+      revisarPlata();
+      return { local: { texto, intencion: "registrar-gasto" } };
     }
     case "ahorro-estado":
       return { datos: activa("gastos") ? motor.resumenAhorro() : null };

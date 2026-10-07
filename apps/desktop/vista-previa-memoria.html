@@ -142,6 +142,21 @@
                 case "memoria-buscar":
                   datos = [];
                   break;
+                // Frases locales (plan sin IA): ?frases=sin muestra todo vacío, ?permiso=1 con el permiso prendido. Datos inventados.
+                case "frases-aprendidas":
+                  datos = parametros.get("frases") === "sin" ? [] : [{ forma: "almuerzo {monto}", destino: "gaste {monto} en almuerzo", veces: 3, ms: Date.now() - 86400000 }, { forma: "me equivoque borra eso", destino: "borra el ultimo gasto", veces: 1, ms: Date.now() - 3600000 }];
+                  break;
+                case "frase-aprendida-olvidar":
+                case "no-entendida-borrar":
+                case "no-entendidas-borrar-todas":
+                  datos = { borradas: 1 };
+                  break;
+                case "no-entendidas-estado":
+                  datos = { activo: parametros.has("permiso"), frases: parametros.has("permiso") && parametros.get("frases") !== "sin" ? [{ id: 1, frase: "quiero ver cómo anda la cosa esa de las notas", ms: Date.now() - 7200000 }, { id: 2, frase: "oye brote préstame tu cuaderno", ms: Date.now() - 600000 }] : [] };
+                  break;
+                case "no-entendidas-permiso":
+                  datos = { activo: pedido.activo, frases: [] };
+                  break;
                 case "ramos-todos":
                   datos = [
                     { id: 1, nombre: "Cálculo II", color: "azul", alias: ["calc"], archivado: false },

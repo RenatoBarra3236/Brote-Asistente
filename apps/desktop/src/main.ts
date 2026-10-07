@@ -256,6 +256,8 @@ async function iniciar(): Promise<void> {
           desarrollo: import.meta.env.DEV && !new URLSearchParams(location.search).has("produccion"),
           alMostrarDescarga: (ruta: string) => mostrarDescarga(ruta),
           alControlarMusica: (accion) => void puente.controlarMusica(accion).catch((error) => console.error(String(error))),
+          alAnotarGasto: (monto, descripcion, categoria) => puente.anotarGasto(monto, descripcion, categoria),
+          alAvisarGasto: () => personaje.setEstado("listo"),
           alAnotarFrecuente: (monto: number, descripcion: string) =>
             void puente
               .anotarFrecuente(monto, descripcion)

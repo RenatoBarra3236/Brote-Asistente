@@ -2,7 +2,7 @@ export { CATEGORIAS, COLOR_CATEGORIA, EMOJI_CATEGORIA, categoriaDe, type Categor
 export { DIAS_PLATA, UMBRALES_PRESUPUESTO, avisosPresupuesto, claveMes, describirHoy, describirProyeccion, describirQueda, leerAvisados, presupuestoDelMes, proyectarMes, resumenPlata, tendenciaMeses, type AvisadosPresupuesto, type EstadoPlata, type GastoPlano, type MesPlata, type PresupuestoMes, type ProyeccionMes } from "./plata.ts";
 export { Gastos, RUTA_BASE, type Gasto, type NuevoGasto, type Via } from "./gastos.ts";
 export { leerMonto } from "./montos.ts";
-export { Motor, type Resultado } from "./motor.ts";
+export { Motor, REQUIEREN_CONFIRMAR, type Comprension, type Confirmacion, type OpcionesResolver, type Resultado } from "./motor.ts";
 export { rangoDe, type Periodo, type Rango } from "./periodos.ts";
 export { PLANTILLAS_BASE, coincidir, compilar, type Intencion, type Plantilla } from "./plantillas.ts";
 export { formatearMonto, normalizar } from "./texto.ts";
@@ -77,3 +77,9 @@ export {
 } from "./documentos-tipos.ts";
 export { extraerTexto, textoDeDiapositiva, textoDeOdt, textoDeWord, type ResultadoExtraccion } from "./documentos-extraer.ts";
 export { agregarDocumento, asignarRamoDocumento, borrarDocumento, borrarTodosLosDocumentos, carpetaDocumentos, leerDocumentoGuardado, listarDocumentos, type ResultadoAgregar } from "./documentos-archivo.ts";
+export { AREAS_DE_AYUDA, areaDeAyuda, respuestaDeCortesia, textoDeAyuda, type AreaDeAyuda, type TextoDeAyuda } from "./ayuda.ts";
+export { armarVocabulario, corregirFrase, distancia, type Correccion, type Vocabulario } from "./corregir.ts";
+export { hallarMontos } from "./piezas.ts";
+export { proponer as proponerPorPiezas } from "./piezas-reglas.ts";
+export { sugerir, todosLosEjemplos, type Ejemplo, type Sugerencia } from "./sugerir.ts";
+export { CLAVE_GUARDAR_NO_ENTENDIDAS, FrasesAprendidas, FrasesNoEntendidas, MAX_FRASES_APRENDIDAS, MAX_FRASES_NO_ENTENDIDAS, formaDe, type FraseAprendida, type FraseNoEntendida } from "./frases-locales.ts";

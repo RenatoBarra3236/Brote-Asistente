@@ -1,5 +1,8 @@
 # Guion del video (45 segundos, sin palabras)
 
+> **Aplazado (decisión del usuario, 6-10-2026):** el video se graba cuando Brote esté montado al menos en PC y celular. Hasta entonces este guion queda como borrador.
+
+
 **Idea:** *el agente que crece contigo*. Un personaje vivo que anota tu plata al tiro, te ayuda a estudiar y te deja ver todo lo que sabe de ti. Las tres promesas de [mensaje](../index.md): **gastos al tiro sin IA**, **te ayuda a estudiar** y **todo en tu computador, tú decides lo que recuerda**.
 
 **Formato:** grabación de pantalla del Mac (notch), sin voz. Textos cortos en pantalla y música suave. Graba en 16:9 y recorta a vertical 9:16 para redes.

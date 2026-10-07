@@ -338,6 +338,16 @@ Hecho: frases del motor con sus frases de control (`pnpm --dir packages/motor te
 - [ ] «Copiar» una transcripción en `Brote.app` (isla y «Lo que sé de ti»): pegar en otra app y comprobar que trae el texto completo con marcas de tiempo. En el navegador se probó con Chrome y permisos concedidos; el webview de Tauri en macOS/Windows no.
 - [ ] La pestaña sobre el notch real: con 6 pestañas a la izquierda ya cabe justo en la vista previa; revisar que no choque con el notch.
 
+### Idea anotada, POR ANALIZAR: transcribir en la nube como las otras apps (6-10-2026; sin diseño ni decisión, no se empieza sin pedirlo)
+
+Apps como Summary, Otter y otras suben el audio a un servicio de voz a texto en la nube (Whisper API, Deepgram, AssemblyAI; ~0,4 US$ por hora de audio, según una comparativa de 2026) y después un modelo de lenguaje resume. Hoy Brote transcribe en el computador con whisper.cpp y **el audio nunca sale**. Lo que habría que analizar antes de decidir algo:
+
+- **Qué ganaría la nube:** más precisión con equipos o modelos flojos, **quién habla** (diarización), transcripción en vivo, y funcionar en el celular sin cargar un modelo pesado. Ojo: la diarización y la transcripción en vivo también existen en versión local; falta medir el modelo `small` en español de clase (nunca se midió contra la nube).
+- **La opción que parece más sana: «usa tu propia clave» (BYOK), apagada de fábrica.** El usuario pone su clave de un proveedor y el audio va directo de su computador a ese proveedor: Brote no tiene servidor, no cobra y no ve nada. Pide su propio consentimiento y su propio aviso de «voces de terceros». Sigue siendo la responsabilidad de revisar.
+- **La ley no es una excusa para no hacerlo, ni tampoco nos deja fuera:** la Ley 21.719 (en vigor el 1-12-2026) también le toca a esas apps; ellas cumplen con política de privacidad, consentimiento, contratos con proveedores y mecanismos para enviar datos al extranjero, y asumen el riesgo (Otter tiene desde agosto de 2025 una demanda colectiva en EE. UU. por grabar a terceros sin consentimiento y usar el audio para entrenar su IA). Lo que cambia para Brote: la promesa actual («el audio no sale», `docs/privacidad.md`), el público (estudiantes, con menores), las voces de profesores y compañeros que no aceptaron nada, y que no hay empresa, abogado ni contratos con proveedores.
+- **Preguntas abiertas:** ¿BYOK o nada? ¿Qué proveedor, y qué dice su contrato sobre guardar el audio o entrenar con él? ¿El consentimiento por grabación o una sola vez? ¿Se envía solo el audio de lo que el usuario elige? ¿Cómo se cuida que «borrar» borre también en el proveedor? ¿Qué dice un abogado de las voces de terceros? ¿Cuánto le costaría al usuario (unas 15 h de clase a la semana serían del orden de 20 a 25 US$ al mes)?
+- **Relación con otras ideas:** si algún día hay nube propia (`docs/plan-multiplataforma.md` sección 11), las grabaciones serían lo último en subirse y solo con cifrado de punta a punta; la app del celular podría usar BYOK en vez de un modelo local.
+
 ### Sin probar hasta tener un Mac (y otros aparatos)
 
 Permiso del micrófono con `Brote.app`; punto rojo sobre el notch real; velocidad en el M5; Windows (interruptor

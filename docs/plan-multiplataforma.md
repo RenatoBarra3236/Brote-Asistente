@@ -123,6 +123,16 @@ OpenClaw soporta A y B de forma nativa (`--bind lan|tailnet`, `--tailscale serve
 
 Cuentas y servidor multiusuario, sincronizar la memoria del agente, correr el modelo en el celular, el personaje definitivo, y cualquier cosa que mande audio o texto de clases a un servicio de terceros.
 
+## 11. Idea anotada: migrar a la nube más adelante (6-10-2026, a pedido del usuario; sin diseño ni decisión, no se empieza sin pedirlo)
+
+**Hoy** el plan es «sin nube» (opción A, el PC es el centro) y no cambia. **Más adelante** conviene dejar abierta la posibilidad de un servidor propio en internet, porque abriría opciones que hoy no existen: sincronizar PC, celular y aparato sin que el PC esté prendido, notificaciones con la app cerrada, acceso sin VPN, grupos de amigos y el «jardín» (ideas 1 y 1b de `docs/plan-estudio-y-mejoras.md`), y una IA incluida sin depender de la cuenta de cada usuario («Brote Plus» con clave de API, ver `docs/modelo-de-negocio.md`). Habría que refactorizar varias cosas; esta lista es para no cerrarse puertas hoy:
+
+- **Qué habría que cambiar.** Cuentas y sesiones (hoy no existen: todo es «el usuario del computador»); el almacenamiento (`node:sqlite` y archivos de `~/.asistente-prototipo`, ya marcado como «detrás de una capa» para el celular: la misma capa serviría para un servidor); la sincronización con fuente de verdad y conflictos; el emparejamiento y el cifrado entre aparatos; y que «olvidar» borre también en el servidor.
+- **Lo que ya ayuda.** El motor sin IA (plantillas, corrector, piezas, fechas, cálculos) es TypeScript puro y correría igual en un servidor; los pedidos del puente ya son mensajes JSON con tipos y podrían ser una API; las funciones se prenden y apagan por usuario (`funciones.json`); los pedidos distinguen quién los manda (`id` de correlación).
+- **Lo que choca y hay que resolver antes.** (1) **Privacidad:** hoy la promesa es «todo queda en tu computador» (`docs/privacidad.md`); una nube la cambia y exige cifrado de punta a punta (el servidor solo guarda lo cifrado) o un consentimiento nuevo, además de la Ley 21.719 y los datos de menores. (2) **Términos de Anthropic:** una nube con la cuenta Pro de cada persona está prohibida; solo valdría con clave de API propia (del usuario o de Brote). (3) **Audio y transcripciones:** la regla actual es que nunca van a un tercero; en la nube probablemente quedarían fuera de la sincronización. (4) **Costo y operación:** hosting, respaldos, seguridad y soporte (hoy cero). (5) **Es difícil de revertir** (fila «Reversible» de la sección 5).
+- **Una ruta gradual que no obliga a decidir hoy.** Primero la capa de almacenamiento y la sincronización «local primero» entre aparatos (sección 6); después un **relé** mínimo (un buzón cifrado entre aparatos, sin ver los datos) solo para notificaciones y emparejar; y recién si hace falta, un servidor con cuentas. Cada paso se puede parar.
+- **Regla para el código de hoy:** seguir separando lo puro (motor, formatos, cálculos) de lo atado a Node o al disco, y no meter en la lógica supuestos de «un solo usuario en un solo computador» que se puedan evitar. No es trabajo nuevo: es no estorbar.
+
 ## Progreso
 
 - [ ] Fase 0 verificar · [ ] Fase 1 centro accesible · [ ] Fase 2 PWA · [ ] Fase 3 gastos sin conexión · [ ] Fase 4 app nativa · [ ] Fase 5 casa · [ ] Fase 6 centro fijo

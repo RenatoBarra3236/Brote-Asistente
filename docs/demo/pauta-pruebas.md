@@ -1,5 +1,8 @@
 # Pauta de pruebas con usuarios
 
+> **Aplazado (decisión del usuario, 6-10-2026):** estas pruebas se hacen más adelante, con amigos como testers y cuando Brote esté montado al menos en PC y celular. No se agendan ni se preparan hasta entonces.
+
+
 **Objetivo:** saber si otra persona puede instalar Brote sola (condición de salida del paso 10) y si lo seguiría usando (criterio de éxito del prototipo: al menos 3 de 5 dicen que sí).
 
 **Participantes:** 3 a 5 estudiantes universitarios. Idealmente al menos uno con Windows. Requisito: cuenta de Claude Pro o Max (si no tienen, pueden probar solo la parte sin IA: gastos y personaje).

@@ -192,3 +192,24 @@ Quedan abiertas:
 - **Más frases**: el corpus es mío; conviene que el usuario (o los testers) sumen frases reales. La capa G (modelo local) sigue sin aprobarse.
 - **Horas en palabras** («a las nueve») y números compuestos («mil quinientos») no se leen.
 - **Celular y aparato**: las capas A–F son TypeScript puro (corregir, piezas, sugerir, ayuda) y se reutilizan tal cual; lo único atado a Node es el almacenamiento de `frases-locales.ts` (SQLite), que irá detrás de la capa de almacenamiento de la versión móvil.
+
+## 12. Aclaración del usuario sobre la capa G (6-10-2026)
+El modelo local pequeño se pensó para **entender lo que escribe el usuario y minimizar errores**; el obstáculo era la **versión física** (un ESP32 no puede correrlo). Precisiones para cuando se retome (sin decisión; la capa G sigue sin aprobarse):
+- **El aparato no tiene por qué cargar el modelo.** Es cliente delgado y quien entiende las frases es el celular (o el PC); el obstáculo físico no bloquea la capa G, solo la saca del aparato. Dónde correría: en el **PC** (descarga opcional con permiso), en el **celular** (modelo del sistema o uno propio chico) y en el aparato, nunca.
+- **Hoy hay menos que arreglar:** las capas A–F llegan a ~97–100 % en el corpus propio con 0 falsos positivos; la capa G solo se justifica por lo que A–F no entienden, y eso se sabe con frases reales (aplazadas hasta tener PC y celular). Si se retoma, la vara es el mismo corpus (`packages/motor/pruebas/`), con salida restringida a las intenciones que ya existen y confirmación en acciones.
+- **Referencia:** Taby usa un modelo local de 4B (Qwen 3.5) y por eso exige 8 GB y GPU en Windows (`docs/comparacion-taby.md`); nuestros candidatos (0,6B a 1,7B) pesan mucho menos.
+
+## 13. Idea anotada: la voz en el aparato físico (investigada el 6-10-2026; sin diseño ni decisión; hay que probarla con hardware)
+Pregunta: si el aparato (ESP32) depende del celular y no corre ningún modelo, ¿cómo entra la voz? Camino: **micrófono del aparato → audio comprimido por Bluetooth LE → celular → voz a texto → el motor de siempre** (las capas A–F reciben texto, así que sirven tal cual). El celular pasaría el audio a texto con Apple Speech o el reconocedor de Android (ambos con modo sin conexión según mi conocimiento, **sin verificar para español de Chile**) o con whisper.cpp.
+
+**Lo encontrado (poco y casi todo indirecto):**
+- Hay proyectos de ESP32-S3 con micrófono I2S INMP441 y amplificador MAX98357A que capturan voz, pero los que vi la mandan por **WiFi** a un servidor, no por Bluetooth LE a un celular (Hackster, Instructables y Home Assistant Community); la librería de Schatzmann hace A2DP (audio de música, no un canal para app propia).
+- Palabra de activación en el aparato: se menciona sin detalle técnico. Por memoria, Espressif tiene ESP-SR (pide ESP32-S3 con PSRAM): **sin confirmar**.
+- Ancho de banda (cálculo propio): 16 kHz a 16 bits = 256 kbps sin comprimir; el Bluetooth LE real de un teléfono rinde del orden de cientos de kbps, así que habría que comprimir (ADPCM ≈ 64 kbps; Opus, menos). Si el ESP32 codifica Opus con holgura: **sin verificar**.
+- **Confirmado (documentación de Apple, Core Bluetooth en segundo plano):** en iPhone una app suspendida solo despierta por Bluetooth unos pocos segundos y el sistema puede terminarla. En Android haría falta un servicio en primer plano de tipo micrófono.
+
+**Consecuencias:** apretar un botón del aparato y hablar (frase corta, la app se despierta a tiempo) es viable; «oye Brote» con la app cerrada y la pantalla apagada es mucho más difícil, sobre todo en iPhone.
+
+**Orden propuesto:** (1) primera versión **sin voz** (botones, luz, vibración, avisos del celular), como ya está decidido; (2) **apretar y hablar** (ADPCM u Opus por Bluetooth LE, voz a texto en el celular); (3) palabra de activación solo si hay demanda, probada con hardware.
+
+**Por investigar con hardware en la mano:** qué chip exacto (S3 con PSRAM o uno más chico), qué compresión aguanta, el comportamiento real del Bluetooth en iPhone y Android, y si la voz a texto del sistema entiende bien el español chileno. Relacionado: `docs/comparacion-taby.md` (su aparato también es una placa con pantalla chica que se enlaza con la app) y la aclaración de la sección 12.

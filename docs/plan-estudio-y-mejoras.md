@@ -786,6 +786,8 @@ Pregunta del usuario: Brote guarda las conversaciones pasadas pero en la isla no
 - Lo que lo haría más barato: un «paquete» exportable (resumen o tarjetas de un documento o de una clase en un archivo con formato propio y validado) que otro Brote importa. Eso sirve también para Anki (D5) y no necesita servidor.
 - Relacionado: grupos de trabajo del bloque D («aviso si alguien del grupo no entregó su parte»), que quedó fuera por lo mismo.
 
+**1a. Migrar a la nube más adelante (anotada el 6-10-2026).** Abriría los grupos, el jardín, la sincronización sin el PC prendido y las notificaciones con la app cerrada, a costa de refactorizar cuentas, almacenamiento y sincronización, y de cambiar la promesa de privacidad («todo queda en tu computador») y los términos con Anthropic (solo clave de API). Detalle, riesgos y una ruta gradual en `docs/plan-multiplataforma.md`, sección 11. No se empieza sin pedirlo.
+
 **1b. El jardín del grupo (idea anotada el 6-10-2026, para el final).** Si se crean grupos de amigos de estudio (idea 1), el grupo se vería como un **jardín** donde están los Brotes de cada integrante y **interactúan entre ellos**. Para pensarlo antes de diseñar:
 - Depende de la idea 1 (compartir exige algún canal entre personas; hoy «sin nube») y de «Brote único» (cada integrante tiene su Brote, con sus colores, ojos y etapa, así que el jardín se vería variado y la rareza se luciría).
 - **Compatibilidad con «el aspecto no se comparte»:** lo decidido es que nadie puede copiar, regalar ni intercambiar un aspecto. En el jardín los demás **ven** tu Brote (tal cual, con su rareza y etapa), pero no lo pueden llevarse. Eso hay que mantenerlo explícito.
